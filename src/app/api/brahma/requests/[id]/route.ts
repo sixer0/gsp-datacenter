@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const row = await prisma.agentRequest.findUnique({
+    where: { id },
+    select: { id: true, title: true, status: true, kind: true, profile: true, result: true, error: true, createdAt: true, startedAt: true, finishedAt: true },
+  });
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  return NextResponse.json({ request: row });
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const b = await req.json().catch(() => ({}));

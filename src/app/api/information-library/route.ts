@@ -89,10 +89,11 @@ function walkFiles(dir: string, relRoot = ""): { rel: string; abs: string }[] {
 // YAML sederhana (baris `key: value`), body markdown. Dibaca langsung dari
 // filesystem — vault adalah sumber kebenaran staging sebelum terbit ke wiki.
 function parseFm(raw: string): Record<string, string> {
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  // Toleran CRLF (vault_propose.py menulis \r\n di Windows) dan LF.
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return {};
   const fm: Record<string, string> = {};
-  for (const line of m[1].split("\n")) {
+  for (const line of m[1].split(/\r?\n/)) {
     const i = line.indexOf(":");
     if (i > 0) fm[line.slice(0, i).trim()] = line.slice(i + 1).trim().replace(/^"(.*)"$/, "$1");
   }
@@ -121,7 +122,8 @@ export async function GET(req: Request) {
 
   const wantWiki = scope === "all" || scope === "wiki";
   const wantWs = scope === "all" || scope === "workspace" || scope === "archive";
-  const wantVault = scope === "vault";
+  // Vault (analisa) ikut scope default "all" — analisa = pengetahuan bernilai (rank 1)
+  const wantVault = scope === "vault" || scope === "all";
   const isArchiveScope = scope === "archive";
 
   const wikiEntries: Record<string, unknown>[] = [];
@@ -298,9 +300,26 @@ export async function GET(req: Request) {
         const haystack = `vault/${f.rel} ${title} ${body} ${vtype} ${vstatus}`.toLowerCase();
         if (q && !haystack.includes(q)) continue;
         if (type && type !== "all" && vtype !== type) continue;
-        if (status !== "all" && vstatus !== status) continue;
+        // status: di scope "all", tampilkan SEMUA lifecycle vault (usulan/dll) —
+        // analisa adalah pengetahuan; filter status hanya berlaku di scope vault.
+        if (scope !== "all" && status !== "all" && vstatus !== status) continue;
         const stat = fs.statSync(f.abs);
         const cls = classifyPath(`vault/${f.rel}`);
+        // domain proposa: dari frontmatter 'domain' bila ada, lalu tag, terakhir 'library' (staging)
+        const DOMAIN_ALIASES: Record<string, string> = {
+          "defense-intel": "defense-intel", "defense": "defense-intel", "intel": "defense-intel",
+          "corporate": "corporate", "digital": "digital", "engineering": "engineering",
+          "operations": "operations", "library": "library",
+        };
+        let vdomain = cls.domain || "library";
+        const fmDomain = String(fm.domain || "").trim().toLowerCase();
+        if (fmDomain && DOMAIN_ALIASES[fmDomain]) vdomain = DOMAIN_ALIASES[fmDomain];
+        else {
+          const tags = String(fm.tags || "").toLowerCase();
+          for (const [k, v] of Object.entries(DOMAIN_ALIASES)) {
+            if (tags.includes(k)) { vdomain = v; break; }
+          }
+        }
         vaultEntries.push({
           id: `vault-${f.rel.replace(/[^a-z0-9]+/gi, "-")}`,
           path: `vault/${f.rel}`,
@@ -308,7 +327,7 @@ export async function GET(req: Request) {
           title,
           status: vstatus,
           confidence: null,
-          domain: cls.domain,
+          domain: vdomain,
           project: cls.project || fm.perkara || null,
           provenance: fm.sumber || null,
           tags: [],
@@ -337,7 +356,9 @@ export async function GET(req: Request) {
   let entries: Record<string, unknown>[] =
     scope === "vault"
       ? vaultEntries
-      : [...wsEntries, ...wikiEntries];
+      : scope === "archive"
+      ? [...wsEntries]
+      : [...wsEntries, ...wikiEntries, ...vaultEntries];
 
   // ── Rank kepentingan — pengetahuan terkurasi lebih dulu, raw terakhir ──
   // Sesuai prinsip IL: WIKI (0) = paling berharga · VAULT (1) = analisa terkurasi

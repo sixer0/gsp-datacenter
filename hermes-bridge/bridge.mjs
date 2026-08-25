@@ -403,10 +403,22 @@ async function maybeDailyBrief() {
   if (!s.enabled) return;
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  if (now.getHours() >= s.hour && lastBriefDate !== today) {
-    lastBriefDate = today;
-    try { await generateBriefing(); } catch (e) { log("daily brief err", e.message); }
-  }
+  if (now.getHours() < s.hour) return;
+  if (lastBriefDate === today) return;
+  // Guard PERSISTEN (harian): jangan generate ulang jika brief hari ini sudah ada.
+  // Sumber kebenaran = DataStore "hermes-briefing".generatedAt — bertahan lintas restart.
+  // (Sebelumnya hanya variabel in-memory `lastBriefDate` → tiap restart bridge, brief
+  //  ter-generate lagi — bug nyata 24-08-2026: 3x "Daily brief generated" dalam sehari.)
+  try {
+    const { rows } = await q(`SELECT data FROM "DataStore" WHERE key=$1`, ["hermes-briefing"]);
+    const last = rows[0]?.data?.generatedAt;
+    if (typeof last === "string" && last.slice(0, 10) === today) {
+      lastBriefDate = today;
+      return;
+    }
+  } catch { /* query gagal → lanjut generate (fallback lama) */ }
+  lastBriefDate = today;
+  try { await generateBriefing(); } catch (e) { log("daily brief err", e.message); }
 }
 
 /* ─────────────── PUSH: run website requests via Brahma ─────────────── */
@@ -417,13 +429,17 @@ async function runRequest(r) {
   const isProfile = !!(r.profile && r.profile !== "default" && r.profile !== "brahma");
   const fromAgent = "brahma";
   const toAgent = isProfile ? r.profile : "brahma";
+  // Scope fungsi (bukan blok if pertama) agar bisa dipakai di blok if kedua
+  // (bug 24-08-2026: ReferenceError "kanbanCardId is not defined" → AgentRequest
+  //  tercatat failed walau agent sudah selesai & menghasilkan result).
+  let kanbanCardId = null;
   if (isProfile) {
     await recordOrch({
       from: fromAgent, to: toAgent, kind: "dispatch", status: "running",
       runId: r.id, taskId: r.id, taskTitle: r.title,
     });
     await setAgentState(toAgent, { status: "running", currentTask: r.title.slice(0, 200) });
-    const kanbanCardId = await createKanbanCard(r); // kartu task nyata di board kanban (assignee = profil)
+    kanbanCardId = await createKanbanCard(r); // kartu task nyata di board kanban (assignee = profil)
     if (kanbanCardId && !r.hermesTaskId) {
       // simpan id kartu agar closeKanbanCard bisa menutupnya tanpa cari-by-body
       await q(`UPDATE "AgentRequest" SET "hermesTaskId"=$1, "updatedAt"=now() WHERE id=$2`, [kanbanCardId, r.id]).catch(() => {});
@@ -497,10 +513,35 @@ async function runRequest(r) {
 }
 
 async function processQueue() {
-  const { rows } = await q(
-    `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved') ORDER BY "createdAt" ASC LIMIT 3`
-  );
-  for (const r of rows) await runRequest(r);
+  // Main lane: SATU request per iterasi dengan PICK ULANG tiap selesai.
+  // Request Ask Librarian TIDAK diproses di sini (ada askLane paralel agar
+  // pertanyaan user dijawab seketika tanpa menunggu antrean rebuild selesai).
+  for (;;) {
+    const { rows } = await q(
+      `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved') AND title NOT LIKE 'Ask Librarian%' ORDER BY "createdAt" ASC LIMIT 1`
+    );
+    if (!rows.length) break;
+    await runRequest(rows[0]);
+    await new Promise((res) => setTimeout(res, 300));
+  }
+}
+
+async function askLane() {
+  // Jalur paralel khusus Ask Librarian: diproses seketika (1 request per waktu),
+  // tanpa mengganggu antrean rebuild di main lane.
+  for (;;) {
+    try {
+      const { rows } = await q(
+        `SELECT * FROM "AgentRequest" WHERE status='queued' AND title LIKE 'Ask Librarian%' ORDER BY "createdAt" ASC LIMIT 1`
+      );
+      if (!rows.length) { await new Promise((res) => setTimeout(res, POLL_MS)); continue; }
+      await runRequest(rows[0]);
+      await new Promise((res) => setTimeout(res, 300));
+    } catch (e) {
+      log("ask lane err", e.message);
+      await new Promise((res) => setTimeout(res, POLL_MS));
+    }
+  }
 }
 
 /* ─────────────── loops ─────────────── */
@@ -518,8 +559,10 @@ async function main() {
   await emit("status", "Bridge connected", { level: "up" });
   await mirrorTick();
   setInterval(() => mirrorTick().catch((e) => log("mirror loop", e.message)), MIRROR_MS);
-  // queue loop
+  // queue loop — main lane (rebuild & dispatch biasa)
   const tick = async () => { try { await processQueue(); } catch (e) { log("queue loop", e.message); } finally { setTimeout(tick, POLL_MS); } };
   tick();
+  // ask lane — jalur paralel responsif utk Ask Librarian
+  askLane().catch((e) => { log("ask lane fatal", e.message); });
 }
 main().catch((e) => { console.error("fatal", e); process.exit(1); });

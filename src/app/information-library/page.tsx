@@ -22,6 +22,12 @@ import {
   ExternalLink,
   ShieldCheck,
   CalendarClock,
+  Sparkles,
+  Send,
+  Table2,
+  Loader2,
+  RefreshCw,
+  Bot,
 } from "lucide-react";
 import {
   Panel,
@@ -90,6 +96,24 @@ interface MemoryResponse {
 
 type Scope = "all" | "wiki" | "workspace" | "vault" | "archive";
 
+// ── Ask Librarian types ───────────────────────────────────
+interface AskTable {
+  title: string;
+  columns: string[];
+  rows: string[][];
+}
+interface AskSource {
+  title: string;
+  url: string;
+  rank?: number;
+  relevance?: string;
+}
+interface AskResult {
+  answer: string;
+  tables: AskTable[];
+  sources: AskSource[];
+}
+
 const TYPES: MemType[] = [
   "fact",
   "preference",
@@ -153,6 +177,51 @@ async function getJSON<T>(url: string): Promise<T | null> {
     const r = await fetch(url);
     if (!r.ok) return null;
     return (await r.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+// Ambil objek JSON pertama dari teks hasil librarian (toleran markdown fence,
+// teks tambahan, trailing "STATUS: ..." dari bridge).
+function parseAskResult(text: string): AskResult | null {
+  if (!text) return null;
+  const cleaned = text.replace(/```(?:json)?/gi, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    const obj = JSON.parse(cleaned.slice(start, end + 1));
+    if (typeof obj !== "object" || obj === null) return null;
+    const tables = Array.isArray(obj.tables)
+      ? obj.tables
+          .filter((t: unknown) => t && typeof t === "object")
+          .map((t) => ({
+            title: String((t as AskTable).title || "Tabel"),
+            columns: Array.isArray((t as AskTable).columns)
+              ? (t as AskTable).columns.map(String)
+              : [],
+            rows: Array.isArray((t as AskTable).rows)
+              ? (t as AskTable).rows.map((r) => (Array.isArray(r) ? r.map(String) : []))
+              : [],
+          }))
+      : [];
+    const sources = Array.isArray(obj.sources)
+      ? obj.sources
+          .filter((s: unknown) => s && typeof s === "object")
+          .map((s) => ({
+            title: String((s as AskSource).title || ""),
+            url: String((s as AskSource).url || ""),
+            rank: Number((s as AskSource).rank ?? 0),
+            relevance: String((s as AskSource).relevance || ""),
+          }))
+          .filter((s: AskSource) => s.url)
+      : [];
+    return {
+      answer: String(obj.answer || ""),
+      tables,
+      sources,
+    };
   } catch {
     return null;
   }
@@ -854,6 +923,218 @@ function EntryEditor({
   );
 }
 
+// ── Ask Librarian panel ───────────────────────────────────
+const ASK_PHASES = [
+  "Librarian sedang menelusuri Information Library…",
+  "Membaca dokumen & analisa vault yang relevan…",
+  "Menskor informasi berdasarkan rank & relevansi…",
+  "Menyusun tabel jawaban…",
+];
+
+function AskPanel({
+  open,
+  q,
+  setQ,
+  phase,
+  statusText,
+  result,
+  error,
+  requestId,
+  onSubmit,
+  onReset,
+}: {
+  open: boolean;
+  q: string;
+  setQ: (v: string) => void;
+  phase: "idle" | "loading" | "done" | "error";
+  statusText: string;
+  result: AskResult | null;
+  error: string;
+  requestId: string | null;
+  onSubmit: () => void;
+  onReset: () => void;
+}) {
+  const [phaseIdx, setPhaseIdx] = useState(0);
+  useEffect(() => {
+    if (phase !== "loading") return;
+    setPhaseIdx(0);
+    const iv = setInterval(() => setPhaseIdx((i) => (i + 1) % ASK_PHASES.length), 3500);
+    return () => clearInterval(iv);
+  }, [phase]);
+
+  const canSubmit = q.trim().length >= 3 && phase !== "loading";
+  return (
+    <Panel className="hq-rise !p-0 overflow-hidden border-[color-mix(in_srgb,var(--accent)_35%,var(--line))]">
+      <div
+        className="flex items-center gap-3 px-5 py-3.5 border-b"
+        style={{
+          background:
+            "linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%)",
+          borderColor: "var(--line)",
+        }}
+      >
+        <div className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--accent) 16%, var(--surface-2))", color: "var(--accent)" }}>
+          <Sparkles className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--text)] flex items-center gap-2">
+            Ask Librarian
+            <span className="hidden sm:inline num text-[10.5px] px-2 py-0.5 rounded-full border" style={{ color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 35%, var(--line))", background: "color-mix(in srgb, var(--accent) 10%, transparent)" }}>
+              data dari Information Library
+            </span>
+          </div>
+          <p className="text-[12px] text-[var(--text-3)] mt-0.5">
+            Tanyakan informasi — librarian mencari di wiki, analisa vault & dokumen, lalu menjawab dalam tabel data.
+          </p>
+        </div>
+        {phase === "done" && (
+          <Button variant="ghost" size="sm" onClick={onReset}>
+            <RefreshCw className="w-3.5 h-3.5" /> Tanya lagi
+          </Button>
+        )}
+      </div>
+
+      <div className="px-5 py-4">
+        {/* Input */}
+        {phase !== "loading" && (
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex-1">
+              <Bot className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-3)] pointer-events-none" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && canSubmit && onSubmit()}
+                placeholder='Contoh: "Berapa margin desain link fiber yang dipakai di proyek?"'
+                className="w-full bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] pl-10 pr-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
+              />
+            </div>
+            <Button variant="primary" onClick={onSubmit} disabled={!canSubmit}>
+              <Send className="w-3.5 h-3.5" /> Tanya
+            </Button>
+          </div>
+        )}
+
+        {/* Loading — status interaktif */}
+        {phase === "loading" && (
+          <div className="flex items-start gap-3.5 py-2">
+            <div className="relative mt-0.5 shrink-0">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--accent)" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--accent)" }} />
+                <span className="text-[13.5px] font-medium text-[var(--text)]">{statusText || ASK_PHASES[0]}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1.5 flex-1 rounded-full overflow-hidden bg-[var(--surface-2)]">
+                  <div
+                    className="h-full rounded-full animate-pulse"
+                    style={{ width: "45%", background: "linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent))" }}
+                  />
+                </div>
+                <span className="num text-[11px] text-[var(--text-3)] shrink-0">
+                  {ASK_PHASES[phaseIdx]}
+                </span>
+              </div>
+              <p className="num text-[11px] text-[var(--text-3)] mt-1.5">
+                request {requestId ? `#${requestId.slice(-6)}` : "…"} · librarian berjalan di latar
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {phase === "error" && (
+          <div className="flex items-center gap-2.5 text-[13px]" style={{ color: "var(--down)" }}>
+            <X className="w-4 h-4 shrink-0" />
+            <span>{error || "Gagal menjawab — coba lagi."}</span>
+            <Button variant="ghost" size="sm" onClick={onReset}>
+              Coba lagi
+            </Button>
+          </div>
+        )}
+
+        {/* Result — jawaban + tabel dinamis + sumber */}
+        {phase === "done" && result && (
+          <div className="mt-1 space-y-4">
+            {result.answer && (
+              <div className="text-[13.5px] leading-relaxed text-[var(--text-2)]">{result.answer}</div>
+            )}
+
+            {result.tables.length > 0 ? (
+              <div className="space-y-3">
+                {result.tables.map((t, ti) => (
+                  <div key={ti} className="rounded-[12px] border border-[var(--line)] overflow-hidden">
+                    <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-[var(--line)] bg-[var(--surface-1)]">
+                      <Table2 className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
+                      <span className="text-[12.5px] font-semibold text-[var(--text)]">{t.title}</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[var(--line)]">
+                            {(t.columns || []).map((c, ci) => (
+                              <th
+                                key={ci}
+                                className="px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-3)] whitespace-nowrap"
+                              >
+                                {c}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(t.rows || []).map((r, ri) => (
+                            <tr key={ri} className={ri % 2 ? "bg-[var(--surface-1)]" : ""}>
+                              {(t.columns || []).map((_, ci) => (
+                                <td key={ci} className="px-3.5 py-2 text-[13px] text-[var(--text-2)] border-t border-[var(--line)]/60 align-top">
+                                  {r[ci] != null ? String(r[ci]) : ""}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[12.5px] text-[var(--text-3)]">Tidak ada tabel — informasi berupa teks di atas.</div>
+            )}
+
+            {result.sources.length > 0 && (
+              <div>
+                <div className="eyebrow !mb-1.5">sumber</div>
+                <div className="space-y-1">
+                  {result.sources.map((s, si) => (
+                    <a
+                      key={si}
+                      href={s.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-start gap-2 rounded-[8px] px-2.5 py-1.5 hover:bg-[var(--surface-2)] transition-colors group"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 mt-[3px] shrink-0" style={{ color: "var(--text-3)" }} />
+                      <span className="text-[12.5px] text-[var(--text-2)] group-hover:text-[var(--text)] leading-snug">
+                        {s.title || s.url}
+                        <span className="num text-[11px] text-[var(--text-3)] ml-2">
+                          rank {s.rank ?? "?"}
+                          {s.relevance ? ` · ${s.relevance}` : ""}
+                        </span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────
 export default function InformationLibraryPage() {
   const [q, setQ] = useState("");
@@ -875,9 +1156,81 @@ export default function InformationLibraryPage() {
   const [loaded, setLoaded] = useState(false);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [editor, setEditor] = useState<{ draft: Draft; isNew: boolean } | null>(
     null
   );
+
+  // ── Ask Librarian state ──
+  const [askOpen, setAskOpen] = useState(false);
+  const [askQ, setAskQ] = useState("");
+  const [askPhase, setAskPhase] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [askResult, setAskResult] = useState<AskResult | null>(null);
+  const [askError, setAskError] = useState("");
+  const [askRequestId, setAskRequestId] = useState<string | null>(null);
+  const [askStatusText, setAskStatusText] = useState("");
+
+  const submitAsk = useCallback(async () => {
+    const question = askQ.trim();
+    if (question.length < 3) return;
+    setAskPhase("loading");
+    setAskResult(null);
+    setAskError("");
+    setAskStatusText(ASK_PHASES[0]);
+    try {
+      const r = await fetch("/api/information-library/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || "gagal dispatch");
+      setAskRequestId(data.request?.id || null);
+    } catch (e) {
+      setAskError(e instanceof Error ? e.message : "gagal dispatch");
+      setAskPhase("error");
+    }
+  }, [askQ]);
+
+  // Poll status request saat loading
+  useEffect(() => {
+    if (askPhase !== "loading" || !askRequestId) return;
+    let cancelled = false;
+    const iv = setInterval(async () => {
+      const data = await getJSON<{ request?: { status?: string; result?: string | null } }>(
+        `/api/brahma/requests/${askRequestId}`
+      );
+      if (cancelled) return;
+      if (!data?.request) return;
+      const st = data.request.status;
+      if (st === "done") {
+        clearInterval(iv);
+        const parsed = parseAskResult(data.request.result || "");
+        setAskResult(parsed);
+        setAskPhase(parsed ? "done" : "error");
+        if (!parsed) setAskError("Librarian selesai tapi hasil tidak terbaca sebagai tabel — lihat detail request.");
+        setAskStatusText("");
+      } else if (st === "failed" || st === "rejected" || st === "cancelled") {
+        clearInterval(iv);
+        setAskError(`Request ${st} — coba lagi atau periksa antrean.`);
+        setAskPhase("error");
+      } else {
+        setAskStatusText(ASK_PHASES[Math.floor(Date.now() / 3500) % ASK_PHASES.length]);
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [askPhase, askRequestId]);
+
+  const resetAsk = useCallback(() => {
+    setAskPhase("idle");
+    setAskResult(null);
+    setAskError("");
+    setAskRequestId(null);
+    setAskStatusText("");
+  }, []);
 
   // Debounce search input → q
   useEffect(() => {
@@ -1015,13 +1368,35 @@ export default function InformationLibraryPage() {
               synced {timeAgo(lastSync)}
             </p>
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2.5">
+            <Button variant="secondary" onClick={() => { setAskOpen((v) => !v); }}>
+              <Sparkles className="w-3.5 h-3.5" style={askOpen ? { color: "var(--accent)" } : undefined} />
+              Ask Librarian
+            </Button>
             <Button variant="primary" onClick={openNew}>
               <Plus className="w-3.5 h-3.5" />
               Usulkan ke librarian
             </Button>
           </div>
         </div>
+
+        {/* Ask Librarian panel */}
+        {askOpen && (
+          <div className="mb-6">
+            <AskPanel
+              open={askOpen}
+              q={askQ}
+              setQ={setAskQ}
+              phase={askPhase}
+              statusText={askStatusText}
+              result={askResult}
+              error={askError}
+              requestId={askRequestId}
+              onSubmit={submitAsk}
+              onReset={resetAsk}
+            />
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="hq-rise flex flex-col gap-3">
@@ -1095,6 +1470,17 @@ export default function InformationLibraryPage() {
                 Clear filters
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowFilters((v) => !v)}
+              className={showFilters ? "!text-[var(--accent)]" : ""}
+            >
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform ${showFilters ? "rotate-180" : ""}`}
+              />
+              Filter{chips.length ? ` (${chips.length})` : ""}
+            </Button>
           </div>
 
           {/* Domain filter chips — level 1 */}
@@ -1149,27 +1535,29 @@ export default function InformationLibraryPage() {
             </div>
           )}
 
-          {/* Type filter chips */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterChip
-              label="All"
-              count={total}
-              active={typeFilter === "all"}
-              onClick={() => setTypeFilter("all")}
-            />
-            {chips.map((c) => (
+          {/* Type filter chips — tersembunyi di balik tombol Filter (declutter) */}
+          {showFilters && (
+            <div className="flex items-center gap-2 flex-wrap">
               <FilterChip
-                key={c.type}
-                label={c.type}
-                count={c.count}
-                tone={typeTone(c.type)}
-                active={typeFilter === c.type}
-                onClick={() =>
-                  setTypeFilter(typeFilter === c.type ? "all" : c.type)
-                }
+                label="All"
+                count={total}
+                active={typeFilter === "all"}
+                onClick={() => setTypeFilter("all")}
               />
-            ))}
-          </div>
+              {chips.map((c) => (
+                <FilterChip
+                  key={c.type}
+                  label={c.type}
+                  count={c.count}
+                  tone={typeTone(c.type)}
+                  active={typeFilter === c.type}
+                  onClick={() =>
+                    setTypeFilter(typeFilter === c.type ? "all" : c.type)
+                  }
+                />
+              ))}
+            </div>
+          )}
 
           {/* Vault status chips — staging lifecycle (bisa diklik = filter) */}
           {scope === "vault" && (
