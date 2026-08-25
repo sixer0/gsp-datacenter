@@ -330,10 +330,18 @@ export async function GET(req: Request) {
     }
   }
 
-  let entries: Record<string, unknown>[] =
-    scope === "vault" ? vaultEntries : [...wsEntries, ...wikiEntries];
+  // ── 3b. (TIDAK dipakai) Klasifikasi siklus raw tidak diangkat jadi knowledge.
+  // Prinsip IL: workspace = RAW. Analisa → vault → wiki dilakukan gsp-librarian
+  // lewat gsp-library-analysis; IL hanya menyajikan hasil analisa (vault/wiki).
 
-  // ── Rank kepentingan — pengetahuan terkurasi lebih dulu, dump mentah terakhir ──
+  let entries: Record<string, unknown>[] =
+    scope === "vault"
+      ? vaultEntries
+      : [...wsEntries, ...wikiEntries];
+
+  // ── Rank kepentingan — pengetahuan terkurasi lebih dulu, raw terakhir ──
+  // Sesuai prinsip IL: WIKI (0) = paling berharga · VAULT (1) = analisa terkurasi
+  // · docs insight (1-2) · raw workspace (3) · legacy raw (4, scope Arsip).
   for (const e of entries) e.rank = entryRank(e as Record<string, unknown>);
 
   // ── Domain counts — dihitung SEBELUM filter domain/project (chip domain stabil) ──

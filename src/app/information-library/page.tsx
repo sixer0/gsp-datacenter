@@ -47,7 +47,8 @@ type MemType =
   | "document"
   | "reference"
   | "catatan"
-  | "fakta";
+  | "fakta"
+  | "cycle";
 type MemStatus = "active" | "superseded" | "archived";
 
 interface Entry {
@@ -115,7 +116,7 @@ type Tone = "neutral" | "up" | "down" | "warn" | "accent";
 function typeTone(t: string): Tone {
   if (t === "decision") return "accent";
   if (t === "lesson") return "warn";
-  if (t === "project") return "up";
+  if (t === "project" || t === "cycle") return "up";
   return "neutral";
 }
 
