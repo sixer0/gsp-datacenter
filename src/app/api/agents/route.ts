@@ -7,7 +7,7 @@ import { join } from "path";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// ── GSP AI Team roster — 36 static profiles (Brahma/default + 35 gsp-*) ─────
+// ── GSP AI Team roster — 43 static profiles (Brahma/default + 42 gsp-*) ─────
 // plus DYNAMIC WebUI user-access entries from the WebUiUser table (see
 // webuiUserAgents() below) — a new WebUI signup automatically appears here.
 // level: 1 = orchestrator (Brahma), 2 = advisors, 3 = specialist groups, 9 = webui user
@@ -336,6 +336,87 @@ const ROSTER = [
     model: "deepseek/deepseek-v4-flash-0731",
     level: 3,
     group: "verification",
+  },
+  {
+    id: "gsp-custodian",
+    profile: "gsp-custodian",
+    name: "GSP Custodian",
+    emoji: "🛡️",
+    role: "Verifikator independen hasil analisa library (vault proposals) — penulis bukan verifikator",
+    model: "deepseek/deepseek-v4-flash-0731",
+    level: 3,
+    group: "verification",
+  },
+  // Level 3 — Spesialis Engineering EKAS (24-08-2026)
+  {
+    id: "gsp-engineering-analyst",
+    profile: "gsp-engineering-analyst",
+    name: "Engineering Analyst",
+    emoji: "🔬",
+    role: "Analisis teknik EKAS: angka/rumus/ambang berujukan, verifikasi hitungan & dokumen",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "analysis",
+  },
+  {
+    id: "gsp-vss-specialist",
+    profile: "gsp-vss-specialist",
+    name: "VSS Specialist",
+    emoji: "🎥",
+    role: "Perancang CCTV/VSS: lensa, bitrate, kapasitas, interoperabilitas ONVIF",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-fiber-specialist",
+    profile: "gsp-fiber-specialist",
+    name: "Fiber Optic Specialist",
+    emoji: "🔆",
+    role: "Loss budget serat optik, uji OTDR/OLTS, IEC 61280-4-2, berita acara",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-power-specialist",
+    profile: "gsp-power-specialist",
+    name: "Power Backup Specialist",
+    emoji: "⚡",
+    role: "Sizing UPS/baterai/genset, IEEE 1188, IEC 62485-2, interval RCM",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-grounding-specialist",
+    profile: "gsp-grounding-specialist",
+    name: "Grounding & Lightning Specialist",
+    emoji: "⛱️",
+    role: "Pembumian & proteksi petir: Wenner, fall-of-potential, rolling sphere",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-security-specialist",
+    profile: "gsp-security-specialist",
+    name: "Security & Forensics Specialist",
+    emoji: "🛡️",
+    role: "Bukti digital, rantai kustodi, DEMS, keamanan siber",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-infra-specialist",
+    profile: "gsp-infra-specialist",
+    name: "IT Infrastructure Specialist",
+    emoji: "🖥️",
+    role: "Konfigurasi jaringan/storage/server, RAID, BDP, workbook audit",
+    model: "deepseek-v4-flash-0731",
+    level: 3,
+    group: "execution",
   },
   // Level 3 — Utilitas & Perencanaan
   {
