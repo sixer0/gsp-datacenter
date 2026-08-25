@@ -830,6 +830,7 @@ export default function InformationLibraryPage() {
   const [qInput, setQInput] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusAll, setStatusAll] = useState(false);
+  const [vaultStatus, setVaultStatus] = useState<string>("all");
   const [scope, setScope] = useState<Scope>("all");
 
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -854,9 +855,14 @@ export default function InformationLibraryPage() {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (typeFilter !== "all") params.set("type", typeFilter);
-    // vault memakai status lifecycle (usulan/ditinjau/...) — selalu tampilkan semua
-    params.set("status", scope === "vault" ? "all" : statusAll ? "all" : "active");
     params.set("scope", scope);
+    if (scope === "vault") {
+      // Vault memakai status lifecycle (usulan/ditinjau/terkurasi/…) —
+      // chip status vault yang bisa diklik jadi sumber filter status.
+      params.set("status", vaultStatus);
+    } else {
+      params.set("status", statusAll ? "all" : "active");
+    }
     const data = await getJSON<MemoryResponse>(
       `/api/information-library?${params.toString()}`
     );
@@ -868,7 +874,7 @@ export default function InformationLibraryPage() {
       setLastSync(data.lastSync ?? null);
     }
     setLoaded(true);
-  }, [q, typeFilter, statusAll, scope]);
+  }, [q, typeFilter, statusAll, scope, vaultStatus]);
 
   // Reload on filter change + poll every 10s
   useEffect(() => {
@@ -889,12 +895,28 @@ export default function InformationLibraryPage() {
   useEffect(() => {
     paged.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, typeFilter, scope, statusAll]);
+  }, [q, typeFilter, scope, statusAll, vaultStatus]);
 
   const openNew = () =>
     setEditor({ draft: emptyDraft(), isNew: true });
   const openEdit = (e: Entry) =>
     setEditor({ draft: draftFrom(e), isNew: false });
+
+  const hasFilters =
+    q.trim() !== "" ||
+    typeFilter !== "all" ||
+    scope !== "all" ||
+    statusAll ||
+    vaultStatus !== "all";
+
+  const resetFilters = () => {
+    setQInput("");
+    setQ("");
+    setTypeFilter("all");
+    setStatusAll(false);
+    setVaultStatus("all");
+    setScope("all");
+  };
 
   return (
     <>
@@ -925,13 +947,13 @@ export default function InformationLibraryPage() {
 
         {/* Toolbar */}
         <div className="hq-rise flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-3)] pointer-events-none" />
               <input
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
-                placeholder="Search library — wiki & shared workspace…"
+                placeholder="Search library — wiki, workspace & vault…"
                 className="w-full bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] pl-10 pr-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
               />
             </div>
@@ -952,43 +974,57 @@ export default function InformationLibraryPage() {
                 </button>
               ))}
             </div>
-            {/* Status toggle */}
-            <div className="flex items-center rounded-full border border-[var(--line)] p-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setStatusAll(false)}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
-                  !statusAll
-                    ? "bg-[var(--surface-2)] text-[var(--text)]"
-                    : "text-[var(--text-3)] hover:text-[var(--text-2)]"
-                }`}
-              >
-                Active
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusAll(true)}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
-                  statusAll
-                    ? "bg-[var(--surface-2)] text-[var(--text)]"
-                    : "text-[var(--text-3)] hover:text-[var(--text-2)]"
-                }`}
-              >
-                All
-              </button>
-            </div>
+            {/* Status toggle — non-vault scopes (vault pakai chip status di bawah) */}
+            {scope !== "vault" && (
+              <div className="flex items-center rounded-full border border-[var(--line)] p-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStatusAll(false)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
+                    !statusAll
+                      ? "bg-[var(--surface-2)] text-[var(--text)]"
+                      : "text-[var(--text-3)] hover:text-[var(--text-2)]"
+                  }`}
+                >
+                  Active
+                  {statusCounts.active != null && (
+                    <span className="num text-[11px] opacity-70 ml-1">
+                      {statusCounts.active}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusAll(true)}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-medium transition-colors ${
+                    statusAll
+                      ? "bg-[var(--surface-2)] text-[var(--text)]"
+                      : "text-[var(--text-3)] hover:text-[var(--text-2)]"
+                  }`}
+                >
+                  All
+                  <span className="num text-[11px] opacity-70 ml-1">{total}</span>
+                </button>
+              </div>
+            )}
+            {hasFilters && (
+              <Button variant="ghost" size="sm" onClick={resetFilters}>
+                <X className="w-3.5 h-3.5" />
+                Clear filters
+              </Button>
+            )}
           </div>
 
           {/* Type filter chips */}
           <div className="flex items-center gap-2 flex-wrap">
-            <TypeChip
+            <FilterChip
               label="All"
               count={total}
               active={typeFilter === "all"}
               onClick={() => setTypeFilter("all")}
             />
             {chips.map((c) => (
-              <TypeChip
+              <FilterChip
                 key={c.type}
                 label={c.type}
                 count={c.count}
@@ -1001,18 +1037,25 @@ export default function InformationLibraryPage() {
             ))}
           </div>
 
-          {/* Vault status chips — staging lifecycle */}
+          {/* Vault status chips — staging lifecycle (bisa diklik = filter) */}
           {scope === "vault" && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="eyebrow !mb-0 !mr-1">status</span>
+              <FilterChip
+                label="All"
+                count={total}
+                active={vaultStatus === "all"}
+                onClick={() => setVaultStatus("all")}
+              />
               {Object.entries(statusCounts).map(([s, c]) => (
-                <span
+                <FilterChip
                   key={s}
-                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium capitalize border border-[var(--line)] text-[var(--text-2)]"
-                >
-                  {s}
-                  <span className="num text-[11px] opacity-70">{c}</span>
-                </span>
+                  label={s}
+                  count={c}
+                  tone={vaultStatusTone(s)}
+                  active={vaultStatus === s}
+                  onClick={() => setVaultStatus((cur) => (cur === s ? "all" : s))}
+                />
               ))}
             </div>
           )}
@@ -1031,26 +1074,18 @@ export default function InformationLibraryPage() {
               <EmptyState
                 icon={<BookOpen className="w-6 h-6" />}
                 title={
-                  q || typeFilter !== "all"
+                  hasFilters
                     ? "No matching entries"
                     : "No memory synced yet"
                 }
                 hint={
-                  q || typeFilter !== "all"
+                  hasFilters
                     ? "Try a different search or clear the filters."
                     : "Once the Brahma bridge is running with a ~/.hermes/wiki, entries appear here."
                 }
                 action={
-                  q || typeFilter !== "all" ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setQInput("");
-                        setQ("");
-                        setTypeFilter("all");
-                      }}
-                    >
+                  hasFilters ? (
+                    <Button variant="ghost" size="sm" onClick={resetFilters}>
                       Clear filters
                     </Button>
                   ) : undefined
@@ -1091,8 +1126,27 @@ export default function InformationLibraryPage() {
   );
 }
 
-// ── Type filter chip ──────────────────────────────────────
-function TypeChip({
+// ── Vault status → tone (untuk chip filter status vault) ──
+function vaultStatusTone(s: string): Tone {
+  const v = s.toLowerCase();
+  if (v.includes("usulan") || v.includes("proposal") || v.includes("pending"))
+    return "warn";
+  if (v.includes("tinjau") || v.includes("review")) return "accent";
+  if (
+    v.includes("kurasi") ||
+    v.includes("terbit") ||
+    v.includes("publish") ||
+    v.includes("approved") ||
+    v.includes("active")
+  )
+    return "up";
+  if (v.includes("tolak") || v.includes("reject") || v.includes("archiv") || v.includes("superseded"))
+    return "down";
+  return "neutral";
+}
+
+// ── Filter chip (type & status) ───────────────────────────
+function FilterChip({
   label,
   count,
   tone = "neutral",
