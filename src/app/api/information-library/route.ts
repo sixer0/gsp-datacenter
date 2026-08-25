@@ -114,6 +114,8 @@ export async function GET(req: Request) {
   const scope = (url.searchParams.get("scope") || "all").toLowerCase();
   const type = url.searchParams.get("type");
   const status = url.searchParams.get("status") || "active";
+  const domain = (url.searchParams.get("domain") || "").trim().toLowerCase();
+  const project = (url.searchParams.get("project") || "").trim().toLowerCase();
 
   const wantWiki = scope === "all" || scope === "wiki";
   const wantWs = scope === "all" || scope === "workspace";
@@ -144,6 +146,8 @@ export async function GET(req: Request) {
         ...r,
         source: "wiki",
         confidence: r.confidence != null ? Number(r.confidence) : null,
+        domain: "wiki",
+        project: null,
       }))
     );
   }
@@ -165,6 +169,7 @@ export async function GET(req: Request) {
       // type asli dari path; filter type HANYA menyaring (bukan memaksa type)
       const t = inferType(f.rel);
       if (type && type !== "all" && t !== type) continue;
+      const cls = classifyPath(f.rel);
       // ukuran body dibatasi agar response tetap ringan
       wsEntries.push({
         id: `ws-${f.rel.replace(/[^a-z0-9]+/gi, "-")}`,
@@ -173,6 +178,8 @@ export async function GET(req: Request) {
         title,
         status: "active",
         confidence: null,
+        domain: cls.domain,
+        project: cls.project,
         provenance: "shared-workspace",
         tags: [],
         links: [],
@@ -238,7 +245,8 @@ export async function GET(req: Request) {
             /* ignore */
           }
         }
-        const pretty = dir.replace(/^\d{4}_\d{2}_\d{2}_/, "").replace(/[-_]+/g, " ").trim();
+        const pretty = dir.replace(/^\d{4}[-_]\d{2}[-_]\d{2}[-_]/, "").replace(/[-_]+/g, " ").trim();
+        const cls = classifyPath(`docs/${dir}/`);
         wsEntries.push({
           id: `ws-docs-${dir.replace(/[^a-z0-9]+/gi, "-")}`,
           path: `docs/${dir}/`,
@@ -246,6 +254,8 @@ export async function GET(req: Request) {
           title: `📁 ${pretty.charAt(0).toUpperCase() + pretty.slice(1)}`,
           status: "active",
           confidence: null,
+          domain: cls.domain,
+          project: cls.project,
           provenance: "shared-workspace",
           tags: [],
           links: [],
@@ -284,6 +294,7 @@ export async function GET(req: Request) {
         if (type && type !== "all" && vtype !== type) continue;
         if (status !== "all" && vstatus !== status) continue;
         const stat = fs.statSync(f.abs);
+        const cls = classifyPath(`vault/${f.rel}`);
         vaultEntries.push({
           id: `vault-${f.rel.replace(/[^a-z0-9]+/gi, "-")}`,
           path: `vault/${f.rel}`,
@@ -291,6 +302,8 @@ export async function GET(req: Request) {
           title,
           status: vstatus,
           confidence: null,
+          domain: cls.domain,
+          project: cls.project || fm.perkara || null,
           provenance: fm.sumber || null,
           tags: [],
           links: [],
@@ -311,8 +324,37 @@ export async function GET(req: Request) {
     }
   }
 
-  const entries =
+  let entries: Record<string, unknown>[] =
     scope === "vault" ? vaultEntries : [...wsEntries, ...wikiEntries];
+
+  // ── Domain counts — dihitung SEBELUM filter domain/project (chip domain stabil) ──
+  const domainCounts: Record<string, number> = {};
+  for (const e of entries) {
+    const d = (e.domain as string) || "other";
+    domainCounts[d] = (domainCounts[d] || 0) + 1;
+  }
+
+  // ── Filter domain ──
+  if (domain && domain !== "all") {
+    entries = entries.filter(
+      (e) => ((e.domain as string) || "other").toLowerCase() === domain
+    );
+  }
+
+  // ── Project counts — setelah filter domain, sebelum filter project (cascading) ──
+  const projectCounts: Record<string, number> = {};
+  for (const e of entries) {
+    const p = (e.project as string) || "";
+    if (p) projectCounts[p] = (projectCounts[p] || 0) + 1;
+  }
+
+  // ── Filter project ──
+  if (project && project !== "all") {
+    entries = entries.filter(
+      (e) => ((e.project as string) || "").toLowerCase() === project
+    );
+  }
+
   // urutkan dari yang terbaru (updatedAt desc) — dokumen & memori terkini di atas
   entries.sort((a, b) => {
     const ta = new Date((a.updatedAt as string) || 0).getTime();
@@ -330,17 +372,94 @@ export async function GET(req: Request) {
   }
   const lastSync = wikiEntries[0]?.syncedAt as string | null | undefined ?? null;
   return NextResponse.json(
-    { entries, typeCounts, statusCounts, total, lastSync },
+    { entries, domainCounts, projectCounts, typeCounts, statusCounts, total, lastSync },
     { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
   );
 }
 
 function inferType(rel: string): string {
   const lower = rel.toLowerCase();
+  const first = rel.split("/")[0];
+  // Project FOLDER entries (trailing slash) — hanya folder tugas/docs & item legacy
+  if (
+    rel.endsWith("/") &&
+    (/^\d{4}[-_]\d{2}[-_]\d{2}[-_]/.test(first) || /-\d{8}T\d{6}Z/i.test(first))
+  )
+    return "project";
+  // Dokumen di dalam project (sudah terindeks domain/project) → type "document",
+  // bukan fact/decision/lesson — menghindari klasifikasi ganda & noise.
+  const cls = classifyPath(rel);
+  if (cls.project) return "document";
+  if (lower.startsWith("legacy-archive/")) return "document";
+  if (lower.startsWith("ekas/")) {
+    if (lower.includes("04_knowledge") || lower.includes("knowledge-card"))
+      return "lesson";
+    if (
+      lower.includes("03_source-vault") ||
+      lower.includes("02_registers") ||
+      lower.includes("register")
+    )
+      return "reference";
+    if (lower.includes("01_governance")) return "decision";
+    return "note";
+  }
   if (lower.includes("refs") || lower.includes("lesson")) return "lesson";
-  if (lower.includes("tasks") || lower.includes("report")) return "project";
-  if (lower.includes("docs") || lower.includes("decision")) return "decision";
-  if (lower.includes("log") || lower.includes("memory/")) return "note";
+  if (lower.includes("decision")) return "decision";
+  if (lower.startsWith("memory/")) return "note";
+  if (lower.includes("docs/03_reference")) return "reference";
   if (lower.startsWith("agents.md") || lower.startsWith("memor")) return "fact";
   return "note";
+}
+
+// ── Domain & project classification (organisasi knowledge) ──
+// Domain  = area knowledge tingkat atas (structural root workspace).
+// Project = item kerja spesifik di dalam domain (folder tugas / item / perkara).
+function classifyPath(rel: string): { domain: string; project: string | null } {
+  const lower = rel.toLowerCase();
+
+  if (lower === "agents.md" || lower === "memory.md")
+    return { domain: "core", project: null };
+
+  if (lower.startsWith("ekas/"))
+    return { domain: "engineering", project: null };
+
+  if (lower.startsWith("vault/")) {
+    const seg = (rel.split("/")[1] || "").trim();
+    return { domain: "library", project: seg || null };
+  }
+
+  if (lower.startsWith("memory/"))
+    return { domain: "operations", project: null };
+
+  if (lower.startsWith("legacy-archive/")) {
+    const seg = (rel.split("/")[1] || "").trim();
+    // file longgar di root archive (bukan folder item) → bukan project
+    if (!seg || seg === "logs" || seg === "ocr" || /\.[a-z0-9]+$/i.test(seg))
+      return { domain: "legacy", project: null };
+    const project = seg
+      .replace(/-\d{8}T\d{6}Z-\d+-\d+$/i, "")
+      .replace(/-\d{8}T\d{6}Z$/i, "")
+      .trim();
+    return { domain: "legacy", project: project || seg };
+  }
+
+  if (lower.startsWith("docs/")) {
+    const rest = rel.slice("docs/".length);
+    const seg = (rest.split("/")[0] || "").trim();
+    if (seg === "01_DOMAIN") {
+      const d = (rest.split("/")[1] || "").trim();
+      return { domain: d || "docs", project: null };
+    }
+    if (seg === "00_INDEX") return { domain: "core", project: null };
+    if (seg === "02_PROJECT") return { domain: "docs", project: null };
+    if (seg === "03_REFERENCE") return { domain: "reference", project: null };
+    // docs/[tanggal]_[project]/... → project operasional
+    if (/^\d{4}[-_]\d{2}[-_]\d{2}[-_]/.test(seg)) {
+      const project = seg.replace(/^\d{4}[-_]\d{2}[-_]\d{2}[-_]/, "").trim();
+      return { domain: "operations", project: project || seg };
+    }
+    return { domain: "docs", project: null };
+  }
+
+  return { domain: "other", project: null };
 }

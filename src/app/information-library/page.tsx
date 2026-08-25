@@ -16,6 +16,8 @@ import {
   Pencil,
   Check,
   ChevronDown,
+  ChevronRight,
+  FolderOpen,
   Link2,
   ExternalLink,
   ShieldCheck,
@@ -41,7 +43,11 @@ type MemType =
   | "contact"
   | "lesson"
   | "metric"
-  | "note";
+  | "note"
+  | "document"
+  | "reference"
+  | "catatan"
+  | "fakta";
 type MemStatus = "active" | "superseded" | "archived";
 
 interface Entry {
@@ -61,6 +67,8 @@ interface Entry {
   updatedAt: string;
   syncedAt: string;
   source?: "wiki" | "workspace" | "vault";
+  domain?: string;
+  project?: string | null;
   sensitif?: string;
   perkara?: string;
   kelas_bukti?: string;
@@ -71,6 +79,8 @@ interface Entry {
 
 interface MemoryResponse {
   entries: Entry[];
+  domainCounts?: Record<string, number>;
+  projectCounts?: Record<string, number>;
   typeCounts: Record<string, number>;
   statusCounts?: Record<string, number>;
   total: number;
@@ -89,7 +99,17 @@ const TYPES: MemType[] = [
   "lesson",
   "metric",
   "note",
+  "document",
+  "reference",
 ];
+
+// Label tampilan utk slug (domain/project): fleet_test → Fleet Test
+function cleanLabel(s: string): string {
+  return s
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
 
 type Tone = "neutral" | "up" | "down" | "warn" | "accent";
 function typeTone(t: string): Tone {
@@ -316,6 +336,15 @@ function EntryCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1.5">
             <Pill tone={typeTone(entry.type)}>{entry.type}</Pill>
+            {entry.domain && (
+              <Pill tone="accent">{cleanLabel(entry.domain)}</Pill>
+            )}
+            {entry.project && (
+              <Pill tone="up">
+                <FolderOpen className="w-3 h-3" />
+                {cleanLabel(entry.project)}
+              </Pill>
+            )}
             {entry.source && (
               <Pill
                 tone={
@@ -832,8 +861,12 @@ export default function InformationLibraryPage() {
   const [statusAll, setStatusAll] = useState(false);
   const [vaultStatus, setVaultStatus] = useState<string>("all");
   const [scope, setScope] = useState<Scope>("all");
+  const [domainFilter, setDomainFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
 
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [domainCounts, setDomainCounts] = useState<Record<string, number>>({});
+  const [projectCounts, setProjectCounts] = useState<Record<string, number>>({});
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
@@ -863,18 +896,23 @@ export default function InformationLibraryPage() {
     } else {
       params.set("status", statusAll ? "all" : "active");
     }
+    if (domainFilter !== "all") params.set("domain", domainFilter);
+    if (projectFilter !== "all" && projectFilter !== "__docs__")
+      params.set("project", projectFilter);
     const data = await getJSON<MemoryResponse>(
       `/api/information-library?${params.toString()}`
     );
     if (data) {
       setEntries(data.entries ?? []);
+      setDomainCounts(data.domainCounts ?? {});
+      setProjectCounts(data.projectCounts ?? {});
       setTypeCounts(data.typeCounts ?? {});
       setStatusCounts(data.statusCounts ?? {});
       setTotal(data.total ?? 0);
       setLastSync(data.lastSync ?? null);
     }
     setLoaded(true);
-  }, [q, typeFilter, statusAll, scope, vaultStatus]);
+  }, [q, typeFilter, statusAll, scope, vaultStatus, domainFilter, projectFilter]);
 
   // Reload on filter change + poll every 10s
   useEffect(() => {
@@ -890,24 +928,61 @@ export default function InformationLibraryPage() {
     }));
   }, [typeCounts]);
 
+  const domainChips = useMemo(() => {
+    return Object.entries(domainCounts)
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+  }, [domainCounts]);
+
+  const projectChips = useMemo(() => {
+    return Object.entries(projectCounts)
+      .map(([project, count]) => ({ project, count }))
+      .sort((a, b) => b.count - a.count || a.project.localeCompare(b.project));
+  }, [projectCounts]);
+
+  // Hierarki domain → project dari kumpulan entri terfilter (untuk tampilan grup)
+  const groups = useMemo(() => {
+    const dm = new Map<string, { count: number; projects: Map<string, number> }>();
+    for (const e of entries) {
+      const d = e.domain || "other";
+      const rec = dm.get(d) || { count: 0, projects: new Map() };
+      rec.count++;
+      const p = e.project;
+      if (p) rec.projects.set(p, (rec.projects.get(p) || 0) + 1);
+      dm.set(d, rec);
+    }
+    return Array.from(dm.entries())
+      .map(([domain, rec]) => ({
+        domain,
+        count: rec.count,
+        projects: Array.from(rec.projects.entries())
+          .map(([project, count]) => ({ project, count }))
+          .sort((a, b) => b.count - a.count || a.project.localeCompare(b.project)),
+      }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+  }, [entries]);
+
   // paging 10 baris/halaman (lazy render) — reset ke halaman 1 saat filter berubah
   const paged = usePaged(entries);
   useEffect(() => {
     paged.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, typeFilter, scope, statusAll, vaultStatus]);
+  }, [q, typeFilter, scope, statusAll, vaultStatus, domainFilter, projectFilter]);
 
   const openNew = () =>
     setEditor({ draft: emptyDraft(), isNew: true });
   const openEdit = (e: Entry) =>
     setEditor({ draft: draftFrom(e), isNew: false });
 
+  const inProjectView = projectFilter !== "all";
   const hasFilters =
     q.trim() !== "" ||
     typeFilter !== "all" ||
     scope !== "all" ||
     statusAll ||
-    vaultStatus !== "all";
+    vaultStatus !== "all" ||
+    domainFilter !== "all" ||
+    projectFilter !== "all";
 
   const resetFilters = () => {
     setQInput("");
@@ -916,6 +991,8 @@ export default function InformationLibraryPage() {
     setStatusAll(false);
     setVaultStatus("all");
     setScope("all");
+    setDomainFilter("all");
+    setProjectFilter("all");
   };
 
   return (
@@ -1015,6 +1092,58 @@ export default function InformationLibraryPage() {
             )}
           </div>
 
+          {/* Domain filter chips — level 1 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="eyebrow !mb-0 !mr-1">domain</span>
+            <FilterChip
+              label="All"
+              count={total}
+              active={domainFilter === "all"}
+              onClick={() => {
+                setDomainFilter("all");
+                setProjectFilter("all");
+              }}
+            />
+            {domainChips.map((d) => (
+              <FilterChip
+                key={d.domain}
+                label={cleanLabel(d.domain)}
+                count={d.count}
+                tone="accent"
+                active={domainFilter === d.domain}
+                onClick={() => {
+                  setDomainFilter(d.domain);
+                  setProjectFilter("all");
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Project filter chips — level 2 (hanya saat domain dipilih) */}
+          {domainFilter !== "all" && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="eyebrow !mb-0 !mr-1">project</span>
+              <FilterChip
+                label="All projects"
+                count={total}
+                active={projectFilter === "all"}
+                onClick={() => setProjectFilter("all")}
+              />
+              {projectChips.map((p) => (
+                <FilterChip
+                  key={p.project}
+                  label={cleanLabel(p.project)}
+                  count={p.count}
+                  tone="up"
+                  active={projectFilter === p.project}
+                  onClick={() =>
+                    setProjectFilter(projectFilter === p.project ? "all" : p.project)
+                  }
+                />
+              ))}
+            </div>
+          )}
+
           {/* Type filter chips */}
           <div className="flex items-center gap-2 flex-wrap">
             <FilterChip
@@ -1092,7 +1221,8 @@ export default function InformationLibraryPage() {
                 }
               />
             </Panel>
-          ) : (
+          ) : inProjectView ? (
+            // Dokumen project terpilih — daftar flat (dipaginasi)
             paged.slice.map((e) => (
               <EntryCard
                 key={e.id}
@@ -1104,11 +1234,78 @@ export default function InformationLibraryPage() {
                 onEdit={() => openEdit(e)}
               />
             ))
+          ) : (
+            // Tampilan grup: domain → project (drill-down, bukan ribuan baris)
+            <div className="space-y-3">
+              {/* Breadcrumb navigasi */}
+              <div className="flex items-center gap-1.5 text-[12px] text-[var(--text-3)] flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDomainFilter("all");
+                    setProjectFilter("all");
+                  }}
+                  className="hover:text-[var(--accent)] transition-colors"
+                >
+                  Domains
+                </button>
+                {domainFilter !== "all" && (
+                  <>
+                    <span>/</span>
+                    <button
+                      type="button"
+                      onClick={() => setProjectFilter("all")}
+                      className="hover:text-[var(--accent)] transition-colors capitalize"
+                    >
+                      {cleanLabel(domainFilter)}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {domainFilter === "all" ? (
+                groups.map((g) => (
+                  <GroupCard
+                    key={g.domain}
+                    title={cleanLabel(g.domain)}
+                    subtitle={`${g.projects.length} project · ${g.count} dokumen`}
+                    count={g.count}
+                    onClick={() => setDomainFilter(g.domain)}
+                  />
+                ))
+              ) : (
+                (() => {
+                  const g = groups.find((x) => x.domain === domainFilter);
+                  const unproj = entries.filter((e) => !e.project).length;
+                  return (
+                    <>
+                      {unproj > 0 && (
+                        <GroupCard
+                          title={`Semua dokumen ${cleanLabel(domainFilter)}`}
+                          subtitle="Dokumen tanpa project spesifik"
+                          count={unproj}
+                          onClick={() => setProjectFilter("__docs__")}
+                        />
+                      )}
+                      {(g?.projects ?? []).map((p) => (
+                        <GroupCard
+                          key={p.project}
+                          title={cleanLabel(p.project)}
+                          subtitle="Dokumen project"
+                          count={p.count}
+                          onClick={() => setProjectFilter(p.project)}
+                        />
+                      ))}
+                    </>
+                  );
+                })()
+              )}
+            </div>
           )}
         </div>
 
-        {/* Paging 10 baris/halaman */}
-        <PagedBar p={paged} className="mt-4" />
+        {/* Paging — hanya tampil pada tampilan dokumen */}
+        {inProjectView && <PagedBar p={paged} className="mt-4" />}
       </div>
 
       {editor && (
@@ -1143,6 +1340,53 @@ function vaultStatusTone(s: string): Tone {
   if (v.includes("tolak") || v.includes("reject") || v.includes("archiv") || v.includes("superseded"))
     return "down";
   return "neutral";
+}
+
+// ── Group card — satu tingkat drill-down (domain / project) ──
+function GroupCard({
+  title,
+  subtitle,
+  count,
+  onClick,
+}: {
+  title: string;
+  subtitle?: string;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <Panel interactive className="p-0">
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full text-left px-5 py-4 flex items-center gap-3 transition-colors hover:bg-[var(--surface-1)]/60"
+      >
+        <div
+          className="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0"
+          style={{
+            background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+            color: "var(--accent)",
+          }}
+        >
+          <FolderOpen className="w-4 h-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[14.5px] font-medium text-[var(--text)] truncate">
+              {title}
+            </h3>
+            <Pill tone="neutral">{count}</Pill>
+          </div>
+          {subtitle && (
+            <p className="text-[12px] text-[var(--text-3)] mt-0.5 truncate">
+              {subtitle}
+            </p>
+          )}
+        </div>
+        <ChevronRight className="w-4 h-4 text-[var(--text-3)] shrink-0" />
+      </button>
+    </Panel>
+  );
 }
 
 // ── Filter chip (type & status) ───────────────────────────
