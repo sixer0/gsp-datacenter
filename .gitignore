@@ -45,3 +45,9 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 /services/client-pulse-bot/dist/
+
+# logs & runtime
+*.log
+hq-dev.*.log
+hermes-bridge/bridge.*.log
+hermes-bridge/node_modules/
