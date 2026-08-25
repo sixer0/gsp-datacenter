@@ -72,8 +72,17 @@ export default function UserAccessPage() {
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!fUsername || !fPassword || !fProfile) {
+    const uname = fUsername.trim().toLowerCase();
+    if (!uname || !fPassword || !fProfile) {
       setNotice("Username, password, dan Hermes profile wajib diisi.");
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(uname)) {
+      setNotice("Username hanya boleh huruf kecil, angka, _ atau - (1–32 karakter, tanpa spasi/titik).");
+      return;
+    }
+    if (fPassword.length < 8) {
+      setNotice("Password minimal 8 karakter.");
       return;
     }
     setBusy(true);
@@ -83,7 +92,7 @@ export default function UserAccessPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: fUsername,
+          username: uname,
           displayName: fDisplayName || null,
           password: fPassword,
           role: fRole,
@@ -174,7 +183,12 @@ export default function UserAccessPage() {
             <input className={inputCls} placeholder="Username" value={fUsername} onChange={(e) => setFUsername(e.target.value)} autoComplete="off" />
             <input className={inputCls} placeholder="Display name (opsional)" value={fDisplayName} onChange={(e) => setFDisplayName(e.target.value)} />
             <input className={inputCls} type="password" placeholder="Password (min 8 karakter)" value={fPassword} onChange={(e) => setFPassword(e.target.value)} autoComplete="new-password" />
-            <input className={inputCls} placeholder="Hermes profile (mis. user01)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
+            <input className={inputCls} list="hermes-profile-options" placeholder="Hermes profile (mis. user01)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
+            <datalist id="hermes-profile-options">
+              {["default", ...Array.from(agentProfiles)].map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
             <select className={inputCls} value={fRole} onChange={(e) => setFRole(e.target.value as any)}>
               <option value="USER">User</option>
               <option value="ADMINISTRATOR">Administrator</option>
@@ -184,7 +198,9 @@ export default function UserAccessPage() {
             </div>
           </form>
           <div className="mt-2 text-[12px] text-[var(--text-3)]">
-            Catatan: user yang dibuat lewat form ini harus punya profil Hermes yang sudah ada (atau dibuat via WebUI signup yang otomatis meng-clone profil).
+            Catatan: profil Hermes harus sudah ada di mesin (dipilih dari daftar di atas). Untuk user baru
+            yang belum punya profil, gunakan <strong>signup di Brahma WebUI</strong> (otomatis membuat profil
+            dari template) lalu akunnya muncul di sini.
           </div>
         </Panel>
       )}
