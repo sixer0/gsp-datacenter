@@ -103,11 +103,13 @@ function walkVault(dir: string, relRoot = ""): { rel: string; abs: string }[] {
   return walkMd(dir, relRoot); // hanya .md, sama aturan skip dir
 }
 
-// GET ?q=&scope=wiki|workspace|all|vault&status=&type=
+// GET ?q=&scope=wiki|workspace|all|vault|archive&status=&type=&domain=&project=
 // - wiki      : entri HermesMemory dari DB (dimirror bridge dari ~/.hermes/wiki)
 // - workspace : file markdown di shared GSP workspace (AGENTS.md, MEMORY.md, memory/, docs/)
+//               — legacy-archive/ TIDAK ikut (dump mentah, bukan knowledge aktif)
 // - vault     : objek usulan/terkurasi di workspace/vault/ (STAGING, belum terbit)
-// - all       : gabungan wiki + workspace (default; vault TIDAK ikut — staging terpisah)
+// - archive   : KHUSUS legacy-archive/ (dump mentah migrasi) — tersembunyi dari default
+// - all       : gabungan wiki + workspace (default; vault & archive TIDAK ikut)
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim().toLowerCase();
@@ -118,8 +120,9 @@ export async function GET(req: Request) {
   const project = (url.searchParams.get("project") || "").trim().toLowerCase();
 
   const wantWiki = scope === "all" || scope === "wiki";
-  const wantWs = scope === "all" || scope === "workspace";
+  const wantWs = scope === "all" || scope === "workspace" || scope === "archive";
   const wantVault = scope === "vault";
+  const isArchiveScope = scope === "archive";
 
   const wikiEntries: Record<string, unknown>[] = [];
   const wsEntries: Record<string, unknown>[] = [];
@@ -156,6 +159,9 @@ export async function GET(req: Request) {
   if (wantWs && fs.existsSync(SHARED_WS)) {
     const files = walkMd(SHARED_WS);
     for (const f of files) {
+      // legacy-archive/ = dump mentah migrasi — hanya tampil di scope archive
+      if (f.rel.startsWith("legacy-archive/") && !isArchiveScope) continue;
+      if (isArchiveScope && !f.rel.startsWith("legacy-archive/")) continue;
       let body = "";
       try {
         body = fs.readFileSync(f.abs, "utf8");
@@ -195,9 +201,9 @@ export async function GET(req: Request) {
     // ── 2b. Folder document contract (docs/[date]_[task]/) ──
     // Folder tugas dengan artefak non-markdown (script, data, laporan biner)
     // diwakili satu entri berisi daftar file, agar jejak Documentation Contract
-    // tetap terlihat walau tidak ada file .md.
+    // tetap terlihat walau tidak ada file .md. (tidak berlaku di scope archive)
     const docsRoot = path.join(SHARED_WS, "docs");
-    if (fs.existsSync(docsRoot)) {
+    if (!isArchiveScope && fs.existsSync(docsRoot)) {
       let taskDirs: string[] = [];
       try {
         taskDirs = fs
@@ -327,6 +333,9 @@ export async function GET(req: Request) {
   let entries: Record<string, unknown>[] =
     scope === "vault" ? vaultEntries : [...wsEntries, ...wikiEntries];
 
+  // ── Rank kepentingan — pengetahuan terkurasi lebih dulu, dump mentah terakhir ──
+  for (const e of entries) e.rank = entryRank(e as Record<string, unknown>);
+
   // ── Domain counts — dihitung SEBELUM filter domain/project (chip domain stabil) ──
   const domainCounts: Record<string, number> = {};
   for (const e of entries) {
@@ -355,8 +364,11 @@ export async function GET(req: Request) {
     );
   }
 
-  // urutkan dari yang terbaru (updatedAt desc) — dokumen & memori terkini di atas
+  // urutkan: rank kepentingan (terkurasi dulu) → updatedAt terbaru
   entries.sort((a, b) => {
+    const ra = (a.rank as number) ?? 3;
+    const rb = (b.rank as number) ?? 3;
+    if (ra !== rb) return ra - rb;
     const ta = new Date((a.updatedAt as string) || 0).getTime();
     const tb = new Date((b.updatedAt as string) || 0).getTime();
     return tb - ta;
@@ -462,4 +474,28 @@ function classifyPath(rel: string): { domain: string; project: string | null } {
   }
 
   return { domain: "other", project: null };
+}
+
+// ── Rank kepentingan — menentukan urutan tampil (terkurasi dulu, dump mentah terakhir) ──
+// 0 = wiki (pengetahuan terdistilasi) · 1 = vault / ekas / dokumen insight docs
+// 2 = dokumen docs lain & core · 3 = log memory · 4 = legacy-archive (dump mentah)
+function entryRank(e: Record<string, unknown>): number {
+  if (e.source === "wiki") return 0;
+  if (e.source === "vault") return 1;
+  const p = String(e.path || "").toLowerCase();
+  const t = String(e.title || "").toLowerCase();
+  if (p.startsWith("legacy-archive/")) return 4;
+  if (p.startsWith("memory/")) return 3;
+  if (p.startsWith("ekas/")) return 1; // knowledge system terkurasi
+  if (p.startsWith("docs/")) {
+    // dokumen yang berbentuk insight/final/ringkasan/kajian/review diutamakan
+    if (
+      /(insight|final|kesimpulan|ringkasan|rekomendasi|brief|analys|review|kajian|00_|01_|02_)/.test(p) ||
+      /(insight|final|kesimpulan|ringkasan|rekomendasi|brief|analys|review|kajian)/.test(t)
+    )
+      return 1;
+    return 2;
+  }
+  if (p === "agents.md" || p === "memory.md") return 2;
+  return 3;
 }

@@ -87,7 +87,7 @@ interface MemoryResponse {
   lastSync: string | null;
 }
 
-type Scope = "all" | "wiki" | "workspace" | "vault";
+type Scope = "all" | "wiki" | "workspace" | "vault" | "archive";
 
 const TYPES: MemType[] = [
   "fact",
@@ -1036,7 +1036,7 @@ export default function InformationLibraryPage() {
             </div>
             {/* Scope toggle */}
             <div className="flex items-center rounded-full border border-[var(--line)] p-0.5 shrink-0">
-              {(["all", "wiki", "workspace", "vault"] as Scope[]).map((s) => (
+              {(["all", "wiki", "workspace", "vault", "archive"] as Scope[]).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -1047,7 +1047,11 @@ export default function InformationLibraryPage() {
                       : "text-[var(--text-3)] hover:text-[var(--text-2)]"
                   }`}
                 >
-                  {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                  {s === "all"
+                    ? "All"
+                    : s === "archive"
+                    ? "Arsip"
+                    : s.charAt(0).toUpperCase() + s.slice(1)}
                 </button>
               ))}
             </div>
