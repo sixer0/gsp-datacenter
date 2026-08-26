@@ -287,11 +287,11 @@ async function mirrorHealth() {
 
 /* ─────────────── Memory Wiki (warm tier: git-tracked markdown) ─────────────── */
 function parseEntry(md) {
-  const m = md.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   const fm = {}; let body = md;
   if (m) {
     body = m[2];
-    for (const line of m[1].split("\n")) {
+    for (const line of m[1].split(/\r?\n/)) {
       const kv = line.match(/^([A-Za-z_]+):\s*(.*)$/);
       if (!kv) continue;
       const v = kv[2].trim();
@@ -315,7 +315,7 @@ async function mirrorWiki() {
   if (!fs.existsSync(WIKI_DIR)) return;
   const seen = new Set();
   for (const file of walkMd(WIKI_DIR)) {
-    const rel = path.relative(WIKI_DIR, file);
+    const rel = path.relative(WIKI_DIR, file).replace(/\\/g, "/");
     const id = rel.replace(/\.md$/, "");
     seen.add(id);
     let raw = ""; try { raw = fs.readFileSync(file, "utf8"); } catch { continue; }

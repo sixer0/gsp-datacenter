@@ -144,16 +144,30 @@ export async function GET(req: Request) {
     const rows = await prisma.hermesMemory.findMany({
       where,
       orderBy: { updatedAt: "desc" },
-      take: 300,
+      take: 5000,
     });
+    // domain entri wiki: infer dari tags bila ada (proposa vault membawa tag domain),
+    // fallback 'wiki'
+    const DOMAIN_TAG_ALIASES: Record<string, string> = {
+      "defense-intel": "defense-intel", "defense": "defense-intel", "intel": "defense-intel",
+      "corporate": "corporate", "digital": "digital", "engineering": "engineering",
+      "operations": "operations", "library": "library",
+    };
     wikiEntries.push(
-      ...rows.map((r) => ({
-        ...r,
-        source: "wiki",
-        confidence: r.confidence != null ? Number(r.confidence) : null,
-        domain: "wiki",
-        project: null,
-      }))
+      ...rows.map((r) => {
+        let ddomain = "wiki";
+        const tags = (Array.isArray(r.tags) ? r.tags : []).join(" ").toLowerCase();
+        for (const [k, v] of Object.entries(DOMAIN_TAG_ALIASES)) {
+          if (tags.includes(k)) { ddomain = v; break; }
+        }
+        return {
+          ...r,
+          source: "wiki",
+          confidence: r.confidence != null ? Number(r.confidence) : null,
+          domain: ddomain,
+          project: null,
+        };
+      })
     );
   }
 
