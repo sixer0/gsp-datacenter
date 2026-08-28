@@ -17,7 +17,7 @@
  *               BRIDGE_MIRROR_MS (30000), HERMES_BIN (default "hermes").
  */
 import pg from "pg";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -30,11 +30,12 @@ const BOARD = process.env.HERMES_BOARD || "default";
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 5000);
 const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 30000);
 const RUN_TIMEOUT_MS = Number(process.env.BRIDGE_RUN_TIMEOUT_MS || 1800000);
+const RESULT_MAX = Number(process.env.BRIDGE_RESULT_MAX || 200000);
 const WIKI_DIR = process.env.HERMES_WIKI || path.join(os.homedir(), ".hermes", "wiki");
 const BRIEF_HOUR = Number(process.env.BRIEF_HOUR || 8);   // local hour to auto-generate the daily brief
 const BRIEF_PROMPT =
   "You are the operator's chief of staff. Produce today's brief. Read your memory wiki open-loops " +
-  "(~/.hermes/wiki), the kanban board, and recent activity. Output ONLY valid JSON (no prose, no code fences) " +
+  "your memory wiki), the kanban board, and recent activity. Output ONLY valid JSON (no prose, no code fences) " +
   'in exactly this shape: {"greeting":"one warm line","summary":"2-3 sentences on where things stand",' +
   '"sections":[{"label":"Needs your decision","items":["..."]},{"label":"Top priorities","items":["..."]},' +
   '{"label":"Recently shipped","items":["..."]},{"label":"Next actions","items":["..."]}]}. ' +
@@ -54,9 +55,43 @@ const pool = new pg.Pool({ connectionString: DB_URL, max: 4, ssl: isLocal ? unde
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const q = (text, params) => pool.query(text, params);
 
+// HARD TIMEOUT: execFile timeout TIDAK selalu mematikan proses di Windows —
+// child bisa survive & menahan pipe sehingga promise tidak pernah resolve
+// (insiden 28-08-2026: bridge "up" 18:14 tapi loop antrean baru jalan 22:41
+//  karena mirrorTick pertama menggantung menunggu hermes CLI yang hang).
+// Strategi: spawn manual + Promise.race + taskkill /T (tree-kill) saat timeout,
+// lalu reject supaya pemanggil selalu selesai dalam waktu bounded.
 async function hermes(args, { timeout = 30000 } = {}) {
-  const { stdout } = await execFileP(HERMES, args, { timeout, maxBuffer: 8 * 1024 * 1024 });
-  return stdout;
+  return await new Promise((resolve, reject) => {
+    const child = spawn(HERMES, args, { windowsHide: true });
+    let stdout = "", settled = false;
+    const killTree = () => {
+      try { execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], () => {}); } catch { /* sudah mati */ }
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      killTree();
+      reject(new Error(`hermes CLI timeout after ${timeout}ms: ${args.join(" ").slice(0, 120)}`));
+    }, timeout);
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { /* dikumpulkan via exit code error di bawah */ });
+    child.on("error", (e) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      reject(e);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else {
+        const err = new Error(`Command failed: ${HERMES} ${args.join(" ").slice(0, 120)} (exit ${code})`);
+        err.stderr = stdout.slice(-600);
+        reject(err);
+      }
+    });
+  });
 }
 
 async function emit(kind, title, { detail = null, agent = "brahma", level = "info", meta = null } = {}) {
@@ -422,6 +457,39 @@ async function maybeDailyBrief() {
 }
 
 /* ─────────────── PUSH: run website requests via Brahma ─────────────── */
+// Potong hasil panjang TANPA merusak JSON: kalau hasil dimulai '{', cari '}' di
+// belakang yang membuat JSON tetap valid (parse-check backward, maks 4000 char).
+// Fix 26-08-2026: cap lama 8000 membuat JSON Ask Librarian terpotong di tengah
+// → UI tidak bisa render tabel. Cap baru 60000 + trim aman JSON.
+// Rebrand 28-08-2026: buang baris banner engine dari output CLI sebelum
+// ditampilkan di UI (header '⚕ Hermes/Hermes Agent vX', footer install dir,
+// 'Resume this session', dsb). Reply bersih mulai dari baris pertama konten.
+function stripEngineBanner(text) {
+  const lines = String(text || "").split("\n");
+  const bannerRe = /^\s*(?:[│┃]?\s*)?(?:\u2695\s*)?(?:Hermes|Swarm)\s*(?:Agent)?\s*(?:v[0-9][^\n]*)?$/i;
+  const noiseRe = /^\s*(?:[│┃]?\s*)?(?:Install directory:|Resume this session|Session:|Messages:|Title:|Duration:|--continue|Upstream|Local\b)/i;
+  const kept = lines.filter((l) => !bannerRe.test(l) && !noiseRe.test(l));
+  return kept.join("\n").trim();
+}
+
+function trimResult(result) {
+  result = stripEngineBanner(result);
+  if (result.length <= RESULT_MAX) return result;
+  const capped = result.slice(0, RESULT_MAX);
+  if (!capped.trimStart().startsWith("{")) return capped;
+  const startIdx = Math.max(0, capped.length - 4000);
+  for (let i = capped.length - 1; i >= startIdx; i--) {
+    if (capped[i] === "}") {
+      const candidate = capped.slice(0, i + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch { /* masih terpotong — cari '}' sebelumnya */ }
+    }
+  }
+  return capped;
+}
+
 async function runRequest(r) {
   await q(`UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id]);
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind, profile: r.profile || null } });
@@ -479,7 +547,7 @@ async function runRequest(r) {
       throw new Error(`unknown kind ${r.kind}`);
     }
     await q(`UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      [r.id, result.slice(0, 8000)]);
+      [r.id, trimResult(result)]);
     await emit("run", `Done: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
     if (isProfile) {
       // status semantik dari respons agent (blocked/needs-review/failed → edge ikut berubah)
@@ -554,15 +622,35 @@ async function mirrorTick() {
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
 }
 
+async function recoverZombies() {
+  // Insiden 28-08-2026: request tertinggal status 'running' selamanya ketika
+  // bridge mati/restart/mesin mati di tengah eksekusi — antrean terlihat
+  // "running tanpa diproses". Saat start, tandai semua running sebagai failed
+  // (zombie) supaya bisa di-retry user; bridge lama punya logika ini lalu hilang.
+  try {
+    const { rows } = await q(
+      `UPDATE "AgentRequest" SET status='failed', error='zombie running — bridge restart saat proses berjalan; silakan dispatch ulang', "finishedAt"=now(), "updatedAt"=now() WHERE status='running' RETURNING id, title`
+    );
+    if (rows.length) log("recovered zombie running requests:", rows.map((r) => r.id).join(","));
+  } catch (e) { log("recoverZombies err", e.message); }
+}
+
 async function main() {
-  log(`brahma-bridge up · board=${BOARD} · poll=${POLL_MS}ms · mirror=${MIRROR_MS}ms`);
+  log(`swarm-bridge up · board=${BOARD} · poll=${POLL_MS}ms · mirror=${MIRROR_MS}ms`);
+  // URUTAN STARTUP (fix 28-08-2026): dulu `await mirrorTick()` berada SEBELUM
+  // pendaftaran loop antrean. Jika mirror pertama menggantung (hermes CLI hang),
+  // setInterval & loop antrean TIDAK PERNAH terdaftar — bridge hidup tapi tidak
+  // memproses apa pun berjam-jam. Sekarang: loop antrean + ask lane + mirror
+  // interval didaftarkan dulu, lalu mirror pertama berjalan tanpa memblokir.
   await emit("status", "Bridge connected", { level: "up" });
-  await mirrorTick();
-  setInterval(() => mirrorTick().catch((e) => log("mirror loop", e.message)), MIRROR_MS);
+  await recoverZombies();
   // queue loop — main lane (rebuild & dispatch biasa)
   const tick = async () => { try { await processQueue(); } catch (e) { log("queue loop", e.message); } finally { setTimeout(tick, POLL_MS); } };
   tick();
   // ask lane — jalur paralel responsif utk Ask Librarian
   askLane().catch((e) => { log("ask lane fatal", e.message); });
+  // mirror loop — periodik, tidak boleh memblokir startup
+  setInterval(() => mirrorTick().catch((e) => log("mirror loop", e.message)), MIRROR_MS);
+  mirrorTick().catch((e) => log("mirror first tick", e.message));
 }
 main().catch((e) => { console.error("fatal", e); process.exit(1); });
