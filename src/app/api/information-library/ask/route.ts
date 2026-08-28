@@ -39,6 +39,19 @@ Aturan:
 - tables boleh 1..N (multi-table) sesuai struktur informasi yang kamu temukan.
 - columns/rows WAJIB konsisten (jumlah kolom sama).
 - sources WAJIB berisi url yang valid dari hasil pencarian (bukan karangan).
+- PERTANYAAN DAFTAR (daftar vendor, daftar dokumen, daftar proyek, daftar rekomendasi, dsb.)
+  WAJIB dijawab sebagai TABEL (field 'tables'), BUKAN prosa: satu baris per entri, kolom informatif
+  (No, Nama, Kategori/Rank, Alasan/Rekomendasi, Sumber, dst). Jangan pernah menaruh daftar
+  berurutan hanya di dalam field 'answer'.
+- Jaga JSON LENGKAP dan VALID: output DIMULAI dengan { dan DIAKHIRI dengan } — jangan terpotong,
+  jangan ada teks setelah }, jumlah kolom konsisten di semua baris.
+- TAMPILKAN SEMUA entri relevan sesuai permintaan pengguna (daftar LENGKAP, jangan batasi
+  jumlah baris). Boleh 1..N tabel untuk mengelompokkan informasi. Satu baris per entri.
+- Disiplin JSON untuk output panjang: tiap sel WAJIB pendek namun informatif (maks ~120 karakter),
+  JANGAN gunakan tanda kutip ganda (") di dalam teks sel — ganti dengan tanda kutip tunggal (')
+  atau kurung («»). Ini penting agar JSON tetap valid meski daftar panjang.
+- SELF-CHECK sebelum mengirim: baca ulang JSON-mu — semua string tertutup dengan benar,
+  tidak ada koma ganda (,,), tidak ada kutip ganda di tengah teks, jumlah kurung { } dan [ ] seimbang.
 - Jangan menambahkan teks di luar JSON. Output dimulai dengan { dan diakhiri }.
 - Jika tidak ada informasi relevan, jawab {"answer": "Tidak ditemukan informasi relevan...", "tables": [], "sources": []}.`;
 

@@ -27,7 +27,7 @@ const navGroups = [
     name: "Overview",
     items: [
       { href: "/", label: "Dashboard", icon: Home },
-      { href: "/brahma", label: "Brahma", icon: Cpu },
+      { href: "/brahma", label: "Swarm", icon: Cpu },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
       { href: "/orchestration", label: "Orchestration", icon: Share2 },
     ],
@@ -90,9 +90,9 @@ export function Sidebar() {
   const Logo = () => (
     <div className="flex items-center gap-2.5">
       <div className="w-8 h-8 rounded-[10px] bg-[var(--text)] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
-        <span className="text-[#0a0b0d] font-bold text-[13px] tracking-tight">H</span>
+        <span className="text-[#0a0b0d] font-bold text-[13px] tracking-tight">S</span>
       </div>
-      <span className="font-semibold text-[var(--text)] tracking-[-0.01em] text-[15px]">GSP Agent Headquarter</span>
+      <span className="font-semibold text-[var(--text)] tracking-[-0.01em] text-[15px]">GSP Swarm HQ</span>
     </div>
   );
 

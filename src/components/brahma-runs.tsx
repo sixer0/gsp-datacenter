@@ -183,7 +183,7 @@ function UsageStrip({ cost }: { cost: Cost | null }) {
       <Panel className="p-5">
         <p className="text-[13px] text-[var(--text-3)] flex items-center gap-2">
           <Gauge className="w-3.5 h-3.5" />
-          Usage syncing from Brahma…
+          Usage syncing from Swarm…
         </p>
       </Panel>
     );
@@ -462,7 +462,7 @@ function RunHistory({
           <EmptyState
             icon={<Activity className="w-6 h-6" />}
             title={filter === "all" ? "No runs yet" : `No ${filter} runs`}
-            hint="Runs dispatched to Brahma will show up here with duration and results."
+            hint="Runs dispatched to Swarm will show up here with duration and results."
           />
         </Panel>
       ) : (

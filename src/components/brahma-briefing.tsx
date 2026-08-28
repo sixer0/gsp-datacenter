@@ -100,7 +100,7 @@ export function BrahmaBriefing() {
       {empty ? (
         <div className="py-6 text-center">
           <p className="text-[14px] text-[var(--text-2)]">
-            {generating ? "Brahma is writing your brief… (~1 min)" : loaded ? "No brief yet." : "Loading…"}
+            {generating ? "Swarm is writing your brief… (~1 min)" : loaded ? "No brief yet." : "Loading…"}
           </p>
           {!generating && loaded && (
             <p className="mt-1 text-[12.5px] text-[var(--text-3)]">

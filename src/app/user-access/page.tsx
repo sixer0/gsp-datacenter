@@ -74,7 +74,7 @@ export default function UserAccessPage() {
     e.preventDefault();
     const uname = fUsername.trim().toLowerCase();
     if (!uname || !fPassword || !fProfile) {
-      setNotice("Username, password, dan Hermes profile wajib diisi.");
+      setNotice("Username, password, dan Swarm profile wajib diisi.");
       return;
     }
     if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(uname)) {
@@ -183,7 +183,7 @@ export default function UserAccessPage() {
             <input className={inputCls} placeholder="Username" value={fUsername} onChange={(e) => setFUsername(e.target.value)} autoComplete="off" />
             <input className={inputCls} placeholder="Display name (opsional)" value={fDisplayName} onChange={(e) => setFDisplayName(e.target.value)} />
             <input className={inputCls} type="password" placeholder="Password (min 8 karakter)" value={fPassword} onChange={(e) => setFPassword(e.target.value)} autoComplete="new-password" />
-            <input className={inputCls} list="hermes-profile-options" placeholder="Hermes profile (mis. user01)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
+            <input className={inputCls} list="hermes-profile-options" placeholder="Swarm profile (mis. user01)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
             <datalist id="hermes-profile-options">
               {["default", ...Array.from(agentProfiles)].map((p) => (
                 <option key={p} value={p} />
@@ -198,8 +198,8 @@ export default function UserAccessPage() {
             </div>
           </form>
           <div className="mt-2 text-[12px] text-[var(--text-3)]">
-            Catatan: profil Hermes harus sudah ada di mesin (dipilih dari daftar di atas). Untuk user baru
-            yang belum punya profil, gunakan <strong>signup di Brahma WebUI</strong> (otomatis membuat profil
+            Catatan: profil Swarm harus sudah ada di mesin (dipilih dari daftar di atas). Untuk user baru
+            yang belum punya profil, gunakan <strong>signup di Swarm WebUI</strong> (otomatis membuat profil
             dari template) lalu akunnya muncul di sini.
           </div>
         </Panel>
@@ -218,7 +218,7 @@ export default function UserAccessPage() {
               <tr className="border-b border-[var(--line)] text-[11px] uppercase tracking-wide text-[var(--text-3)]">
                 <th className="px-3 py-2 font-semibold">User</th>
                 <th className="px-3 py-2 font-semibold">Role</th>
-                <th className="px-3 py-2 font-semibold">Hermes Profile</th>
+                <th className="px-3 py-2 font-semibold">Swarm Profile</th>
                 <th className="px-3 py-2 font-semibold">Terdaftar di Agents</th>
                 <th className="px-3 py-2 font-semibold">Dibuat</th>
                 <th className="px-3 py-2 font-semibold text-right">Aksi</th>

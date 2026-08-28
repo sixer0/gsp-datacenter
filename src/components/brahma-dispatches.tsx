@@ -70,7 +70,7 @@ export function BrahmaDispatches() {
 
   return (
     <div>
-      <SectionHeader label="Dispatches" title="What you've sent Brahma" />
+      <SectionHeader label="Dispatches" title="What you've sent Swarm" />
       {!loaded ? (
         <Panel><div className="sk h-24 m-1 rounded-[10px]" /></Panel>
       ) : reqs.length === 0 ? (

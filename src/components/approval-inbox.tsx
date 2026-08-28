@@ -284,7 +284,7 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
               className="inline-flex items-center gap-1 self-start text-[12.5px] font-medium transition-colors"
               style={{ color: "var(--accent)" }}
             >
-              View all in Brahma →
+              View all in Swarm →
             </a>
           )}
         </div>

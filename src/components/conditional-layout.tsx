@@ -3,17 +3,24 @@
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
+import { BrandGuard } from '@/components/brand-guard';
 
 export function ConditionalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isStandalone = pathname === '/login';
 
   if (isStandalone) {
-    return <>{children}</>;
+    return (
+      <>
+        <BrandGuard />
+        {children}
+      </>
+    );
   }
 
   return (
     <div className="flex h-screen">
+      <BrandGuard />
       {/* One app-level ambient at the root — outside the scrolling/transformed
           main, so it's truly viewport-fixed and never scrolls away. */}
       <div className="hq-ambient" aria-hidden />

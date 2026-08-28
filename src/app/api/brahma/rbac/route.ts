@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   });
   if (existing) {
     return NextResponse.json(
-      { error: existing.username === username ? "Username already taken." : "Hermes profile already assigned to another user." },
+      { error: existing.username === username ? "Username already taken." : "Swarm profile already assigned to another user." },
       { status: 409 }
     );
   }

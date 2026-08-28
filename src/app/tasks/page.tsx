@@ -147,7 +147,7 @@ export default function TasksPage() {
       <div className="relative z-10 h-full flex flex-col w-full mx-auto pt-4 pb-16">
         <div className="flex justify-between items-end gap-4 mb-6">
           <div>
-            <div className="eyebrow mb-2">Hermes kanban mirror</div>
+            <div className="eyebrow mb-2">Swarm kanban mirror</div>
             <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Tasks</h1>
             <p className="text-[12.5px] text-[var(--text-3)] mt-2">
               {tasks.length} task · board {tasks[0]?.board ?? "default"}
@@ -208,7 +208,7 @@ export default function TasksPage() {
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTask()}
-              placeholder="Judul task — akan dibuat di board kanban Hermes…"
+              placeholder="Judul task — akan dibuat di board kanban Swarm…"
               className="w-full bg-[var(--surface-1)] border border-[var(--line)] text-[var(--text)] placeholder-[var(--text-3)] rounded-[var(--r-md)] px-4 py-3 mb-3 text-[14px] focus:outline-none focus:border-[var(--line-strong)]"
               autoFocus
             />

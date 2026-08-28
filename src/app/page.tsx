@@ -51,7 +51,7 @@ const EMPTY: HomeData = {
   polyBalance: 0, polyWinRate: 0, polyTodayPnl: 0, polyAllTimePnl: 0,
   hlBalance: 0, hlPosition: null, hlTodayPnl: 0, hlAllTimePnl: 0,
   allTimePnl: 0, todayPnl: 0, processes: [],
-  hermesKanban: { board: "Brahma 24/7 Assistant", slug: "hermes-24-7-assistant", total: 0, counts: {}, tasks: [] },
+  hermesKanban: { board: "Swarm 24/7 Assistant", slug: "hermes-24-7-assistant", total: 0, counts: {}, tasks: [] },
   xViewsTrend: [], snapshots: [],
 };
 
@@ -371,7 +371,7 @@ function BrahmaKanbanPanel({ kanban }: { kanban: BrahmaKanban }) {
     <div className="panel flex flex-col p-6 h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="min-w-0">
-          <span className="eyebrow">Brahma Board</span>
+          <span className="eyebrow">Swarm Board</span>
           <p className="text-[13px] text-[var(--hq-text-dim)] truncate mt-1">{kanban.board}</p>
         </div>
         <span className="num text-[22px] font-semibold text-[var(--hq-text)] shrink-0">{kanban.total}</span>

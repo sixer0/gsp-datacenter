@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { prisma } from "@/lib/prisma";
 import {
   hashPassword,
@@ -6,6 +8,13 @@ import {
   isValidUsername,
   publicUser,
 } from "@/lib/webui-rbac";
+import {
+  countLeafSkills,
+  ensureProfileComplete,
+  isValidProfileName,
+  profileDir,
+  resolveBaseHome,
+} from "../../../../scripts/ensure-profile-complete.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +28,17 @@ export const revalidate = 0;
  *
  * GET  → list users
  * POST → create a user directly (admin action from the HQ UI)
+ *
+ * Profile provisioning guard (fix 2026-08-27 — profiles were previously
+ * created blind: a hermesProfile name was accepted without any disk check,
+ * producing accounts bound to missing or half-built profiles):
+ *  - USER + existing profile directory        → bind as-is (pre-provisioned, admin's choice)
+ *  - USER + profile NOT on disk               → provision a COMPLETE clone from default
+ *                                               (config.yaml/.env/SOUL.md/skills/memory)
+ *  - ADMINISTRATOR + 'default'                → allowed to share the root profile
+ *  - everything else invalid                  → 400
+ * The sync is idempotent and also top-ups an existing-but-partial clone
+ * (missing SOUL/skills get merged from default; curated files never clobbered).
  */
 export async function GET() {
   const users = await prisma.webUiUser.findMany({ orderBy: { createdAt: "asc" } });
@@ -35,8 +55,9 @@ export async function POST(request: Request) {
   const username = String(body.username || "").trim().toLowerCase();
   const password = String(body.password || "");
   const displayName = body.displayName ? String(body.displayName).trim().slice(0, 80) : null;
-  const hermesProfile = String(body.hermesProfile || "").trim();
-  const role = String(body.role || "USER").toUpperCase() === "ADMINISTRATOR" ? "ADMINISTRATOR" : "USER";
+  const roleRaw = String(body.role || "USER").toUpperCase();
+  const role = roleRaw === "ADMINISTRATOR" ? "ADMINISTRATOR" : "USER";
+  const hermesProfileInput = String(body.hermesProfile || "").trim();
 
   if (!isValidUsername(username)) {
     return NextResponse.json({ error: "Username must be 1-32 chars: lowercase letters, digits, _ or - (no leading -)." }, { status: 400 });
@@ -44,17 +65,104 @@ export async function POST(request: Request) {
   if (!isValidPassword(password)) {
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
-  if (!hermesProfile) {
-    return NextResponse.json({ error: "hermesProfile is required." }, { status: 400 });
+
+  // ── Resolve + validate the bound Hermes profile BEFORE writing anything. ──
+  // Default when omitted: a per-user named profile.
+  let hermesProfile = hermesProfileInput || username;
+
+  if (!isValidProfileName(hermesProfile)) {
+    return NextResponse.json(
+      {
+        error:
+          "hermesProfile must be 1-64 chars: lowercase letters, digits, _ or - (no leading -); 'default' is reserved.",
+      },
+      { status: 400 },
+    );
+  }
+  if (hermesProfile === "default" && role !== "ADMINISTRATOR") {
+    return NextResponse.json(
+      { error: "Binding USER accounts to the shared 'default' profile is not allowed. Pick or create a personal profile." },
+      { status: 400 },
+    );
+  }
+  if (hermesProfile === "default") {
+    // Administrator sharing the root profile — no provisioning needed/allowed.
+    return await createUser(username, password, displayName, role, hermesProfile);
   }
 
+  const baseHome = resolveBaseHome();
+  const dir = profileDir(hermesProfile, baseHome);
+  const onDisk = fs.existsSync(dir) && fs.statSync(dir).isDirectory();
+
+  if (!onDisk && role === "ADMINISTRATOR") {
+    // Refuse to silently provision for admins: they may intend a different
+    // host/path. Creating it is one explicit retry away.
+    return NextResponse.json(
+      {
+        error: `Swarm profile "${hermesProfile}" does not exist on this host. Provision it first (WebUI signup, or node scripts/ensure-profile-complete.mjs ensure ${hermesProfile}), then create the account.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (!onDisk) {
+    // USER without an on-disk profile: provision a complete clone from default.
+    const result = ensureProfileComplete(hermesProfile, {});
+    if (!result.ok || result.error) {
+      return NextResponse.json(
+        { error: `Failed to provision Swarm profile "${hermesProfile}": ${result.error || "unknown error"}` },
+        { status: 500 },
+      );
+    }
+  } else {
+    // Existing directory: idempotent completeness top-up (never clobbers live
+    // config/curated memory; replaces only stock SOUL and merges skills).
+    ensureProfileComplete(hermesProfile, {});
+  }
+
+  const after = inspectOnDisk(hermesProfile);
+  if (!after.complete) {
+    return NextResponse.json(
+      {
+        error: `Provisioned profile "${hermesProfile}" is incomplete (${after.problems.join(", ")}). Account not created.`,
+      },
+      { status: 500 },
+    );
+  }
+
+  return await createUser(username, password, displayName, role, hermesProfile);
+}
+
+function inspectOnDisk(name: string): { complete: boolean; problems: string[] } {
+  const baseHome = resolveBaseHome();
+  const dir = profileDir(name, baseHome);
+  const problems: string[] = [];
+  if (!fs.existsSync(dir)) return { complete: false, problems: ["profile-dir-missing"] };
+  if (!fs.existsSync(path.join(dir, "config.yaml"))) problems.push("config.yaml-missing");
+  if (!fs.existsSync(path.join(dir, ".env"))) problems.push(".env-missing");
+  if (!fs.existsSync(path.join(dir, "SOUL.md"))) problems.push("SOUL.md-missing");
+  const skillCount = countLeafSkills(path.join(dir, "skills"));
+  const rootSkills = countLeafSkills(path.join(baseHome, "skills"));
+  if (skillCount < Math.max(1, Math.floor(rootSkills * 0.8)) && rootSkills > 0) {
+    problems.push(`skills-incomplete:${skillCount}/${rootSkills}`);
+  }
+  return { complete: problems.length === 0, problems };
+}
+
+async function createUser(
+  username: string,
+  password: string,
+  displayName: string | null,
+  role: string,
+  hermesProfile: string,
+) {
   const existing = await prisma.webUiUser.findFirst({
     where: { OR: [{ username }, { hermesProfile }] },
   });
   if (existing) {
     return NextResponse.json(
-      { error: existing.username === username ? "Username already taken." : "Hermes profile already assigned to another user." },
-      { status: 409 }
+      { error: existing.username === username ? "Username already taken." : "Swarm profile already assigned to another user." },
+      { status: 409 },
     );
   }
 

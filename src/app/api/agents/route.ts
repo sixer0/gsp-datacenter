@@ -7,7 +7,7 @@ import { join } from "path";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// ── GSP AI Team roster — 43 static profiles (Brahma/default + 42 gsp-*) ─────
+// ── GSP AI Team roster — 47 static profiles (Brahma/default + 46 gsp-*) ─────
 // plus DYNAMIC WebUI user-access entries from the WebUiUser table (see
 // webuiUserAgents() below) — a new WebUI signup automatically appears here.
 // level: 1 = orchestrator (Brahma), 2 = advisors, 3 = specialist groups, 9 = webui user
@@ -15,7 +15,7 @@ const ROSTER = [
   {
     id: "brahma",
     profile: "default",
-    name: "Brahma",
+    name: "Swarm",
     emoji: "🧠",
     role: "AI Orchestrator · Mission Control",
     model: "deepseek-v4-flash-0731",
@@ -439,6 +439,47 @@ const ROSTER = [
     model: "deepseek-v4-flash-0731",
     level: 3,
     group: "utility",
+  },
+  // Level 3 — Ekosistem Swarm (System Ops) (28-08-2026)
+  {
+    id: "gsp-system-manager",
+    profile: "gsp-system-manager",
+    name: "System Manager",
+    emoji: "🛠️",
+    role: "Pengaturan sistem ekosistem Swarm: config, .env, gateway, watchdog, autostart, ROSTER",
+    model: "auto-efficient",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-system-control",
+    profile: "gsp-system-control",
+    name: "System Control",
+    emoji: "🎛️",
+    role: "Kontrol, review & verifikasi setiap perubahan sistem ekosistem Swarm",
+    model: "auto-efficient",
+    level: 3,
+    group: "verification",
+  },
+  {
+    id: "gsp-skill-manager",
+    profile: "gsp-skill-manager",
+    name: "Skill Manager",
+    emoji: "📦",
+    role: "Distribusi skill on-demand dari request agent aktif; meminta Skill Creator jika belum dimiliki",
+    model: "auto-efficient",
+    level: 3,
+    group: "execution",
+  },
+  {
+    id: "gsp-skill-creator",
+    profile: "gsp-skill-creator",
+    name: "Skill Creator",
+    emoji: "🧩",
+    role: "CRUD skill & tools fleet: create, patch, edit, delete (registry kanonik/fleet)",
+    model: "auto-efficient",
+    level: 3,
+    group: "execution",
   },
 ];
 

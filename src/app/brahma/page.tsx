@@ -180,7 +180,7 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
             ? "Sent to approval inbox — awaiting your go-ahead."
             : profile
               ? `Queued for ${agents.find((a) => a.id === profile)?.name ?? profile}.`
-              : "Queued for Brahma."
+              : "Queued for Swarm."
         );
         onDone();
       } else {
@@ -202,13 +202,13 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); submit(); }
           }}
-          placeholder="Ask or tell Brahma to do something…"
+          placeholder="Ask or tell Swarm to do something…"
           className="flex-1 min-w-0 bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
         />
         <select
           value={profile}
           onChange={(e) => setProfile(e.target.value)}
-          title="Target profil eksekusi (kosong = Brahma)"
+          title="Target profil eksekusi (kosong = Swarm)"
           className="shrink-0 bg-[var(--surface-2)] border border-[var(--line)] rounded-[10px] px-2.5 py-2.5 text-[12px] text-[var(--text-2)] outline-none cursor-pointer max-w-[220px]"
         >
           <option value="">🧠 Brahma (default)</option>
@@ -427,7 +427,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
     if (!schedule.trim() || !prompt.trim()) return;
     post(
       { op: "create", schedule: schedule.trim(), prompt: prompt.trim() },
-      "Schedule sent to Brahma."
+      "Schedule sent to Swarm."
     ).then(() => {
       setSchedule("");
       setPrompt("");
@@ -435,7 +435,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
   };
   const runNow = () => {
     if (!runName.trim()) return;
-    post({ op: "run", name: runName.trim() }, "Run-now sent to Brahma.").then(() =>
+    post({ op: "run", name: runName.trim() }, "Run-now sent to Swarm.").then(() =>
       setRunName("")
     );
   };
@@ -520,7 +520,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={2}
-                  placeholder="Prompt — what should Brahma do on this cadence?"
+                  placeholder="Prompt — what should Swarm do on this cadence?"
                   className="w-full bg-transparent text-[13px] text-[var(--text-2)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] resize-y"
                 />
                 <Button
@@ -637,7 +637,7 @@ function BriefSettingsPanel({ onDone }: { onDone: () => void }) {
       ) : (
         <div className="flex flex-col gap-3.5">
           <p className="text-[12.5px] text-[var(--text-2)] leading-snug">
-            Brahma auto-generates a chief-of-staff brief each day (the “greeting” on your home
+            Swarm auto-generates a chief-of-staff brief each day (the “greeting” on your home
             dashboard). Control when it runs and what it asks for.
           </p>
 
@@ -737,7 +737,7 @@ function ActivityFeed({ events }: { events: Ev[] }) {
           <EmptyState
             icon={<ActivityIcon className="w-6 h-6" />}
             title="No recent activity"
-            hint="Events from Brahma and its agents will stream in here."
+            hint="Events from Swarm and its agents will stream in here."
           />
         </Panel>
       ) : (
@@ -835,7 +835,7 @@ export default function BrahmaPage() {
           <div>
             <Eyebrow>Agent runtime</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
-              Brahma
+              Swarm
             </h1>
           </div>
           <div className="flex items-center gap-2.5">

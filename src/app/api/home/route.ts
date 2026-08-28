@@ -11,9 +11,9 @@ const YT_CHANNEL_ID = process.env.YOUTUBE_CHANNEL_ID || "";
 const HERMES_KANBAN_BOARD = process.env.HERMES_BOARD || "default";
 
 const HERMES_KANBAN_DEMO_TASKS = [
-  { id: "demo-1", title: "Research Brahma outliers and keywords", assignee: "nova", status: "done", priority: 100 },
+  { id: "demo-1", title: "Research Swarm outliers and keywords", assignee: "nova", status: "done", priority: 100 },
   { id: "demo-2", title: "Create Notion To Film trigger", assignee: "brahma", status: "done", priority: 95 },
-  { id: "demo-3", title: "Build Kanban demo in GSP Agent Headquarter", assignee: "coding-agent", status: "running", priority: 90 },
+  { id: "demo-3", title: "Build Kanban demo in GSP Swarm HQ", assignee: "coding-agent", status: "running", priority: 90 },
   { id: "demo-4", title: "Write final filming script", assignee: "nova", status: "ready", priority: 85 },
   { id: "demo-5", title: "Prepare upload SEO package", assignee: "nova", status: "ready", priority: 80 },
   { id: "demo-6", title: "Design thumbnail concepts", assignee: "creative-agent", status: "ready", priority: 75 },
@@ -25,7 +25,7 @@ function formatBrahmaKanban(tasks: Array<{ id: string; title: string; assignee?:
     return acc;
   }, {});
   return {
-    board: "Brahma 24/7 Assistant Video",
+    board: "Swarm 24/7 Assistant Video",
     slug: HERMES_KANBAN_BOARD,
     source,
     total: tasks.length,
@@ -233,7 +233,7 @@ export async function GET() {
   const ytIdeasAll = ytIdeasResult.status === "fulfilled" ? ytIdeasResult.value : [];
   const topYoutubeIdeas = ytIdeasAll.slice(0, 3).map(i => ({ title: i.title, hook: i.hook || i.angle || "" }));
 
-  const hermesKanban = hermesKanbanResult.status === "fulfilled" ? hermesKanbanResult.value : { board: "Brahma 24/7 Assistant Video", slug: HERMES_KANBAN_BOARD, total: 0, counts: {}, tasks: [] };
+  const hermesKanban = hermesKanbanResult.status === "fulfilled" ? hermesKanbanResult.value : { board: "Swarm 24/7 Assistant Video", slug: HERMES_KANBAN_BOARD, total: 0, counts: {}, tasks: [] };
 
   // ─── Build ideas (Pixel) from DataStore ────────────────────────────────────
   let topBuildIdeas: { title: string; description: string; effort: string }[] = [];

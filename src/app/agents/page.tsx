@@ -157,7 +157,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
         <div className="h-80 overflow-y-auto p-4 space-y-3 flex flex-col" style={{ background: "var(--surface-1)" }}>
           {msgs.length === 0 && (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-[var(--text-3)] text-[13px] text-center">Ask {agent.name} anything.<br />They&apos;re connected to their Hermes profile.</p>
+              <p className="text-[var(--text-3)] text-[13px] text-center">Ask {agent.name} anything.<br />They&apos;re connected to their Swarm profile.</p>
             </div>
           )}
           {msgs.map((m, i) => (
@@ -275,7 +275,7 @@ export default function AgentsPage() {
           <div>
             <div className="eyebrow mb-2.5">Agent HQ</div>
             <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Your AI Team</h1>
-            <p className="text-[13px] text-[var(--text-3)] mt-3">{agents.filter((a) => !a.id.startsWith("webui-")).length} profil Hermes · terhubung langsung ke gateway</p>
+            <p className="text-[13px] text-[var(--text-3)] mt-3">{agents.filter((a) => !a.id.startsWith("webui-")).length} profil Swarm · terhubung langsung ke gateway</p>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex gap-7 text-center">

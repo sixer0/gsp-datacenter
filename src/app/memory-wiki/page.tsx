@@ -519,7 +519,7 @@ function EntryEditor({
               <Check className="w-6 h-6" style={{ color: "var(--up)" }} />
             </div>
             <p className="text-[15px] font-medium text-[var(--text)]">
-              Saved — Brahma will write it to memory
+              Saved — Swarm will write it to memory
             </p>
             <p className="mt-1.5 text-[12.5px] text-[var(--text-3)] max-w-xs">
               The bridge is committing this to the wiki. It will reappear here
@@ -533,7 +533,7 @@ function EntryEditor({
               <input
                 value={d.title}
                 onChange={(e) => set("title", e.target.value)}
-                placeholder="What should Brahma remember?"
+                placeholder="What should Swarm remember?"
                 className={inputCls}
                 autoFocus
               />
@@ -686,12 +686,12 @@ export default function MemoryWikiPage() {
         {/* Header */}
         <div className="hq-rise pt-4 pb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
           <div>
-            <Eyebrow>Brahma memory</Eyebrow>
+            <Eyebrow>Swarm memory</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
               Memory Wiki
             </h1>
             <p className="mt-3.5 text-[14px] text-[var(--text-2)] leading-relaxed max-w-lg">
-              Brahma&apos; long-term brain — everything it remembers, that you
+              Swarm&apos; long-term brain — everything it remembers, that you
               can browse, search, and correct.
             </p>
             <p className="num text-[11.5px] text-[var(--text-3)] mt-3">
@@ -788,7 +788,7 @@ export default function MemoryWikiPage() {
                 hint={
                   q || typeFilter !== "all"
                     ? "Try a different search or clear the filters."
-                    : "Once the Brahma bridge is running with a ~/.hermes/wiki, entries appear here."
+                    : "Once the Swarm bridge is running with a ~/.hermes/wiki, entries appear here."
                 }
                 action={
                   q || typeFilter !== "all" ? (

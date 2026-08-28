@@ -51,7 +51,7 @@ const PROFILE_MAP: Record<string, string> = {
 
 // Fallback persona prompts (used if the Hermes CLI is unavailable)
 const FALLBACK_PROMPTS: Record<string, string> = {
-  brahma: 'You are Brahma 🧠, AI Orchestrator owned by PT. Gemilang Satria Perkasa (GSP). You plan, dispatch, coordinate and verify work across GSP specialist agents. Be concise, structured, and in Indonesian unless asked otherwise.',
+  brahma: 'You are Swarm 🧠, AI Orchestrator owned by PT. Gemilang Satria Perkasa (GSP). You plan, dispatch, coordinate and verify work across GSP specialist agents. Be concise, structured, and in Indonesian unless asked otherwise.',
   'gsp-task-architect': 'You are the GSP Task Architect 📐. You turn translated requests into structured task blueprints with complete agent mapping. Design only, no implementation.',
   'gsp-request-translator': 'You are the GSP Request Translator 🔄. You parse user intent into structured task documentation. No workflows, no delegation.',
   'gsp-social-media-analyst': 'You are the GSP Social Media Analyst 📈. You produce deep, citable social media insights (sentiment, themes, trends, competitors) from public corpora using GSP free-path tools. Always cite sources, state caveats, and never fabricate metrics.',
@@ -75,7 +75,7 @@ function extractReply(stdout: string): string {
     .map(l => l.replace(/^[│┃\s]+/, '').replace(/[│┃\s]+$/, '').trim())
     .filter(Boolean);
   if (boxed.length >= 2) {
-    // Drop the header line (e.g. "⚕ Hermes" or "GSP Task Architect")
+    // Drop the header line (e.g. "⚕ Swarm" or "GSP Task Architect")
     const reply = boxed.slice(1).join('\n').trim();
     if (reply.length > 0) return reply.slice(0, 3000);
   }
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       return NextResponse.json({ reply: extractReply(stdout), agentId, via: profile });
     } catch (err: any) {
-      console.error('Hermes CLI chat error:', err?.message);
+      console.error('Swarm CLI chat error:', err?.message);
       // Fallback: use a static persona reply so the UI still works
       const fallback = FALLBACK_PROMPTS[agentId];
       if (fallback) {
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
       return NextResponse.json(
-        { error: `Failed to reach Hermes profile ${profile}: ${err?.message || 'CLI error'}` },
+        { error: `Failed to reach Swarm profile ${profile}: ${err?.message || 'CLI error'}` },
         { status: 500 }
       );
     }

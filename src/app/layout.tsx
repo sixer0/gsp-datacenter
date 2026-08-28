@@ -7,8 +7,8 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
-  title: "GSP Agent Headquarter",
-  description: "Your command center",
+  title: "GSP Swarm HQ",
+  description: "Synchronized Workforce of Agentic Reasoning Machines — mission control",
 };
 
 export const viewport: Viewport = {

@@ -41,7 +41,7 @@ const NAV: NavItem[] = [
   { label: "Ideas", href: "/ideas", icon: Lightbulb },
   { label: "Garden", href: "/garden", icon: Sprout },
   { label: "Tasks", href: "/tasks", icon: ListChecks },
-  { label: "Brahma", href: "/brahma", icon: Sparkles },
+  { label: "Swarm", href: "/brahma", icon: Sparkles },
 ];
 
 type Row =
@@ -209,7 +209,7 @@ export function CommandPalette() {
               setQuery(e.target.value);
               setActive(0);
             }}
-            placeholder="Search, or ask Brahma…"
+            placeholder="Search, or ask Swarm…"
             spellCheck={false}
             autoComplete="off"
             className="num flex-1 bg-transparent border-0 outline-none text-[15px] text-[var(--text)] placeholder-[var(--text-3)]"
@@ -244,7 +244,7 @@ export function CommandPalette() {
 
           {dispatchRow && (
             <div className="px-2 pt-1">
-              <div className="eyebrow px-3 py-1.5">Dispatch to Brahma</div>
+              <div className="eyebrow px-3 py-1.5">Dispatch to Swarm</div>
               {(() => {
                 const idx = rows.indexOf(dispatchRow);
                 return (
@@ -265,7 +265,7 @@ export function CommandPalette() {
                       <span style={{ color: "var(--up)" }}>Dispatched ✓</span>
                     ) : (
                       <span className="text-[var(--text)] truncate">
-                        Ask Brahma:{" "}
+                        Ask Swarm:{" "}
                         <span className="text-[var(--text-2)]">
                           &ldquo;{dispatchRow.query}&rdquo;
                         </span>
