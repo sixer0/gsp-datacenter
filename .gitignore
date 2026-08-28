@@ -51,3 +51,10 @@ next-env.d.ts
 hq-dev.*.log
 hermes-bridge/bridge.*.log
 hermes-bridge/node_modules/
+
+# TLS certs HQ (private key, jangan pernah commit)
+/certs/
+
+# runtime bridge
+/hermes-bridge/200
+/hermes-bridge/db_check*.cjs
