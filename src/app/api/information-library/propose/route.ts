@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const attachments = Array.isArray(b.attachments)
     ? b.attachments
         .filter((a: unknown) => a && typeof a === "object")
-        .map((a) => ({
+        .map((a: unknown) => ({
           name: String((a as { name?: string }).name || "lampiran").slice(0, 150),
           kind: String((a as { kind?: string }).kind || "url"),
           value: String((a as { value?: string }).value || "").slice(0, 2000),
