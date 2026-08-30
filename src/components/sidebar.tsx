@@ -20,6 +20,7 @@ import {
   Users,
   Menu,
   X,
+  Activity,
 } from "lucide-react";
 
 const navGroups = [
@@ -30,6 +31,7 @@ const navGroups = [
       { href: "/brahma", label: "Swarm", icon: Cpu },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
       { href: "/orchestration", label: "Orchestration", icon: Share2 },
+      { href: "/dispatch-kpi", label: "Dispatch KPI", icon: Activity },
     ],
   },
   {
