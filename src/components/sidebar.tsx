@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { UserChip } from "@/components/user-chip";
 import {
   Home,
   Twitter,
@@ -224,7 +225,8 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="px-4 py-4 border-t border-[var(--line)]">
+        <div className="px-4 py-4 border-t border-[var(--line)] space-y-3">
+          <UserChip />
           <div className="flex items-center gap-2 text-[var(--text-3)] text-[11.5px]">
             <span className="relative flex w-1.5 h-1.5">
               <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--up)] opacity-60 animate-ping" />
