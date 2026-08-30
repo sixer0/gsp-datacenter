@@ -20,7 +20,15 @@
 | `src/app/login/page.tsx` (ganti) | Form username/password; Google OAuth dihapus dari UI (env-nya pun kosong). |
 | `src/components/user-chip.tsx` + `sidebar.tsx` | Nama+role user & tombol logout di footer sidebar. |
 
-## Verifikasi (post-build, post-restart)
+## Verifikasi (post-build, post-restart) — HASIL 30-08: 14/14 PASS
+
+Eksekusi: `npm run build` → `node scripts/hq_restart.mjs` → `node scripts/verify_login_hq.mjs`.
+Bukti: V1a 401 · V1b 429 setelah 10 percobaan · V1c throttle per-IP · V2a cookie httpOnly ·
+V2b `GET /` 200 · V2c `/api/auth/me` = hqtest3008/USER · V3a cookie palsu 401 · V3b tanpa sesi → /login ·
+V3c API tanpa sesi 401 · V4a rbac/login+token 200 (jalur WebUI PULIH) · V4b tanpa token 401 ·
+V5a x-internal-secret 200 · V5b logout cabut cookie · V6 akun uji TERHAPUS (via /api/user-access DELETE;
+catatan: `/api/brahma/rbac/users` list tidak ada — hanya users/[id]).
+E2E WebUI 9012: `/api/rbac/status` → enabled:true, signup_enabled:true.
 
 1. `POST /api/auth/login` password salah → 401; throttle → 429 setelah >10.
 2. Login akun uji (dibuat via endpoint rbac/signup dgn token, lalu DIHAPUS) → cookie → `GET /` 200 (bukan 307), `/api/auth/me` menampilkan user.
