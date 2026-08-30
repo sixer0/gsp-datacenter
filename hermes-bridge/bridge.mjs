@@ -50,7 +50,7 @@ if (DB_URL.startsWith("prisma://") || DB_URL.startsWith("prisma+")) {
 }
 // Cloud Postgres (Prisma Postgres/Neon/Supabase/RDS) needs SSL; localhost doesn't.
 const isLocal = /@(localhost|127\.0\.0\.1)/.test(DB_URL);
-const pool = new pg.Pool({ connectionString: DB_URL, max: 4, ssl: isLocal ? undefined : { rejectUnauthorized: false } });
+const pool = new pg.Pool({ connectionString: DB_URL, max: 4, ssl: isLocal ? undefined : { rejectUnauthorized: process.env.DB_SSL_NO_VERIFY !== '1' } });
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const q = (text, params) => pool.query(text, params);
@@ -64,7 +64,8 @@ const q = (text, params) => pool.query(text, params);
 async function hermes(args, { timeout = 30000 } = {}) {
   return await new Promise((resolve, reject) => {
     const child = spawn(HERMES, args, { windowsHide: true });
-    let stdout = "", settled = false;
+    let stdout = "", stderr = "", settled = false;
+    const MAX_OUT = 1024 * 1024; // SEC-007: cap 1MB stdout
     const killTree = () => {
       try { execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], () => {}); } catch { /* sudah mati */ }
     };
@@ -74,8 +75,8 @@ async function hermes(args, { timeout = 30000 } = {}) {
       killTree();
       reject(new Error(`hermes CLI timeout after ${timeout}ms: ${args.join(" ").slice(0, 120)}`));
     }, timeout);
-    child.stdout.on("data", (d) => { stdout += d; });
-    child.stderr.on("data", (d) => { /* dikumpulkan via exit code error di bawah */ });
+    child.stdout.on("data", (d) => { if (stdout.length < MAX_OUT) stdout += d; }); // SEC-007
+    child.stderr.on("data", (d) => { if (stderr.length < 8192) stderr += d; }); // SEC-007
     child.on("error", (e) => {
       if (settled) return;
       settled = true; clearTimeout(timer);
@@ -87,7 +88,7 @@ async function hermes(args, { timeout = 30000 } = {}) {
       if (code === 0) resolve(stdout);
       else {
         const err = new Error(`Command failed: ${HERMES} ${args.join(" ").slice(0, 120)} (exit ${code})`);
-        err.stderr = stdout.slice(-600);
+        err.stderr = (stderr || stdout.slice(-600)); // SEC-007: stderr asli didahulukan
         reject(err);
       }
     });
@@ -139,17 +140,21 @@ async function setAgentState(id, { status, currentTask = null, action = null }) 
 }
 
 // Status semantik workflow dari respons agent (kontrak fleet: STATUS: complete|blocked|needs-review|failed)
+// Aturan asignor (teguran user 29-08-2026): HANYA asignor yang boleh menyatakan
+// task done — asignee TIDAK PERNAH self-claim DONE, termasuk via marker
+// "STATUS: complete". Semua penyelesaian agent → needs-review (review gate).
 function semanticStatus(result) {
   const t = (result || "").trim();
   const m = t.match(/STATUS:\s*(complete|blocked|needs-review|failed|rejected)/i);
   if (m) {
     const s = m[1].toLowerCase();
-    return s === "complete" ? "done" : s;
+    return s === "complete" || s === "needs-review" ? "needs-review" : s;
   }
   if (/RT_BYPASS|KODE:\s*BLOCKED|^BLOCKED[:：]/im.test(t)) return "blocked";
   if (/NEEDS[-\s_]?REVIEW/i.test(t)) return "needs-review";
   if (/^FAILED[:：]/im.test(t) || /^ERROR[:：]/im.test(t)) return "failed";
-  return "done";
+  // DEFAULT: hasil tanpa STATUS eksplisit dianggap perlu review (DONE hanya oleh asignor)
+  return "needs-review";
 }
 
 async function setStore(key, data) {
@@ -191,15 +196,19 @@ async function closeKanbanCard(requestId, taskId, orchStatus, result) {
       // kartu kontrak eksplisit (hermesTaskId / kartu yang dibuat bridge)
       t = { id: taskId };
     } else {
-      const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 15000 });
+      const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 45000 });
       const tasks = JSON.parse(out || "[]");
       t = (Array.isArray(tasks) ? tasks : []).find((x) => (x.body || "").includes(requestId));
     }
     if (!t || !t.id) return;
     if (orchStatus === "done") {
-      await hermes(["kanban", "--board", BOARD, "complete", t.id, "--result", (result || "").slice(0, 300)], { timeout: 15000 });
+      await hermes(["kanban", "--board", BOARD, "complete", t.id, "--result", (result || "").slice(0, 300)], { timeout: 45000 });
+    } else if (orchStatus === "needs-review") {
+      // REVIEW GATE: kartu masuk antrean review asignor (native kanban review flow) —
+      // hanya asignor yang mempromosikan ke done via request-changes/approve.
+      await hermes(["kanban", "--board", BOARD, "request-review", t.id, "--summary", (result || "").slice(0, 280)], { timeout: 45000 });
     } else {
-      await hermes(["kanban", "--board", BOARD, "block", t.id], { timeout: 15000 });
+      await hermes(["kanban", "--board", BOARD, "block", t.id], { timeout: 45000 });
     }
     log("kanban close:", t.id, orchStatus);
   } catch (e) { log("kanban close failed:", e.message.split("\n")[0]); }
@@ -210,7 +219,7 @@ async function mirrorKanban() {
   let tasks = [];
   try {
     // NB: this Brahma CLI wants --board BEFORE the subcommand.
-    const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 15000 });
+    const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 45000 });
     const parsed = JSON.parse(out || "[]");
     tasks = Array.isArray(parsed) ? parsed : parsed.tasks || [];
   } catch (e) { log("kanban list failed:", e.message.split("\n")[0]); return; }
@@ -241,7 +250,7 @@ async function mirrorKanban() {
 
 async function mirrorCrons() {
   try {
-    const out = await hermes(["cron", "list", "--all"], { timeout: 15000 });
+    const out = await hermes(["cron", "list", "--all"], { timeout: 45000 });
     const lines = out.split("\n").map((l) => l.trimEnd()).filter(Boolean);
     await setStore("hermes-crons", { jobs: lines, raw: out.slice(0, 8000), syncedAt: new Date().toISOString() });
   } catch (e) { log("cron list failed:", e.message.split("\n")[0]); }
@@ -302,7 +311,7 @@ function parseInsights(out) {
 async function mirrorCost() {
   for (const args of [["insights", "--days", "7"], ["insights"]]) {
     try {
-      const out = await hermes(args, { timeout: 15000 });
+      const out = await hermes(args, { timeout: 45000 });
       await setStore("hermes-cost", parseInsights(out));
       return;
     } catch { /* try next arg shape */ }
@@ -367,8 +376,9 @@ async function mirrorWiki() {
        body, fm.valid_from || null, fm.valid_to || null]
     );
   }
+  // SEC-008: hasil walk kosong padahal ada data sebelumnya = sinyal error I/O,
+  // BUKAN perintah wipe. Prune hanya bila seen non-kosong.
   if (seen.size) await q(`DELETE FROM "HermesMemory" WHERE id <> ALL($1::text[])`, [[...seen]]);
-  else await q(`DELETE FROM "HermesMemory"`);
 }
 function writeWikiEntry(e) {
   const rel = e.path || `${e.type || "note"}s/${e.id}.md`;
@@ -492,6 +502,10 @@ function trimResult(result) {
 
 async function runRequest(r) {
   await q(`UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id]);
+  return runRequestClaimed(r);
+}
+// SEC-005: varian untuk request yang SUDAH diklaim atomik oleh lane (status sudah 'running').
+async function runRequestClaimed(r) {
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind, profile: r.profile || null } });
   // Orchestration telemetry: dispatch brahma → profile (hanya jika target profil diisi)
   const isProfile = !!(r.profile && r.profile !== "default" && r.profile !== "brahma");
@@ -522,6 +536,13 @@ async function runRequest(r) {
     } else if (r.kind.startsWith("cron.")) {
       const op = r.kind.split(".")[1];
       const a = JSON.parse(r.prompt || "{}");
+      // SEC-010: validasi bentuk agar nilai user tak bisa jadi flag CLI / schedule rusak
+      const safeId = (v) => (typeof v === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(v));
+      const safeSched = (v) => (typeof v === "string" && /^[0-9*,\/-]{1,64}$/.test(v) || /^every \d+[smhd]$/.test(v || ""));
+      if (["run","pause","resume","remove","edit"].includes(op) && !safeId(a.id || a.name))
+        throw new Error("cron op: id/name tidak valid");
+      if (op === "create" && !safeSched(a.schedule))
+        throw new Error("cron create: schedule tidak valid");
       const argv =
         op === "create" ? ["cron", "create", a.schedule, a.prompt || a.name].filter(Boolean)
         : op === "run"    ? ["cron", "run", a.id || a.name]
@@ -546,27 +567,27 @@ async function runRequest(r) {
     } else {
       throw new Error(`unknown kind ${r.kind}`);
     }
-    await q(`UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      [r.id, trimResult(result)]);
-    await emit("run", `Done: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
+    // REVIEW GATE (teguran user 29-08-2026): asignee tidak pernah self-claim DONE.
+    // oneshot/chat (hasil kerja agent) → selalu needs-review; hanya asignor yang
+    // bisa menutup done via PATCH /api/brahma/requests/[id] action=force-done.
+    // Operasi infra deterministik (kanban/cron/memory.write/briefing) tetap done otomatis.
+    const infraKind = !["oneshot", "chat"].includes(r.kind);
+    const sem = infraKind ? "done" : semanticStatus(result);
+    await q(`UPDATE "AgentRequest" SET status=$2, result=$3, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+      [r.id, sem, trimResult(result)]);
+    await emit("run", `${sem === "needs-review" ? "Awaiting review" : sem === "done" ? "Done" : sem === "blocked" ? "Blocked" : "Needs attention"}: ${r.title}`, {
+      level: sem === "needs-review" || sem === "done" ? "up" : "warn",
+      detail: result.slice(0, 400),
+      meta: { requestId: r.id, orchStatus: sem },
+    });
     if (isProfile) {
-      // status semantik dari respons agent (blocked/needs-review/failed → edge ikut berubah)
-      const sem = semanticStatus(result);
-      const orchStatus = sem === "done" ? "done" : sem;
-      await closeOrch(r.id, orchStatus, result.slice(0, 400));
-      await closeKanbanCard(r.id, r.hermesTaskId || kanbanCardId, orchStatus, result); // tutup kartu kanban (done/blocked)
+      await closeOrch(r.id, sem, result.slice(0, 400));
+      await closeKanbanCard(r.id, r.hermesTaskId || kanbanCardId, sem, result); // done=complete, needs-review=request-review, blocked/failed=block
       await setAgentState(toAgent, {
         status: "idle",
         currentTask: null,
-        action: `${orchStatus === "done" ? "Selesai" : `Selesai (${orchStatus})`}: ${r.title.slice(0, 80)}`,
+        action: `${sem === "needs-review" ? "Menunggu review asignor" : sem === "done" ? "Selesai" : `Selesai (${sem})`}: ${r.title.slice(0, 80)}`,
       });
-      if (orchStatus !== "done") {
-        await emit("run", `${orchStatus === "blocked" ? "Blocked" : "Needs attention"}: ${r.title}`, {
-          level: orchStatus === "blocked" ? "warn" : "warn",
-          detail: result.slice(0, 400),
-          meta: { requestId: r.id, orchStatus },
-        });
-      }
     }
   } catch (e) {
     const msg = (e.stderr || e.message || "error").toString().split("\n")[0].slice(0, 600);
@@ -586,10 +607,14 @@ async function processQueue() {
   // pertanyaan user dijawab seketika tanpa menunggu antrean rebuild selesai).
   for (;;) {
     const { rows } = await q(
-      `SELECT * FROM "AgentRequest" WHERE status IN ('queued','approved') AND title NOT LIKE 'Ask Librarian%' ORDER BY "createdAt" ASC LIMIT 1`
-    );
+      `UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now()
+       WHERE id = (SELECT id FROM "AgentRequest"
+                   WHERE status IN ('queued','approved') AND title NOT LIKE 'Ask Librarian%'
+                   ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED)
+       RETURNING *`
+    ); // SEC-005: klaim atomik anti double-process lintas instance
     if (!rows.length) break;
-    await runRequest(rows[0]);
+    await runRequestClaimed(rows[0]);
     await new Promise((res) => setTimeout(res, 300));
   }
 }
@@ -600,10 +625,14 @@ async function askLane() {
   for (;;) {
     try {
       const { rows } = await q(
-        `SELECT * FROM "AgentRequest" WHERE status='queued' AND title LIKE 'Ask Librarian%' ORDER BY "createdAt" ASC LIMIT 1`
-      );
+        `UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now()
+         WHERE id = (SELECT id FROM "AgentRequest"
+                     WHERE status IN ('queued','approved') AND title LIKE 'Ask Librarian%'
+                     ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED)
+         RETURNING *`
+      ); // SEC-005b: askLane atomik + sertakan 'approved' (bug: ask sideEffecting stuck permanen)
       if (!rows.length) { await new Promise((res) => setTimeout(res, POLL_MS)); continue; }
-      await runRequest(rows[0]);
+      await runRequestClaimed(rows[0]);
       await new Promise((res) => setTimeout(res, 300));
     } catch (e) {
       log("ask lane err", e.message);
@@ -633,6 +662,20 @@ async function recoverZombies() {
     );
     if (rows.length) log("recovered zombie running requests:", rows.map((r) => r.id).join(","));
   } catch (e) { log("recoverZombies err", e.message); }
+  // Edge orkestrasi yang tertinggal 'running' padahal request parent sudah terminal
+  // (audit 29-08-2026: 3 edge gsp-librarian menggantung sejak 24-08) — tutup agar
+  // halaman /orchestration tidak menampilkan edge zombie.
+  try {
+    const { rows: z } = await q(
+      `UPDATE "OrchestrationRecord" o SET status='failed',
+         message = COALESCE(o.message,'') || ' [zombie edge ditutup recoverZombies: parent request terminal]',
+         "updatedAt" = now()
+       WHERE o.status='running' AND EXISTS (
+         SELECT 1 FROM "AgentRequest" r WHERE r.id = o."runId" AND r.status <> 'running'
+       ) RETURNING o."runId"`
+    );
+    if (z.length) log("recovered zombie orchestration edges:", z.map((r) => r.runId).join(","));
+  } catch (e) { log("recoverZombies orch err", e.message); }
 }
 
 async function main() {

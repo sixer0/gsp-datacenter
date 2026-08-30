@@ -13,7 +13,8 @@ export async function middleware(request: NextRequest) {
   // Skip auth for NextAuth routes, assets, login, and public embeddable charts
   if (
     pathname.startsWith('/api/auth/') ||
-    pathname.startsWith('/api/garden') ||
+    // SEC-004 fix (30-08): hanya GET /api/garden publik; PUT butuh sesi.
+    (pathname.startsWith('/api/garden') && request.method === 'GET') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon.ico') ||
     pathname === '/login'
@@ -22,9 +23,17 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow internal agent calls with shared secret
+  // SEC-006 fix (30-08): perbandingan constant-time (konsisten webui-rbac).
   const internalSecret = request.headers.get('x-internal-secret');
-  if (internalSecret && internalSecret === process.env.INTERNAL_API_SECRET) {
-    return NextResponse.next();
+  const expectedSecret = process.env.INTERNAL_API_SECRET;
+  if (internalSecret && expectedSecret) {
+    const enc = new TextEncoder();
+    const a = enc.encode(internalSecret); const b = enc.encode(expectedSecret);
+    if (a.length === b.length) {
+      let diff = 0;
+      for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+      if (diff === 0) return NextResponse.next();
+    }
   }
 
   // Check NextAuth JWT session

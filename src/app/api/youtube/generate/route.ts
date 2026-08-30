@@ -31,6 +31,12 @@ function braveSearch(query: string, braveKey: string, count = 5): { title: strin
 }
 
 function fetchArticle(url: string): string {
+  // SEC-002 fix (30-08): validasi keras sebelum menyentuh shell — hanya http(s),
+  // tanpa kredensial URL, tanpa karakter shell-metacharacter sama sekali.
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return ""; }
+  if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password) return "";
+  if (!/^[A-Za-z0-9._~:/?#@!$&'*+,;=%()-]+$/.test(url)) return "";
   try {
     // Fetch the page and extract text content (strip HTML tags, limit to 3000 chars)
     const raw = execSync(
