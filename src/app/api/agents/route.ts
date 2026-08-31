@@ -1,487 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { readdirSync, readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { getRoster, GROUP_LABELS } from "@/lib/agent-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// ── GSP AI Team roster — 47 static profiles (Brahma/default + 46 gsp-*) ─────
-// plus DYNAMIC WebUI user-access entries from the WebUiUser table (see
-// webuiUserAgents() below) — a new WebUI signup automatically appears here.
+// ── GSP AI Team roster — DYNAMIC from disk (audit W1.3+W3.3) ────────────
+// Dibangun src/lib/agent-roster.ts: satu entri per folder profil Hermes
+// (C:/Users/TRIAL/AppData/Local/hermes/profiles/*) + label model dari
+// config.yaml tiap profil, cache 60s, fallback statis-safe. Menggantikan
+// array ROSTER statis lama (entri hantu gsp-vendor-crawler-orchestrator
+// N-1 + 38 label deepseek basi N-2 + 7 profil drift N-3 ikut hilang).
+// Tetap ada entri DINAMIS tambahan dari tabel WebUiUser (webuiUserAgents()
+// di bawah) — signup WebUI baru otomatis muncul tanpa edit kode.
 // level: 1 = orchestrator (Brahma), 2 = advisors, 3 = specialist groups, 9 = webui user
-const ROSTER = [
-  {
-    id: "brahma",
-    profile: "default",
-    name: "Swarm",
-    emoji: "🧠",
-    role: "AI Orchestrator · Mission Control",
-    model: "deepseek-v4-flash-0731",
-    level: 1,
-    group: "core",
-  },
-  // Level 2 — Penasihat Utama
-  {
-    id: "gsp-task-architect",
-    profile: "gsp-task-architect",
-    name: "Task Architect",
-    emoji: "📐",
-    role: "Perancang Cetak Biru Tugas · Blueprint",
-    model: "deepseek-v4-flash-0731",
-    level: 2,
-    group: "advisor",
-  },
-  {
-    id: "gsp-request-translator",
-    profile: "gsp-request-translator",
-    name: "Request Translator",
-    emoji: "🔄",
-    role: "Penerjemah Permintaan · Intent Parsing",
-    model: "deepseek-v4-flash-0731",
-    level: 2,
-    group: "advisor",
-  },
-  // Level 2 — Penasihat Utama · Library Gatekeeper & Verifikator Independen
-  {
-    id: "gsp-librarian",
-    profile: "gsp-librarian",
-    name: "GSP Librarian",
-    emoji: "📚",
-    role: "Gatekeeper Information Library: kurasi, attest, promote vault → wiki",
-    model: "deepseek/deepseek-v4-flash-0731",
-    level: 2,
-    group: "advisor",
-  },
-  {
-    id: "gsp-custodian",
-    profile: "gsp-custodian",
-    name: "GSP Custodian",
-    emoji: "🛡️",
-    role: "Verifikator independen hasil analisa library (vault proposals) — penulis bukan verifikator",
-    model: "deepseek/deepseek-v4-flash-0731",
-    level: 2,
-    group: "advisor",
-  },
-  // Level 3 — Kontroler
-  {
-    id: "gsp-vendor-crawler-orchestrator",
-    profile: "gsp-vendor-crawler-orchestrator",
-    name: "Vendor Crawler Orchestrator",
-    emoji: "🕸️",
-    role: "Intelijen Vendor/Expo · Delegasi Paralel",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "controller",
-  },
-  // Level 3 — Analisis & Riset
-  {
-    id: "gsp-explore",
-    profile: "gsp-explore",
-    name: "Explore",
-    emoji: "🔍",
-    role: "Pemetaan Struktur Codebase",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-data-collector",
-    profile: "gsp-data-collector",
-    name: "Data Collector",
-    emoji: "📥",
-    role: "Pengumpulan Data Sistematis",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-data-analyst",
-    profile: "gsp-data-analyst",
-    name: "Data Analyst",
-    emoji: "📊",
-    role: "Sintesis & Spesifikasi",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-image-analyst",
-    profile: "gsp-image-analyst",
-    name: "Image Analyst",
-    emoji: "👁️",
-    role: "Analisis & Ekstraksi Gambar (Vision)",
-    model: "qwen3.7-flash",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-document-analyst",
-    profile: "gsp-document-analyst",
-    name: "Document Analyst",
-    emoji: "🧾",
-    role: "Penilaian Kualitas & Relevansi Dokumen",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-pm-analyst",
-    profile: "gsp-pm-analyst",
-    name: "PM Analyst",
-    emoji: "🎯",
-    role: "Analisis Kebutuhan PM/BA",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-social-media-analyst",
-    profile: "gsp-social-media-analyst",
-    name: "Social Media Analyst",
-    emoji: "📈",
-    role: "Insight Sosial Media · Sentimen · Tren · Laporan Tersitasi",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-architecture-specialist",
-    profile: "gsp-architecture-specialist",
-    name: "Architecture Specialist",
-    emoji: "🏛️",
-    role: "Arsitek Bangunan Senior · Desain, Regulasi & Fisika Bangunan",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  // Level 3 — Eksekusi
-  {
-    id: "gsp-coder-execution",
-    profile: "gsp-coder-execution",
-    name: "Coder Execution",
-    emoji: "💻",
-    role: "Implementasi Kode · Test-First",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-database-specialist",
-    profile: "gsp-database-specialist",
-    name: "Database Specialist",
-    emoji: "🗄️",
-    role: "Skema · Migrasi · Kueri · Seed",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-docker-specialist",
-    profile: "gsp-docker-specialist",
-    name: "Docker Specialist",
-    emoji: "🐳",
-    role: "Kontainer & Docker Compose",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-git-specialist",
-    profile: "gsp-git-specialist",
-    name: "Git Specialist",
-    emoji: "🌿",
-    role: "Status · Diff · Branch · Release",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-design-system-specialist",
-    profile: "gsp-design-system-specialist",
-    name: "Design System Specialist",
-    emoji: "🎨",
-    role: "Design System Calibration (Vision)",
-    model: "qwen3.7-flash",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-image-specialist",
-    profile: "gsp-image-specialist",
-    name: "Image Specialist",
-    emoji: "🖼️",
-    role: "Pembuatan & Editing Gambar (Vision)",
-    model: "qwen3.7-flash",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-image-prompt-specialist",
-    profile: "gsp-image-prompt-specialist",
-    name: "Image Prompt Specialist",
-    emoji: "✨",
-    role: "Prompt Eksekusi Slide/Gambar (Vision)",
-    model: "qwen3.7-flash",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-vendor-crawler-specialist",
-    profile: "gsp-vendor-crawler-specialist",
-    name: "Vendor Crawler Specialist",
-    emoji: "🏪",
-    role: "Pipeline Intelijen Vendor 6 Tahap",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-social-media-crawler",
-    profile: "gsp-social-media-crawler",
-    name: "Social Media Crawler",
-    emoji: "🕷️",
-    role: "Koleksi Sosial Media Multi-Platform · Corpus + Provenance",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-document-writer",
-    profile: "gsp-document-writer",
-    name: "Document Writer",
-    emoji: "✍️",
-    role: "Produksi PDF · DOCX · XLSX · PPTX",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-document-converter",
-    profile: "gsp-document-converter",
-    name: "Document Converter",
-    emoji: "🔁",
-    role: "Konversi Antar Format Dokumen",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-document-translator",
-    profile: "gsp-document-translator",
-    name: "Document Translator",
-    emoji: "🌐",
-    role: "Terjemahan Lintas Bahasa",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-pm-writer",
-    profile: "gsp-pm-writer",
-    name: "PM Writer",
-    emoji: "📝",
-    role: "Laporan & Presentasi PM/BA",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  // Level 3 — Verifikasi
-  {
-    id: "gsp-verifier",
-    profile: "gsp-verifier",
-    name: "Verifier",
-    emoji: "✅",
-    role: "Verifikasi Fungsional · Regresi",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-senior-code-reviewer",
-    profile: "gsp-senior-code-reviewer",
-    name: "Senior Code Reviewer",
-    emoji: "🔎",
-    role: "Duplikasi · Maintainability · Dependensi",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-security-review",
-    profile: "gsp-security-review",
-    name: "Security Review",
-    emoji: "🛡️",
-    role: "Pemindaian Kerentanan · OWASP",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-test-expert",
-    profile: "gsp-test-expert",
-    name: "Test Expert",
-    emoji: "🧪",
-    role: "Strategi & Generasi Pengujian",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-document-reviewer",
-    profile: "gsp-document-reviewer",
-    name: "Document Reviewer",
-    emoji: "📖",
-    role: "Review & Revisi Dokumen",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-pm-verifier",
-    profile: "gsp-pm-verifier",
-    name: "PM Verifier",
-    emoji: "✔️",
-    role: "Kelengkapan · Kualitas · Kelayakan",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "verification",
-  },
-  // Level 3 — Spesialis Engineering EKAS (24-08-2026)
-  {
-    id: "gsp-engineering-analyst",
-    profile: "gsp-engineering-analyst",
-    name: "Engineering Analyst",
-    emoji: "🔬",
-    role: "Analisis teknik EKAS: angka/rumus/ambang berujukan, verifikasi hitungan & dokumen",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "analysis",
-  },
-  {
-    id: "gsp-vss-specialist",
-    profile: "gsp-vss-specialist",
-    name: "VSS Specialist",
-    emoji: "🎥",
-    role: "Perancang CCTV/VSS: lensa, bitrate, kapasitas, interoperabilitas ONVIF",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-fiber-specialist",
-    profile: "gsp-fiber-specialist",
-    name: "Fiber Optic Specialist",
-    emoji: "🔆",
-    role: "Loss budget serat optik, uji OTDR/OLTS, IEC 61280-4-2, berita acara",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-power-specialist",
-    profile: "gsp-power-specialist",
-    name: "Power Backup Specialist",
-    emoji: "⚡",
-    role: "Sizing UPS/baterai/genset, IEEE 1188, IEC 62485-2, interval RCM",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-grounding-specialist",
-    profile: "gsp-grounding-specialist",
-    name: "Grounding & Lightning Specialist",
-    emoji: "⛱️",
-    role: "Pembumian & proteksi petir: Wenner, fall-of-potential, rolling sphere",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-security-specialist",
-    profile: "gsp-security-specialist",
-    name: "Security & Forensics Specialist",
-    emoji: "🛡️",
-    role: "Bukti digital, rantai kustodi, DEMS, keamanan siber",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-infra-specialist",
-    profile: "gsp-infra-specialist",
-    name: "IT Infrastructure Specialist",
-    emoji: "🖥️",
-    role: "Konfigurasi jaringan/storage/server, RAID, BDP, workbook audit",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "execution",
-  },
-  // Level 3 — Utilitas & Perencanaan
-  {
-    id: "gsp-document-reader",
-    profile: "gsp-document-reader",
-    name: "Document Reader",
-    emoji: "📚",
-    role: "Parse PDF · DOCX · XLSX · PPTX",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "utility",
-  },
-  {
-    id: "gsp-pm-planner",
-    profile: "gsp-pm-planner",
-    name: "PM Planner",
-    emoji: "🗺️",
-    role: "Rencana Implementasi Terlacak",
-    model: "deepseek-v4-flash-0731",
-    level: 3,
-    group: "utility",
-  },
-  // Level 3 — Ekosistem Swarm (System Ops) (28-08-2026)
-  {
-    id: "gsp-system-manager",
-    profile: "gsp-system-manager",
-    name: "System Manager",
-    emoji: "🛠️",
-    role: "Pengaturan sistem ekosistem Swarm: config, .env, gateway, watchdog, autostart, ROSTER",
-    model: "auto-efficient",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-system-control",
-    profile: "gsp-system-control",
-    name: "System Control",
-    emoji: "🎛️",
-    role: "Kontrol, review & verifikasi setiap perubahan sistem ekosistem Swarm",
-    model: "auto-efficient",
-    level: 3,
-    group: "verification",
-  },
-  {
-    id: "gsp-skill-manager",
-    profile: "gsp-skill-manager",
-    name: "Skill Manager",
-    emoji: "📦",
-    role: "Distribusi skill on-demand dari request agent aktif; meminta Skill Creator jika belum dimiliki",
-    model: "auto-efficient",
-    level: 3,
-    group: "execution",
-  },
-  {
-    id: "gsp-skill-creator",
-    profile: "gsp-skill-creator",
-    name: "Skill Creator",
-    emoji: "🧩",
-    role: "CRUD skill & tools fleet: create, patch, edit, delete (registry kanonik/fleet)",
-    model: "auto-efficient",
-    level: 3,
-    group: "execution",
-  },
-];
 
 // ── Live gateway status from watchdog PID files ─────────────────────────────
 const GATEWAY_LOG_DIR = join(homedir(), ".hermes", "gateway-logs");
@@ -523,20 +58,13 @@ function liveStatusFor(profile: string): { status: string; pid?: number } {
   } catch {}
   return { status: "offline" };
 }
+
 
-const GROUP_LABELS: Record<string, string> = {
-  core: "Core Orchestrator",
-  advisor: "Tim Penasihat Utama",
-  controller: "Kontroler",
-  analysis: "Analisis & Riset",
-  execution: "Eksekusi",
-  verification: "Verifikasi",
-  utility: "Utilitas & Perencanaan",
-  "user-access": "WebUI User Access",
-};
-
-// Profiles already in the static ROSTER (by profile name).
-const ROSTER_PROFILES = new Set(ROSTER.map((a) => a.profile).filter(Boolean));
+// Profiles already in the (dynamic) roster — snapshot per call; getRoster()
+// is cached 60s so this stays cheap.
+function rosterProfiles(): Set<string> {
+  return new Set(getRoster().map((a) => a.profile));
+}
 
 // WebUI RBAC users (WebUiUser table) get a dynamic agent entry so a fresh
 // signup shows up in the Agents list & Orchestration map without manual edits.
@@ -545,7 +73,7 @@ const ROSTER_PROFILES = new Set(ROSTER.map((a) => a.profile).filter(Boolean));
 async function webuiUserAgents(stateMap: Record<string, any>) {
   const users = await prisma.webUiUser.findMany({ orderBy: { createdAt: "asc" } });
   return users
-    .filter((u) => !ROSTER_PROFILES.has(u.hermesProfile))
+    .filter((u) => !rosterProfiles().has(u.hermesProfile))
     .map((u) => {
       const s = stateMap[u.hermesProfile] || {};
       const live = liveStatusFor(u.hermesProfile);
@@ -579,7 +107,7 @@ export async function GET() {
     const stateMap: Record<string, any> = {};
     for (const s of states) stateMap[s.id] = s;
 
-    const agents = ROSTER.map((agent) => {
+    const agents = getRoster().map((agent) => {
       const s = stateMap[agent.id] || stateMap[agent.profile] || {};
       const live = liveStatusFor(agent.profile);
       return {
@@ -604,7 +132,7 @@ export async function GET() {
   } catch (error) {
     console.error("Agents API error:", error);
     // Fall back to roster with live status only (no DB)
-    const agents = ROSTER.map((agent) => {
+    const agents = getRoster().map((agent) => {
       const live = liveStatusFor(agent.profile);
       return {
         ...agent,
@@ -632,7 +160,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "agentId required" }, { status: 400 });
     }
 
-    const defaultAgent = ROSTER.find((a) => a.id === agentId);
+    const defaultAgent = getRoster().find((a) => a.id === agentId);
 
     let existing = await prisma.agentState.findUnique({ where: { id: agentId } });
 
