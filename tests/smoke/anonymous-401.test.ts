@@ -34,6 +34,15 @@ async function probe(path: string, init?: RequestInit) {
 
 describe.skipIf(!alive)('smoke 401 anonim — endpoint kunci (W2.3)', () => {
   // Endpoint mutatif kunci: harus 401 tanpa identitas (middleware + guard route).
+  it('GET /api/agents anonim → 401 (roster tidak boleh bocor)', async () => {
+    expect(await probe('/api/agents')).toBe(401);
+  });
+  it('GET /api/orchestration anonim → 401', async () => {
+    expect(await probe('/api/orchestration')).toBe(401);
+  });
+  it('GET /api/brahma/tasks anonim → 401', async () => {
+    expect(await probe('/api/brahma/tasks')).toBe(401);
+  });
   it('PUT /api/garden → 401 (SEC-004 regression)', async () => {
     expect(await probe('/api/garden', { method: 'PUT', body: '{}' })).toBe(401);
   });
