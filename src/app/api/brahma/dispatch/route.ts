@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // POST { kind?, title, prompt?, profile?, sideEffecting?, hermesTaskId? } → queue work for Brahma.
 // profile = target Hermes profile id (mis. "gsp-master-controller"); null = default/brahma.
@@ -7,6 +8,9 @@ import { prisma } from "@/lib/prisma";
 // mengeksekusi & menutup kartu itu (tanpa membuat kartu duplikat).
 // Side-effecting work waits for approval; safe work is queued immediately.
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const title = (b.title || b.prompt || "").toString().trim();
   if (!title) return NextResponse.json({ error: "title or prompt required" }, { status: 400 });

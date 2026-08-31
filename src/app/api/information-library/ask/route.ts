@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // POST /api/information-library/ask { question } → dispatch gsp-librarian untuk
 // menjawab pertanyaan user dengan data Information Library, respons STRICT JSON
 // (multi-table). UI mem-poll GET /api/brahma/requests/<id> lalu merender tabel.
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const question = (b.question || "").toString().trim();
   if (!question) return NextResponse.json({ error: "question required" }, { status: 400 });

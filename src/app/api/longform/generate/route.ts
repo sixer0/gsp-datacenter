@@ -1,6 +1,7 @@
 export const maxDuration = 120;
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
+import { requireSession } from '@/lib/require-session';
 
 async function callLLM(apiKey: string, apiBase: string, payload: object): Promise<string> {
   const res = await fetch(`${apiBase}/chat/completions`, {
@@ -30,6 +31,9 @@ async function braveSearch(query: string, braveKey: string, count = 5): Promise<
 }
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { topic, hook: existingHook, type: contentType } = await req.json();
   if (!topic) return NextResponse.json({ error: "topic required" }, { status: 400 });
 

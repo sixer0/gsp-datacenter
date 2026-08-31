@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
+import { requireSession } from '@/lib/require-session';
 
 // TODO: Trigger files written to the local filesystem won't work on Vercel.
 // This route needs to be reworked for serverless (e.g., use a database queue,
@@ -7,6 +8,9 @@ import fs from "fs";
 const TRIGGERS_DIR = "./data/triggers";
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { id, title, hook, outline, message } = await req.json();
 
   if (!id || !message) {

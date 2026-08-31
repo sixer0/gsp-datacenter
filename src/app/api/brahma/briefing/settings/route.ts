@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // Settings for the auto daily brief ("greeting" cron) live in DataStore.
 // The bridge reads this key on every tick; the dashboard reads/writes it here.
@@ -35,6 +36,9 @@ export async function GET() {
 
 // PUT { enabled?, hour?, prompt? } → validate + persist to DataStore.
 export async function PUT(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const body = await req.json().catch(() => ({}));
   const next = sanitize(body);
   const payload = { ...next, updatedAt: new Date().toISOString() };

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export type CronJob = {
   id: string;
@@ -59,6 +60,9 @@ export async function GET() {
 
 // POST { op: "create"|"pause"|"resume"|"run"|"remove"|"edit", ... } → queue a cron mutation for the bridge
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const op = (b.op || "").toString();
   if (!["create", "pause", "resume", "run", "remove", "edit"].includes(op))

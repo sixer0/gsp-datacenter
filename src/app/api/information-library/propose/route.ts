@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,9 @@ export const dynamic = "force-dynamic";
 // gsp-custodian → promote (vault_promote.py) bila terverifikasi, atau lapor revisi.
 // revisiOf = requestId proposa sebelumnya (loop revisi, maks 3).
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const title = (b.title || "").toString().trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });

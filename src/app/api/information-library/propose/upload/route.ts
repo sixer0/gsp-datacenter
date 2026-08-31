@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { mkdir, writeFile, stat } from "fs/promises";
 import path from "path";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ function safeName(name: string): string {
 }
 
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   let form: FormData;
   try {
     form = await req.formData();

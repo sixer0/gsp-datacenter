@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // GET ?q=&type=&status= → list/search wiki entries (mirrored by the bridge)
 export async function GET(req: Request) {
@@ -29,6 +30,9 @@ export async function GET(req: Request) {
 //   sebelum naik ke wiki/IL. Data sensitif (sensitif=ya) butuh persetujuan user
 //   (sideEffecting → Approval Inbox) sebelum diproses.
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const title = (b.title || "").toString().trim();
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
