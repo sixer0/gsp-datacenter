@@ -1,7 +1,7 @@
-# GSP Agent Headquarter — Markas Besar Agen AI (Brahma HQ)
+# GSP Agent Headquarter — Markas Besar Agen AI (Swarm HQ, sebelumnya Brahma HQ)
 
 > **Mission-control dashboard** untuk agen AI self-hosted milik **PT. Gemilang Satria Perkasa (GSP)**.
-> Antarmuka web untuk mengawaki agen Brahma (Hermes Agent): dispatch tugas, tinjau rencana, setujui aksi berisiko, jelajahi memori, dan pantau seluruh fleet agen — dari satu tempat.
+> Antarmuka web untuk mengawaki agen Swarm (Hermes Agent, sebelumnya Brahma): dispatch tugas, tinjau rencana, setujui aksi berisiko, jelajahi memori, dan pantau seluruh fleet agen — dari satu tempat.
 
 | | |
 |---|---|
@@ -9,10 +9,12 @@
 | **UI** | Tailwind CSS v4, Recharts, react-dnd, lucide-react |
 | **Database** | PostgreSQL via Prisma ORM |
 | **Auth** | NextAuth (Google OAuth) + RBAC WebUI (username/password) |
-| **Agent** | Brahma / Hermes Agent (`hermes` CLI) |
+| **Agent** | Swarm / Hermes Agent (`hermes` CLI; sebelumnya Brahma) |
 | **Bridge** | `hermes-bridge` (Node.js, hanya dependensi `pg`) |
 | **Desktop wrapper** | Tauri 2 (`src-tauri/`) |
 | **Deploy** | Vercel (web) + launchd/systemd (bridge) |
+| **Riwayat commit** | [CHANGELOG.md](./CHANGELOG.md) — pointer per commit, backdate retrospektif |
+| **Snapshot README** | 2026-08-31 |
 
 ---
 
@@ -37,7 +39,7 @@
 
 ## Ringkasan
 
-GSP Agent Headquarter adalah **dashboard kendali misi** yang terpasang di samping agen Brahma
+GSP Agent Headquarter adalah **dashboard kendali misi** yang terpasang di samping agen Swarm
 yang berjalan lokal di mesin Anda. Situs ini adalah kokpit Anda:
 
 - **Dispatch pekerjaan** — kirim instruksi sekali jalan (*one-shot*) atau tugas kanban ke agen (termasuk profil agen spesialis fleet `gsp-*`).
@@ -48,7 +50,7 @@ yang berjalan lokal di mesin Anda. Situs ini adalah kokpit Anda:
 
 Pola komunikasi utama: **website dan agen tidak pernah bicara langsung**. Keduanya membaca/menulis
 **database PostgreSQL yang sama** yang berfungsi sebagai *message bus*. Proses kecil bernama
-`hermes-bridge` berjalan di mesin tempat Brahma hidup untuk menjembatani bus dengan CLI `hermes`.
+`hermes-bridge` berjalan di mesin tempat Swarm hidup untuk menjembatani bus dengan CLI `hermes`.
 
 > Folder ini adalah **backup lengkap codebase** (diambil 24 Agustus 2026 dari `~/gsp-agent-headquarter`)
 > plus dokumentasi komprehensif. Lihat [Backup & restore](#backup--restore) untuk detail isi backup.
@@ -62,7 +64,7 @@ Pola komunikasi utama: **website dan agen tidak pernah bicara langsung**. Keduan
 - **⌘K Command palette** — lompat ke halaman mana pun atau picu aksi cepat.
 - **Daily brief Chief-of-Staff** — ringkasan harian yang dibuat terjadwal (via bridge).
 
-### Control hub Brahma (`/brahma`)
+### Control hub Swarm (`/brahma`)
 - **Dispatch** — kirim *one-shot prompt* atau *kanban task* ke agen; dukung target profil (`gsp-*`).
 - **Approval Inbox** — permintaan berisiko (side-effecting) menunggu persetujuan Anda.
 - **Live activity feed & run history** — pantau eksekusi agen secara real-time.
@@ -103,7 +105,7 @@ Pola komunikasi utama: **website dan agen tidak pernah bicara langsung**. Keduan
         │  • activity / runs       │          │  └───────┬───────────┘    │
         │  • information library   │          │          │ hermes CLI     │
         │  • orchestration map     │          │  ┌───────▼───────────┐    │
-        └──────────┬───────────────┘          │  │  Brahma / fleet   │    │
+        └──────────┬───────────────┘          │  │  Swarm / fleet    │    │
                    │                          │  │  (profil gsp-*)   │    │
                    │                          │  └───────────────────┘    │
                    ▼                          └───────────┬───────────────┘
@@ -175,7 +177,7 @@ gsp-agent-headquarter/
 
 - **Node.js 20+** (22 disarankan) dan **git**
 - **PostgreSQL** — URL koneksi, mis. Neon/Supabase/Vercel Postgres, atau Postgres lokal
-- **Brahma / Hermes agent** terpasang di mesin yang Anda kontrol (`hermes` CLI tersedia di PATH)
+- **Swarm / Hermes agent** (sebelumnya Brahma) terpasang di mesin yang Anda kontrol (`hermes` CLI tersedia di PATH)
 - **Google OAuth** (Client ID + Secret) — opsional di dev (mode bypass aktif), wajib di produksi
 - Akun **Vercel** (atau host Node apa pun) untuk deploy website
 
@@ -221,7 +223,7 @@ Di mode development, middleware melewati autentikasi; di produksi, login Google/
 
 ### 5. Hubungkan agen (bridge)
 
-Di mesin tempat Brahma berjalan:
+Di mesin tempat Swarm berjalan:
 
 ```sh
 cd hermes-bridge
@@ -381,6 +383,7 @@ Folder ini adalah **backup utuh codebase** `~/gsp-agent-headquarter` per **24 Ag
 
 | Dokumen | Isi |
 |---|---|
+| [CHANGELOG.md](./CHANGELOG.md) | Riwayat commit repo ini (pointer per commit, backdate retrospektif dari `git log`) |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Arsitektur sistem, alur data, komponen, kustomisasi GSP |
 | [docs/API-REFERENCE.md](./docs/API-REFERENCE.md) | Referensi seluruh endpoint API + contoh request/response |
 | [docs/DATA-MODEL.md](./docs/DATA-MODEL.md) | Model data Prisma + diagram ER |
