@@ -58,3 +58,6 @@ hermes-bridge/node_modules/
 # runtime bridge
 /hermes-bridge/200
 /hermes-bridge/db_check*.cjs
+
+# backup files sisa hotfix (F-XP-004)
+*.bak-*
