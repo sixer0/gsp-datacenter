@@ -169,16 +169,84 @@ async function setStore(key, data) {
 // Board Hermes (SQLite) adalah sumber task asli; mirrorKanban menyinkronkannya
 // ke HermesTask → TaskBoard di dashboard. Setiap dispatch via HQ membuat satu
 // kartu (assignee = profil target), lalu ditutup complete/block saat selesai.
+//
+// FIX 31-08-2026 (insiden t_4db40b42 / t_5aab0b7f, kartu t_7f20950d):
+//  D1. DEDUP: satu misi tidak boleh punya dua kartu. Sebelum membuat kartu,
+//      scan board untuk kartu non-terminal ber-assignee sama yang body-nya
+//      menyebut artefak kontrak yang sama (path docs/... dari prompt). Kalau
+//      ketemu → pakai kartu itu (reuse), JANGAN buat baru. Tambahan lapis
+//      kedua: --idempotency-key turunan id request, agar retry request yang
+//      sama tidak pernah membuat kartu kembar.
+//  D2. EKSEKUSI GANDA: dispatcher gateway mengklaim SETIAP kartu ready yang
+//      ber-assignee dan men-spawn worker. Dulu bridge membuat kartu ready
+//      BER-ASSIGNEE lalu menjalankan prompt-nya sendiri via `hermes -z` →
+//      dua worker satu misi, saling timpa artefak. Sekarang:
+//      • kartu milik bridge dibuat TANPA assignee (dispatcher skip) dan
+//        dieksekusi bridge sendiri;
+//      • kartu kontrak (hermesTaskId / hasil dedup) yang ber-assignee
+//        dibiarkan menjadi milik dispatcher — bridge TIDAK menjalankan
+//        prompt-nya, melainkan mendaftarkan reconciler yang menunggu kartu
+//        selesai lalu menyalin hasilnya ke AgentRequest.
+function extractContractPaths(text) {
+  // Path artefak kontrak: token docs/<...>.md dsb. dari body kartu / prompt.
+  const out = new Set();
+  if (!text) return out;
+  const re = /(?:^|[\s"'`(=])((?:docs|workspace|library|analysis|collection|memory)\/[^\s"'`,;)]+\.(?:md|json|csv|pdf|docx|xlsx|pptx))/gim;
+  let m;
+  while ((m = re.exec(text)) !== null) out.add(m[1].replace(/[.]+$/, "").toLowerCase());
+  return out;
+}
+
+async function findExistingMissionCard(profile, prompt, title) {
+  // Dedup: kartu non-terminal yang berbagi path artefak kontrak dengan misi
+  // ini. Kartu dianggap "milik profil" jika assignee-nya sama ATAU body-nya
+  // ber-tag profile=<profil> (kartu buatan bridge tidak ber-assignee).
+  const want = extractContractPaths(`${prompt || ""}\n${title || ""}`);
+  if (!want.size) return null;
+  try {
+    const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 45000 });
+    const tasks = JSON.parse(out || "[]");
+    const arr = Array.isArray(tasks) ? tasks : tasks.tasks || [];
+    for (const t of arr) {
+      if (!t || !t.id) continue;
+      if (["done", "archived"].includes(t.status)) continue;
+      const body = t.body || "";
+      const owned = (t.assignee || "") === (profile || "") ||
+        (profile && body.includes(`profile=${profile}`));
+      if (!owned) continue;
+      const have = extractContractPaths(`${body}\n${t.title || ""}`);
+      for (const p of want) if (have.has(p)) return t;
+    }
+  } catch (e) { log("dedup scan failed:", e.message.split("\n")[0]); }
+  return null;
+}
+
+async function kanbanCardState(taskId) {
+  try {
+    const out = await hermes(["kanban", "--board", BOARD, "show", taskId, "--json"], { timeout: 30000 });
+    const d = JSON.parse(out || "{}");
+    return d.task || null;
+  } catch { return null; }
+}
+
 async function createKanbanCard(r) {
   // Kartu kontrak sudah ada (hermesTaskId) → pakai kartu itu, JANGAN buat duplikat
   if (r.hermesTaskId) {
     log("kanban contract card:", r.hermesTaskId, "untuk", r.id);
     return r.hermesTaskId;
   }
+  // D1: dedup misi — board mungkin sudah punya kartu untuk artefak yang sama
+  // (mis. kartu kontrak yang dibuat controller sebelum dispatch tanpa hermesTaskId).
+  const dup = await findExistingMissionCard(r.profile, r.prompt, r.title);
+  if (dup) {
+    log("kanban dedup: reuse kartu", dup.id, "untuk request", r.id, "(artefak kontrak sama)");
+    return dup.id;
+  }
   try {
     const out = await hermes(
       ["kanban", "--board", BOARD, "create", "--json", r.title.slice(0, 140),
-       "--assignee", r.profile, "--body", `HQ dispatch ${r.id}`],
+       "--body", `HQ dispatch ${r.id} · profile=${r.profile}`,
+       "--idempotency-key", `hq-${r.id}`],
       { timeout: 20000 }
     );
     const parsed = JSON.parse(out || "{}");
@@ -201,6 +269,10 @@ async function closeKanbanCard(requestId, taskId, orchStatus, result) {
       t = (Array.isArray(tasks) ? tasks : []).find((x) => (x.body || "").includes(requestId));
     }
     if (!t || !t.id) return;
+    // NB: sengaja TANPA --force. Jika kartu ternyata punya run worker yang
+    // masih hidup (dispatcher spawn / controller lain), guard premature-close
+    // engine menolak penutupan dan error-nya di-log — keputusan penutup
+    // dikembalikan ke pemilik run, bukan ditimpa bridge (insiden 31-08-2026).
     if (orchStatus === "done") {
       await hermes(["kanban", "--board", BOARD, "complete", t.id, "--result", (result || "").slice(0, 300)], { timeout: 45000 });
     } else if (orchStatus === "needs-review") {
@@ -212,6 +284,56 @@ async function closeKanbanCard(requestId, taskId, orchStatus, result) {
     }
     log("kanban close:", t.id, orchStatus);
   } catch (e) { log("kanban close failed:", e.message.split("\n")[0]); }
+}
+
+// ── D2 reconciler: kartu kontrak dikerjakan dispatcher, bukan bridge ─────
+// Bridge TIDAK menjalankan prompt untuk kartu ber-assignee; ia menunggu kartu
+// mencapai status terminal lalu menyalin hasilnya ke AgentRequest.
+const CARD_POLL_MS = Number(process.env.BRIDGE_CARD_POLL_MS || 30000);
+async function awaitCardCompletion(r, cardId, toAgent) {
+  const deadline = Date.now() + RUN_TIMEOUT_MS + 10 * 60 * 1000;
+  log("defer: kartu", cardId, "dikerjakan dispatcher (bukan bridge) untuk request", r.id);
+  // Serahkan prompt lengkap HQ ke worker dispatcher lewat komentar —
+  // worker membaca worker_context (title+body+comments) saat diklaim.
+  try {
+    const prompt = (r.prompt || "").trim();
+    if (prompt) {
+      await hermes(["kanban", "--board", BOARD, "comment", cardId,
+        `PROMPT DISPATCH HQ ${r.id} (dialihkan ke dispatcher; isi untuk worker):\n${prompt}`,
+        "--author", "hq-bridge", "--max-len", "12000"], { timeout: 30000 });
+    }
+  } catch (e) { log("defer comment failed:", e.message.split("\n")[0]); }
+  let lastStatus = null;
+  while (Date.now() < deadline) {
+    await new Promise((res) => setTimeout(res, CARD_POLL_MS));
+    const card = await kanbanCardState(cardId);
+    if (!card) continue;
+    lastStatus = card.status;
+    if (!["done", "blocked", "review", "archived", "triage"].includes(card.status)) continue;
+    const resultText = card.result
+      || (card.status === "blocked" ? `Kartu ${cardId} diblokir: ${card.block_kind || "tanpa alasan"}` : "")
+      || `Kartu ${cardId} berakhir di status ${card.status} tanpa result.`;
+    const sem = card.status === "done" ? "done"
+      : card.status === "review" ? "needs-review"
+      : card.status === "blocked" ? "blocked" : "failed";
+    await q(`UPDATE "AgentRequest" SET status=$2, result=$3, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+      [r.id, sem, trimResult(resultText)]);
+    await emit("run", `Kartu dispatcher selesai (${sem}): ${r.title}`, {
+      level: sem === "done" || sem === "needs-review" ? "up" : "warn",
+      detail: resultText.slice(0, 400),
+      meta: { requestId: r.id, orchStatus: sem, cardId, deferred: true },
+    });
+    await closeOrch(r.id, sem, resultText.slice(0, 400));
+    await setAgentState(toAgent, { status: "idle", currentTask: null, action: `Kartu ${cardId} ${card.status}: ${r.title.slice(0, 80)}` });
+    log("defer done:", cardId, card.status, "→ request", r.id, sem);
+    return;
+  }
+  const msg = `Kartu ${cardId} tidak mencapai status terminal dalam batas waktu (status terakhir: ${lastStatus || "?"}).`;
+  await q(`UPDATE "AgentRequest" SET status='failed', error=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`, [r.id, msg]);
+  await emit("run", `Defer timeout: ${r.title}`, { level: "warn", detail: msg, meta: { requestId: r.id, cardId } });
+  await closeOrch(r.id, "failed", msg);
+  await setAgentState(toAgent, { status: "idle", currentTask: null, action: `Timeout kartu ${cardId}: ${r.title.slice(0, 80)}` });
+  log("defer timeout:", cardId, "request", r.id);
 }
 
 /* ─────────────── PULL: mirror Brahma → Postgres ─────────────── */
@@ -515,6 +637,7 @@ async function runRequestClaimed(r) {
   // (bug 24-08-2026: ReferenceError "kanbanCardId is not defined" → AgentRequest
   //  tercatat failed walau agent sudah selesai & menghasilkan result).
   let kanbanCardId = null;
+  let deferredToDispatcher = false;
   if (isProfile) {
     await recordOrch({
       from: fromAgent, to: toAgent, kind: "dispatch", status: "running",
@@ -526,6 +649,38 @@ async function runRequestClaimed(r) {
       // simpan id kartu agar closeKanbanCard bisa menutupnya tanpa cari-by-body
       await q(`UPDATE "AgentRequest" SET "hermesTaskId"=$1, "updatedAt"=now() WHERE id=$2`, [kanbanCardId, r.id]).catch(() => {});
     }
+    // D2: satu kartu = satu eksekutor. Kartu ber-assignee adalah milik
+    // dispatcher Hermes (ia mengklaim & men-spawn worker sendiri); kartu
+    // "HQ dispatch <id>" tanpa assignee adalah milik eksekusi bridge untuk
+    // request <id>. Kalau bridge ikut menjalankan prompt yang sudah dipunyai
+    // pemegang lain, satu misi dikerjakan dua proses dan artefak saling timpa
+    // (insiden 31-08-2026). Aturan:
+    //  • assignee terisi (non-terminal)      → defer ke dispatcher
+    //  • HQ-card request lain                → defer ke eksekusi pemiliknya
+    //  • kartu sudah terminal (retry)        → salin hasilnya, jangan jalankan
+    //  • selain itu (kartu baru milik kita)  → bridge eksekusi sendiri
+    if (kanbanCardId && (r.kind === "oneshot" || r.kind === "chat")) {
+      const card = await kanbanCardState(kanbanCardId);
+      if (card) {
+        const body = card.body || "";
+        const terminal = ["done", "archived", "blocked", "review", "triage"].includes(card.status);
+        const isHqCard = /HQ dispatch /.test(body);
+        const isOurHqCard = body.includes(r.id);
+        if (terminal) {
+          deferredToDispatcher = true; // reconciler menyalin hasil terminal langsung
+        } else if (card.assignee || (isHqCard && !isOurHqCard)) {
+          deferredToDispatcher = true;
+        }
+      }
+    }
+  }
+  if (deferredToDispatcher) {
+    // Jalur defer: jangan jalankan prompt di bridge; biarkan pemegang kartu
+    // (dispatcher/eksekusi lain) menyelesaikannya, lalu salin hasil ke
+    // AgentRequest lewat reconciler.
+    awaitCardCompletion(r, kanbanCardId, toAgent).catch((e) =>
+      log("defer reconciler err", r.id, e.message.split("\n")[0]));
+    return;
   }
   try {
     let result = "";
