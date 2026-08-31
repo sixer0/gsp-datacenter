@@ -197,6 +197,46 @@ export function ensureProfileComplete(name, opts = {}) {
           : "missing";
 
     // 3) Skills tree — merge from root (source of truth).
+    //    LEAN POLICY (31-08-2026): a profile carrying a .lean-policy marker opted into
+    //    the lean fleet policy (physical skills = ALWAYS LOAD only). Merging the full
+    //    root tree here would silently re-bloat it (~141 skills). Respect the marker:
+    //    only ensure the marker's always_load skills exist, copying each from root.
+    const leanMarkerPath = path.join(pDir, ".lean-policy");
+    if (!force && fs.existsSync(leanMarkerPath)) {
+      let marker = null;
+      try { marker = JSON.parse(fs.readFileSync(leanMarkerPath, "utf8")); } catch { marker = null; }
+      const keep = marker && Array.isArray(marker.always_load) ? marker.always_load : [];
+      const skillsDst2 = path.join(pDir, "skills");
+      fs.mkdirSync(skillsDst2, { recursive: true });
+      const skillsSrc2 = path.join(rootDir, "skills");
+      let ensured = 0;
+      for (const s of keep) {
+        const dst = path.join(skillsDst2, s);
+        if (fs.existsSync(path.join(dst, "SKILL.md"))) continue;
+        // find in root skills tree (flat, gsp/ category, or any category)
+        let src = path.join(skillsSrc2, s);
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+          src = path.join(skillsSrc2, "gsp", s);
+        }
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+          const cats = fs.readdirSync(skillsSrc2, { withFileTypes: true }).filter((e) => e.isDirectory());
+          for (const c of cats) {
+            const cand = path.join(skillsSrc2, c.name, s);
+            if (fs.existsSync(path.join(cand, "SKILL.md"))) { src = cand; break; }
+          }
+        }
+        if (fs.existsSync(path.join(src, "SKILL.md"))) {
+          const { added } = mergeTreeCounted(src, dst);
+          if (added) { ensured += 1; result.copiedFiles.push(`skills/${s}`); }
+        } else {
+          result.changed.push(`lean-skill-missing:${s}`);
+        }
+      }
+      if (ensured) result.changed.push(`lean-ensured(+${ensured})`);
+      result.skillCount = countLeafSkills(skillsDst2);
+      result.leanPolicy = true;
+      return result;
+    }
     const skillsSrc = path.join(rootDir, "skills");
     const skillsDst = path.join(pDir, "skills");
     if (fs.existsSync(skillsSrc)) {
