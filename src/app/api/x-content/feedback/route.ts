@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const body = await req.json();
   const { draftId, rating, reason, scheduledDate, scheduledTime, removeVisual, editText, tweakComment } = body;
 

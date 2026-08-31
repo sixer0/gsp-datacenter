@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/require-session";
 import {
   hashPassword,
   isValidPassword,
@@ -46,6 +47,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(request);
+  if (denied) return denied;
   let body: Record<string, unknown>;
   try {
     body = await request.json();

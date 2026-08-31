@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 async function getYouTubeMetrics(url: string) {
   try {
@@ -129,6 +130,9 @@ async function getTwitterMetrics(tweetUrl: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { youtubeUrl, tweetUrl, scriptId } = await req.json();
   const result: any = {};
 

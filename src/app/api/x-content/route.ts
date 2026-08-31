@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 /** Convert a Prisma Draft row to the API shape the frontend expects. */
 function draftToApi(draft: any) {
@@ -124,6 +125,9 @@ export async function GET(req: NextRequest) {
 
 // POST: Create a new draft
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const body = await req.json();
 
   const draft = await prisma.draft.create({
@@ -159,6 +163,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const body = await req.json();
   const { draftId, text, title, undoRejection, metrics, tweetId, postedUrl, postedAt, status } = body;
 
@@ -214,6 +221,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { draftId } = await req.json();
 
   if (!draftId) {

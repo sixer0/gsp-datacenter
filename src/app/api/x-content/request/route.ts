@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,9 @@ export async function GET() {
 
 // POST: create a new content request
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { prompt } = await req.json();
   if (!prompt || !prompt.trim()) {
     return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -44,6 +48,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH: update request status (used by Sage when processing)
 export async function PATCH(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { requestId, status, resultDraftIds } = await req.json();
 
   const existing = await prisma.contentRequest.findUnique({ where: { id: requestId } });

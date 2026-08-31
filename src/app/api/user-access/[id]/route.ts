@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/require-session";
 import {
   hashPassword,
   isValidPassword,
@@ -46,6 +47,9 @@ function inspectOnDisk(name: string): { ok: boolean; problems: string[] } {
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(request);
+  if (denied) return denied;
   const { id } = await ctx.params;
   let body: Record<string, unknown>;
   try {
@@ -134,7 +138,10 @@ function usernameToProfile(username: string): string {
   return isValidUsername(username) ? username : "";
 }
 
-export async function DELETE(_request: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { id } = await ctx.params;
   const user = await prisma.webUiUser.findUnique({ where: { id } });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -83,6 +84,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const b = await req.json().catch(() => ({}));
   const from = (b.from || b.fromAgent || "").toString().trim();
   const to = (b.to || b.toAgent || "").toString().trim();
@@ -144,6 +148,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const runId = searchParams.get("runId");

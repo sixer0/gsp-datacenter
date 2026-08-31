@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // your approved visual theme — warm cream, white cards, colorful left bars
 const ACCENT_COLORS = ["#e8614d", "#5b9cf6", "#34c785", "#f5a623", "#e879a0", "#a78bfa"];
@@ -35,6 +36,9 @@ function stripBullet(l: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { draftId } = await req.json();
   if (!draftId) return NextResponse.json({ error: "draftId required" }, { status: 400 });
 

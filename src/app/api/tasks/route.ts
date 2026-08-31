@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireSession } from '@/lib/require-session';
 
 // This would connect to Notion API
 // For now, return mock data
@@ -55,6 +56,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const { name, status } = await req.json();
     
@@ -87,6 +91,9 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const { id, status } = await req.json();
     

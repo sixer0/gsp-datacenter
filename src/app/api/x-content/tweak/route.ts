@@ -4,11 +4,15 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // TODO: This path won't exist on Vercel — consider bundling voice-rules or storing in DB
 const VOICE_RULES = path.join("./data/tweet-library", "voice-rules.md");
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { draftId, comment } = await req.json();
   if (!draftId || !comment) {
     return NextResponse.json({ error: "draftId and comment required" }, { status: 400 });

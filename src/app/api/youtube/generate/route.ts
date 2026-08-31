@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { requireSession } from '@/lib/require-session';
 
 function callOpenAI(apiKey: string, payload: object, timeout = 45000): string {
   const tmpFile = path.join("/tmp", `yt-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
@@ -51,6 +52,9 @@ function fetchArticle(url: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { topic, sourceUrl, sourceSummary } = await req.json();
   if (!topic) return NextResponse.json({ error: "topic required" }, { status: 400 });
 
