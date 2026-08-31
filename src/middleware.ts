@@ -63,8 +63,14 @@ async function verifyHqSession(raw: string | undefined): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // DEV-ONLY local bypass (never active on Vercel preview/prod builds).
-  if (process.env.NODE_ENV === 'development') {
+  // W2.1 fix (F-SEC-003, 31-08): dev-bypass dulunya otomatis untuk SEMUA request
+  // begitu `npm run dev` dijalankan — satu kali dev membuka semua endpoint tanpa auth.
+  // Kini bypass development hanya aktif bila flag eksplisit ALLOW_DEV_BYPASS=1
+  // dipasang. NODE_ENV=production tidak pernah bypass meski flag terpasang.
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.ALLOW_DEV_BYPASS === '1'
+  ) {
     return NextResponse.next();
   }
 
