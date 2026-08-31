@@ -562,10 +562,15 @@ model WebUiUser {
   passwordHash  String
   displayName   String?
   role          Role     @default(USER)
-  hermesProfile String // Hermes profile this user is pinned to (unique enforced in app code for USER role; admins may share e.g. 'default')
+  // W3.1 (F-ARCH-003, 31-08): satu profil Hermes = satu akun. Unique ditegakkan
+  // di LEVEL DATABASE (@@unique di bawah), bukan hanya app code. Komentar lama
+  // ("admins may share e.g. 'default'") menyesatkan: SEMUA jalur tulis
+  // (rbac/route.ts POST, rbac/signup, user-access) sudah menolak duplikat 409
+  // dan sensus 31-08 menunjukkan 0 sharing aktual (6 baris, 6 profil).
+  hermesProfile String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([role])
-  @@index([hermesProfile])
+  @@unique([hermesProfile])
 }
