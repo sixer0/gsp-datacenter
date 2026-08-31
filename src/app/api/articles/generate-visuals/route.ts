@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 const DESIGN_SYSTEM = `You generate standalone HTML visual graphics for viral X (Twitter) articles.
 
@@ -53,6 +54,9 @@ RULES:
 - Position elements with flexbox/grid`;
 
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { articleId, title, articleBody, track, visualType, mode } = body;

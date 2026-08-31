@@ -3,6 +3,7 @@ export const maxDuration = 30;
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchUrlContent } from "@/lib/fetch-url-content";
+import { requireSession } from '@/lib/require-session';
 
 function extractTweetId(url: string): string | null {
   const match = url.match(/(?:x\.com|twitter\.com)\/\w+\/status\/(\d+)/);
@@ -146,6 +147,9 @@ async function fetchQuoteTweets(tweetId: string, bearerToken: string, authorId?:
 
 // POST /api/articles/scrape — accepts { url } returns title, body, metrics, etc.
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const { url } = await req.json();
     if (!url) {

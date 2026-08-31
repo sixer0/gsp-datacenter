@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { getRoster, GROUP_LABELS } from "@/lib/agent-roster";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -152,6 +153,9 @@ export async function GET() {
 
 // POST to update agent state (called by cron jobs / bridge)
 export async function POST(request: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { agentId, action, status, currentTask } = body;

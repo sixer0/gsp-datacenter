@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchUrlContent } from "@/lib/fetch-url-content";
+import { requireSession } from '@/lib/require-session';
 
 const TRACK_FORMULAS: Record<string, string> = {
   "mega-viral": `MEGA-VIRAL FORMULA (Data Betrayal Story):
@@ -122,6 +123,9 @@ STRUCTURE:
 
 // POST /api/articles/generate-article — accepts { title, track, themes, inspirationUrls, libraryInspirations }
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { title, track, themes, inspirationUrls, libraryInspirations } = body;

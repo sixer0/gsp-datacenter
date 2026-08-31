@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // GET /api/articles?status=X — list articles, filter by status
 export async function GET(req: NextRequest) {
@@ -29,6 +30,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/articles — create article
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
 
@@ -63,6 +67,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/articles — update article (body: { id, ...fields })
 export async function PATCH(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { id, ...fields } = body;
@@ -109,6 +116,9 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE /api/articles — delete article (body: { id })
 export async function DELETE(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const { id } = await req.json();
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { requireSession } from '@/lib/require-session';
 
 const execFileAsync = promisify(execFile);
 
@@ -85,6 +86,9 @@ function extractReply(stdout: string): string {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(request);
+  if (denied) return denied;
   try {
     const body: AgentChatRequest = await request.json();
     const { agentId, message } = body;

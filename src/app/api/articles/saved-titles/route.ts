@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 // GET /api/articles/saved-titles — list saved titles
 export async function GET() {
@@ -17,6 +18,9 @@ export async function GET() {
 
 // POST /api/articles/saved-titles — save a title
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { title, track, themes } = body;
@@ -42,6 +46,9 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/articles/saved-titles — remove a saved title
 export async function DELETE(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const { id } = await req.json();
 

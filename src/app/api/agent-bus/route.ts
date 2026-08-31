@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,9 @@ export async function GET(req: Request) {
 
 // POST: Send a message between agents
 export async function POST(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const body = await req.json();
 
   const msg = await prisma.agentBusMessage.create({
@@ -59,6 +63,9 @@ export async function POST(req: Request) {
 
 // PATCH: Mark messages as read
 export async function PATCH(req: Request) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   const { messageIds } = await req.json();
 
   await prisma.agentBusMessage.updateMany({

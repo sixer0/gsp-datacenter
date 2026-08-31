@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from '@/lib/require-session';
 
 const QT_SYSTEM = `You write viral Quote Tweets (QTs) for your articles.
 
@@ -86,6 +87,9 @@ Output ONLY the QT text. No explanation, no quotes around it, no markdown.`;
 
 // POST /api/articles/generate-qt — accepts { articleId } OR { title, body, track } for unsaved articles
 export async function POST(req: NextRequest) {
+  // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
+  const denied = await requireSession(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const { articleId, title: directTitle, body: directBody, track: directTrack } = body;
