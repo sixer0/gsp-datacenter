@@ -2,7 +2,7 @@
 
 - **Repo**: https://github.com/sixer0/gsp-datacenter.git · branch `main`
 - **Sumber data**: `git log` (ekspor `Temp/changelog-push/export.sh` dijalankan ulang dan diverifikasi 2026-08-31)
-- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD pra-commit-dokumen `5490dd6` (2026-08-31) — total 37 commit terdokumentasi
+- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD pra-commit-dokumen `5635cbb` (2026-08-31) — total 40 commit terdokumentasi
 - **Disusun**: 2026-08-31. Entri di-backdate retrospektif: tanggal = tanggal commit ASLI;
   tidak ada manipulasi histori (tanpa rebase/amend/force-push/--date).
 
@@ -10,7 +10,7 @@
 
 | hash | tanggal | tipe | ringkasan perubahan | kronologis |
 |------|---------|------|---------------------|------------|
-| (commit ini) | 2026-08-31 | docs | Changelog: entri commit 7a61b76..5490dd6 (eksekusi backlog audit GSP-OS v3.0) | — |
+| (commit ini) | 2026-08-31 | docs | Changelog: entri commit 3ce18d4..5635cbb (fix bridge dedup + lean-policy provisioning) | — |
 
 ## 2026-08-24
 
@@ -78,3 +78,6 @@
 | dba97a2 | 2026-08-31 | fix(W3.2) | fix(W3.2): limit anonymous /api/garden payload to public fields [F-SEC-006] | 35 |
 | 9b6406b | 2026-08-31 | docs(W2.1)+test(W2.3) | docs(W2.1)+test(W2.3): ALLOW_DEV_BYPASS di .env.example + smoke GET agents/orchestration/tasks + tool suntik guard W2.2 | 36 |
 | 5490dd6 | 2026-08-31 | chore(W4.2) | chore(W4.2): remove unused better-sqlite3 & drizzle-orm [dead-deps] | 37 |
+| 3ce18d4 | 2026-08-31 | docs | docs: changelog entri 7a61b76..5490dd6 (audit-backlog execution) | 38 |
+| 6db8629 | 2026-08-31 | fix(bridge) | fix(bridge): dedup kartu misi + cegah eksekusi ganda dispatcher-vs-bridge (insiden t_4db40b42/t_5aab0b7f) | 39 |
+| 5635cbb | 2026-08-31 | feat(provisioning) | feat(provisioning): hormati marker .lean-policy saat merge skills (misi enforcement dua-lane) | 40 |
