@@ -2,7 +2,7 @@
 
 - **Repo**: https://github.com/sixer0/gsp-datacenter.git · branch `main`
 - **Sumber data**: `git log` (ekspor `Temp/changelog-push/export.sh` dijalankan ulang dan diverifikasi 2026-08-31)
-- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD pra-commit-dokumen `5635cbb` (2026-08-31) — total 40 commit terdokumentasi
+- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD pra-commit-dokumen `7b9a22c` (2026-09-01) — total 42 commit terdokumentasi
 - **Disusun**: 2026-08-31. Entri di-backdate retrospektif: tanggal = tanggal commit ASLI;
   tidak ada manipulasi histori (tanpa rebase/amend/force-push/--date).
 
@@ -10,7 +10,7 @@
 
 | hash | tanggal | tipe | ringkasan perubahan | kronologis |
 |------|---------|------|---------------------|------------|
-| (commit ini) | 2026-08-31 | docs | Changelog: entri commit 3ce18d4..5635cbb (fix bridge dedup + lean-policy provisioning) | — |
+| (commit ini) | 2026-09-01 | docs | Changelog: entri commit b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | — |
 
 ## 2026-08-24
 
@@ -81,3 +81,10 @@
 | 3ce18d4 | 2026-08-31 | docs | docs: changelog entri 7a61b76..5490dd6 (audit-backlog execution) | 38 |
 | 6db8629 | 2026-08-31 | fix(bridge) | fix(bridge): dedup kartu misi + cegah eksekusi ganda dispatcher-vs-bridge (insiden t_4db40b42/t_5aab0b7f) | 39 |
 | 5635cbb | 2026-08-31 | feat(provisioning) | feat(provisioning): hormati marker .lean-policy saat merge skills (misi enforcement dua-lane) | 40 |
+| b23b680 | 2026-08-31 | docs | docs: changelog entri 3ce18d4..5635cbb (bridge dedup + lean-policy) | 41 |
+
+## 2026-09-01
+
+| hash | tanggal | tipe | ringkasan perubahan | kronologis |
+|------|---------|------|---------------------|------------|
+| 7b9a22c | 2026-09-01 | chore(bridge) | chore(bridge): launcher worker-2 sementara kontrak LP (klaim atomik SKIP LOCKED, log terpisah, tanpa secret hardcoded) | 42 |
