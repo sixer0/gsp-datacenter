@@ -13,6 +13,7 @@
 | (commit ini) | 2026-09-02 | docs | Changelog: entri af2d0a4..4e957f4 (dokumen changelog 01-09 + fix bind HQ 9011) | — |
 | af2d0a4 | 2026-09-01 | docs | Changelog: entri b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | 1 |
 | 4e957f4 | 2026-09-02 | fix | fix: HQ 9011 default bind 0.0.0.0 (HQ-BIND-002) | 2 |
+| 500bbdb | 2026-09-02 | fix(hq) | 4 temuan user: header dashboard dari sesi login (env OWNER dihapus), akun USER/ADMIN diprovisioni lean sejak lahir (provisionLeanProfile + marker ganda, admin tak lagi 400), telemetri requestedBy (kolom AgentRequest + bridge + backfill 143 edge user:web + node graf user:*); verifikasi 15/15 (kontrak docs/2026-09-02-fix-hq-rbac-telemetry) | 3 |
 
 ## 2026-08-24
 
