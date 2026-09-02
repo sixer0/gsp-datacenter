@@ -1,7 +1,10 @@
-// hq-server.mjs — production HTTPS server untuk Agent HQ (fix SEC-001, 30-08-2026)
-// Ganti `next dev -H 0.0.0.0 --experimental-https`: bind 127.0.0.1 + NODE_ENV=production
-// sehingga middleware auth AKTIF. Akses jarak jauh lewat Tailscale tetap bisa ke port ini
-// karena Tailscale IP terikat di host — bila ingin hanya localhost, ubah HOST.
+// hq-server.mjs — production HTTPS server untuk Agent HQ.
+// SEC-001 (30-08): bind sempit 127.0.0.1 + IP Tailscale (LAN/WAN tertutup).
+// HQ-BIND-002 (02-09, keputusan user): default bind 0.0.0.0 supaya akses remote
+// (Tailscale/LAN) tidak bergantung IP statis yang bisa berubah; autostart
+// (gsp-ecosystem-start.sh) dan hq_restart.mjs mewarisi default ini. Middleware
+// auth NextAuth tetap AKTIF (NODE_ENV=production); firewall rule "GSP Agent HQ
+// 9011" aktif semua profil. Bila perlu mempersempit lagi, set env HQ_HOSTS.
 // Jalankan: node hq-server.mjs   (dari C:/Users/TRIAL/gsp-datacenter)
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -11,9 +14,9 @@ import next from "next/dist/server/next.js";
 process.env.NODE_ENV = "production";
 
 const PORT = parseInt(process.env.HQ_PORT || "9011", 10);
-// SEC-001: TIDAK lagi bind 0.0.0.0. Loopback untuk mesin ini + IP Tailscale untuk
-// akses jarak jauh yang sah; LAN/WAN tertutup. Auth NextAuth tetap aktif (production).
-const HOSTS = (process.env.HQ_HOSTS || "127.0.0.1,100.102.23.27").split(",").map((s) => s.trim());
+// HQ-BIND-002 (02-09): default 0.0.0.0 (semua interface). HQ_HOSTS tetap dihormati
+// untuk pembatasan eksplisit, mis. HQ_HOSTS="127.0.0.1,100.x.y.z" node hq-server.mjs
+const HOSTS = (process.env.HQ_HOSTS || "0.0.0.0").split(",").map((s) => s.trim());
 const KEY = "certs/hq-key.pem";
 const CRT = "certs/hq-cert.pem";
 
