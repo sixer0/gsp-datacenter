@@ -266,6 +266,148 @@ export function ensureProfileComplete(name, opts = {}) {
   return result;
 }
 
+// ── LEAN provisioning (FIX 02-09-2026, temuan #2 & #3) ─────────────────────
+// Akun RBAC baru (USER maupun ADMINISTRATOR) dulu diprovisioni dengan clone
+// PENUH: ~141 skill root ditimbun + engine men-seed bundled packs -> profil
+// gemuk, melanggar kebijakan lean+enforcement 31-08. Preseden manual:
+// gspuser01 (docs/2026-09-02-lean-gspuser01-gateway/) dan misi 31-08.
+// Fungsi ini membuat profil lean sejak lahir: config/.env/SOUL + fisik hanya
+// skill lane (controller: trio orkestrasi+verif+LAD, maks 5; worker: verif
+// saja) + marker ganda .lean-policy & .no-bundled-skills agar provisioning
+// berikutnya dan skills_sync engine tidak menggemukkan lagi.
+
+export const LEAN_CONTROLLER_SKILLS = [
+  "gsp-orchestrator-worker",
+  "gsp-orchestration-execution",
+  "gsp-verification-before-completion",
+  "gsp-limit-aware-delegation",
+];
+export const LEAN_WORKER_SKILLS = ["gsp-verification-before-completion"];
+
+function findSkillSrc(rootSkills, name) {
+  const candidates = [
+    path.join(rootSkills, name),
+    path.join(rootSkills, "gsp", name),
+  ];
+  for (const c of candidates) if (fs.existsSync(path.join(c, "SKILL.md"))) return c;
+  try {
+    for (const e of fs.readdirSync(rootSkills, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const cand = path.join(rootSkills, e.name, name);
+      if (fs.existsSync(path.join(cand, "SKILL.md"))) return cand;
+    }
+  } catch { /* no root tree */ }
+  return null;
+}
+
+/**
+ * Create/repair a LEAN profile for an RBAC account. Idempotent.
+ * opts: { lane: "controller"|"worker", force }
+ * Never clobbers live config/.env or a custom SOUL (same guards as ensure).
+ */
+export function provisionLeanProfile(name, opts = {}) {
+  const lane = opts.lane === "worker" ? "worker" : "controller";
+  const keep = lane === "worker" ? LEAN_WORKER_SKILLS : LEAN_CONTROLLER_SKILLS;
+  const baseHome = resolveBaseHome();
+  const rootDir = baseHome;
+  const pDir = profileDir(name, baseHome);
+  const result = {
+    name, lane, lean: true, existedBefore: false, created: false,
+    changed: [], skillCount: 0, missingSkills: [], ok: true, error: null,
+  };
+  try {
+    result.existedBefore = fs.existsSync(pDir);
+    if (!result.existedBefore) result.created = true;
+    fs.mkdirSync(pDir, { recursive: true });
+
+    // 1) config.yaml + .env from root ONLY when absent (never clobber live).
+    for (const fname of ["config.yaml", ".env"]) {
+      const src = path.join(rootDir, fname);
+      const dst = path.join(pDir, fname);
+      if (!fs.existsSync(dst) && fs.existsSync(src)) {
+        fs.copyFileSync(src, dst);
+        result.changed.push(fname);
+      }
+    }
+
+    // 2) SOUL.md — copy from root only when missing/empty/stock (identity guard).
+    const soulDst = path.join(pDir, "SOUL.md");
+    const soulSrc = path.join(rootDir, "SOUL.md");
+    const current = readIfExists(soulDst);
+    const stock = current === null || (current || "").trim() === "" || isStockSoul(current);
+    if (stock && fs.existsSync(soulSrc)) {
+      fs.copyFileSync(soulSrc, soulDst);
+      result.changed.push("SOUL.md");
+    }
+
+    // 3) Skills — physical set = lane skills, copied from root or fleet registry.
+    const skillsDst = path.join(pDir, "skills");
+    fs.mkdirSync(skillsDst, { recursive: true });
+    const registry = path.join(rootDir, "skills", "gsp");
+    for (const s of keep) {
+      const dst = path.join(skillsDst, s);
+      if (fs.existsSync(path.join(dst, "SKILL.md"))) continue;
+      const src = findSkillSrc(path.join(rootDir, "skills"), s) || findSkillSrc(registry, s);
+      if (src) {
+        mergeTreeCounted(src, dst);
+        result.changed.push(`skills/${s}`);
+      } else {
+        result.missingSkills.push(s);
+      }
+    }
+
+    // 4) Markers — the pair that keeps leanness durable (preseden gsp-budi/gspuser01).
+    const lpPath = path.join(pDir, ".lean-policy");
+    if (!fs.existsSync(lpPath)) {
+      fs.writeFileSync(
+        lpPath,
+        JSON.stringify({
+          policy: "lean+enforcement",
+          lean: true,
+          date: new Date().toISOString().slice(0, 10),
+          lane,
+          always_load: keep,
+          rbac: true,
+          contract: "docs/2026-08-31-enforcement-fleet/contract.md",
+          provisionedBy: "ensure-profile-complete.provisionLeanProfile",
+        }, null, 1) + "\n",
+        "utf8"
+      );
+      result.changed.push(".lean-policy");
+    }
+    const nbPath = path.join(pDir, ".no-bundled-skills");
+    if (!fs.existsSync(nbPath)) {
+      fs.writeFileSync(nbPath, `lean ${lane}: no bundled seeding\n`, "utf8");
+      result.changed.push(".no-bundled-skills");
+    }
+    // Stale artifacts that would re-seed/re-bloat: remove so engine rebuilds lean.
+    for (const junk of [path.join(skillsDst, ".bundled_manifest"), path.join(pDir, ".skills_prompt_snapshot.json")]) {
+      if (fs.existsSync(junk)) { fs.rmSync(junk, { recursive: true, force: true }); result.changed.push("purged:" + path.basename(junk)); }
+    }
+
+    // 5) Curated memory files — only when absent (same rule as ensure).
+    for (const rel of ["memories/MEMORY.md", "memories/USER.md"]) {
+      const src = path.join(rootDir, rel);
+      const dst = path.join(pDir, rel);
+      if (!fs.existsSync(dst) && fs.existsSync(src)) {
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(src, dst);
+        result.changed.push(rel);
+      }
+    }
+
+    result.skillCount = countLeafSkills(skillsDst);
+    if (result.missingSkills.length) {
+      result.ok = false;
+      result.error = `lean skills not found in root/registry: ${result.missingSkills.join(", ")}`;
+    }
+  } catch (err) {
+    result.ok = false;
+    result.error = String(err && err.stack ? err.stack : err);
+  }
+  return result;
+}
+
 /** Non-mutating inspection. */
 export function inspectProfile(name) {
   const pDir = profileDir(name);

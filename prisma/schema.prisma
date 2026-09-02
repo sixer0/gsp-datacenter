@@ -478,6 +478,10 @@ model ClientPulseAlert {
 model AgentRequest {
   id            String    @id @default(cuid())
   origin        String    @default("web")     // "web" | "hermes"
+  // FIX 02-09-2026 (temuan #4): inisiator sebenarnya. Username login utk jalur
+  // browser ("user:<u>"), id agen utk dispatch antar-profil. Null = belum
+  // tercatat (data lama) -> telemetri fallback ke "brahma".
+  requestedBy   String?
   kind          String    @default("oneshot") // "oneshot" | "kanban" | "chat"
   title         String
   prompt        String?

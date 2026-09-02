@@ -183,7 +183,7 @@ export default function UserAccessPage() {
             <input className={inputCls} placeholder="Username" value={fUsername} onChange={(e) => setFUsername(e.target.value)} autoComplete="off" />
             <input className={inputCls} placeholder="Display name (opsional)" value={fDisplayName} onChange={(e) => setFDisplayName(e.target.value)} />
             <input className={inputCls} type="password" placeholder="Password (min 8 karakter)" value={fPassword} onChange={(e) => setFPassword(e.target.value)} autoComplete="new-password" />
-            <input className={inputCls} list="hermes-profile-options" placeholder="Swarm profile (mis. user01)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
+            <input className={inputCls} list="hermes-profile-options" placeholder="Swarm profile (kosong = otomatis seusername, dibuat lean)" value={fProfile} onChange={(e) => setFProfile(e.target.value)} autoComplete="off" />
             <datalist id="hermes-profile-options">
               {["default", ...Array.from(agentProfiles)].map((p) => (
                 <option key={p} value={p} />
@@ -198,9 +198,10 @@ export default function UserAccessPage() {
             </div>
           </form>
           <div className="mt-2 text-[12px] text-[var(--text-3)]">
-            Catatan: profil Swarm harus sudah ada di mesin (dipilih dari daftar di atas). Untuk user baru
-            yang belum punya profil, gunakan <strong>signup di Swarm WebUI</strong> (otomatis membuat profil
-            dari template) lalu akunnya muncul di sini.
+            Catatan: kolom profil boleh dikosongkan. Bila nama profil belum ada di mesin, server
+            membuatkannya <strong>lean</strong> secara otomatis (skill fisik hanya lane-nya: trio
+            orkestrasi + verifikasi + LAD untuk controller, dengan marker <code>.lean-policy</code>)
+            dan menamainya sesuai username. Profil lama yang sudah ada tetap di-top-up tanpa diubah isinya.
           </div>
         </Panel>
       )}

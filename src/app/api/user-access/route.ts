@@ -14,6 +14,7 @@ import {
   ensureProfileComplete,
   isValidProfileName,
   profileDir,
+  provisionLeanProfile,
   resolveBaseHome,
 } from "../../../../scripts/ensure-profile-complete.mjs";
 
@@ -30,14 +31,14 @@ export const revalidate = 0;
  * GET  → list users
  * POST → create a user directly (admin action from the HQ UI)
  *
- * Profile provisioning guard (fix 2026-08-27 — profiles were previously
- * created blind: a hermesProfile name was accepted without any disk check,
- * producing accounts bound to missing or half-built profiles):
- *  - USER + existing profile directory        → bind as-is (pre-provisioned, admin's choice)
- *  - USER + profile NOT on disk               → provision a COMPLETE clone from default
- *                                               (config.yaml/.env/SOUL.md/skills/memory)
- *  - ADMINISTRATOR + 'default'                → allowed to share the root profile
- *  - everything else invalid                  → 400
+ * Profile provisioning guard (fix 2026-08-27; LEAN policy fix 2026-09-02):
+ *  - profile NOT on disk (USER atau ADMINISTRATOR) → provision LEAN sejak
+ *    lahir: config/.env/SOUL + skill fisik lane (controller ≤5) + marker
+ *    .lean-policy & .no-bundled-skills (provisionLeanProfile)
+ *  - ADMIN + 'default'                → allowed to share the root profile
+ *  - existing lean-marked profile     → lean top-up (never re-bloat)
+ *  - existing unmarked profile        → idempotent full-clone top-up (legacy)
+ *  - everything else invalid          → 400
  * The sync is idempotent and also top-ups an existing-but-partial clone
  * (missing SOUL/skills get merged from default; curated files never clobbered).
  */
@@ -98,30 +99,26 @@ export async function POST(request: Request) {
   const dir = profileDir(hermesProfile, baseHome);
   const onDisk = fs.existsSync(dir) && fs.statSync(dir).isDirectory();
 
-  if (!onDisk && role === "ADMINISTRATOR") {
-    // Refuse to silently provision for admins: they may intend a different
-    // host/path. Creating it is one explicit retry away.
-    return NextResponse.json(
-      {
-        error: `Swarm profile "${hermesProfile}" does not exist on this host. Provision it first (WebUI signup, or node scripts/ensure-profile-complete.mjs ensure ${hermesProfile}), then create the account.`,
-      },
-      { status: 400 },
-    );
-  }
-
+  // FIX 02-09-2026 (temuan #2 & #3): SEMUA role baru diprovisioni LEAN sejak
+  // lahir (dulu: USER dapat clone penuh ~141 skill + seed bundled; ADMIN
+  // ditolak 400 sehingga akun tak bisa dipakai). Lane = controller untuk dua
+  // role (kebijakan 31-08: profil terikat akun RBAC = CONTROLLER).
   if (!onDisk) {
-    // USER without an on-disk profile: provision a complete clone from default.
-    const result = ensureProfileComplete(hermesProfile, {});
+    const result = provisionLeanProfile(hermesProfile, { lane: "controller" });
     if (!result.ok || result.error) {
       return NextResponse.json(
-        { error: `Failed to provision Swarm profile "${hermesProfile}": ${result.error || "unknown error"}` },
+        { error: `Failed to provision lean Swarm profile "${hermesProfile}": ${result.error || "unknown error"}` },
         { status: 500 },
       );
     }
   } else {
-    // Existing directory: idempotent completeness top-up (never clobbers live
-    // config/curated memory; replaces only stock SOUL and merges skills).
-    ensureProfileComplete(hermesProfile, {});
+    // Existing directory: idempotent top-up. Lean-marked profiles are repaired
+    // lean; unmarked (legacy full-clone) keep the old completeness behaviour.
+    if (fs.existsSync(path.join(dir, ".lean-policy"))) {
+      provisionLeanProfile(hermesProfile, { lane: "controller" });
+    } else {
+      ensureProfileComplete(hermesProfile, {});
+    }
   }
 
   const after = inspectOnDisk(hermesProfile);
@@ -146,6 +143,12 @@ function inspectOnDisk(name: string): { complete: boolean; problems: string[] } 
   if (!fs.existsSync(path.join(dir, ".env"))) problems.push(".env-missing");
   if (!fs.existsSync(path.join(dir, "SOUL.md"))) problems.push("SOUL.md-missing");
   const skillCount = countLeafSkills(path.join(dir, "skills"));
+  // FIX 02-09-2026: lean-marked profiles are complete with their lane skills
+  // only — the old >=80%-of-root bar would reject every lean account.
+  if (fs.existsSync(path.join(dir, ".lean-policy"))) {
+    if (skillCount < 1) problems.push(`lean-skills-empty:${skillCount}`);
+    return { complete: problems.length === 0, problems };
+  }
   const rootSkills = countLeafSkills(path.join(baseHome, "skills"));
   if (skillCount < Math.max(1, Math.floor(rootSkills * 0.8)) && rootSkills > 0) {
     problems.push(`skills-incomplete:${skillCount}/${rootSkills}`);

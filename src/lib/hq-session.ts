@@ -84,3 +84,26 @@ export function readSessionToken(raw: string | undefined | null): HqSession | nu
     return null;
   }
 }
+
+/**
+ * FIX 02-09-2026 (temuan #4): who actually pressed the button. Returns the
+ * initiator id for a request created by this HTTP call:
+ *   - valid HQ session cookie  -> `user:<username>` (RBAC login)
+ *   - internal machine caller  -> explicit `agentId` when supplied, else null
+ *     (null keeps the legacy "brahma" attribution in telemetry).
+ */
+export function getRequester(req: Request, agentId?: string | null): string | null {
+  try {
+    const cookieHeader = req.headers.get("cookie") || "";
+    const match = cookieHeader
+      .split(/;\s*/)
+      .find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+    const raw = match ? decodeURIComponent(match.slice(SESSION_COOKIE.length + 1)) : undefined;
+    const s = readSessionToken(raw);
+    if (s) return `user:${s.u}`;
+  } catch {
+    /* fall through */
+  }
+  const a = (agentId ?? "").toString().trim();
+  return a ? a.slice(0, 80) : null;
+}

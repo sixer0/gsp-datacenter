@@ -14,6 +14,7 @@ import {
   ensureProfileComplete,
   isValidProfileName,
   profileDir,
+  provisionLeanProfile,
   resolveBaseHome,
 } from "../../../../../scripts/ensure-profile-complete.mjs";
 
@@ -39,6 +40,11 @@ function inspectOnDisk(name: string): { ok: boolean; problems: string[] } {
   if (!fs.existsSync(path.join(dir, ".env"))) problems.push(".env-missing");
   if (!fs.existsSync(path.join(dir, "SOUL.md"))) problems.push("SOUL.md-missing");
   const skillCount = countLeafSkills(path.join(dir, "skills"));
+  // FIX 02-09-2026: lean-marked profiles pass with lane skills only.
+  if (fs.existsSync(path.join(dir, ".lean-policy"))) {
+    if (skillCount < 1) problems.push(`lean-skills-empty:${skillCount}`);
+    return { ok: problems.length === 0, problems };
+  }
   const rootSkills = countLeafSkills(path.join(baseHome, "skills"));
   if (rootSkills > 0 && skillCount < Math.max(1, Math.floor(rootSkills * 0.8))) {
     problems.push(`skills-incomplete:${skillCount}/${rootSkills}`);
@@ -100,8 +106,16 @@ export async function PATCH(request: Request, ctx: Ctx) {
       }
     }
     if (requested !== "default") {
-      // Same provisioning contract as POST (idempotent, never clobbers curated state).
-      ensureProfileComplete(requested, {});
+      // Same provisioning contract as POST (fix 2026-09-02: lean by default,
+      // idempotent, never clobbers curated state).
+      const dir = profileDir(requested);
+      if (!fs.existsSync(dir)) {
+        provisionLeanProfile(requested, { lane: "controller" });
+      } else if (fs.existsSync(path.join(dir, ".lean-policy"))) {
+        provisionLeanProfile(requested, { lane: "controller" });
+      } else {
+        ensureProfileComplete(requested, {});
+      }
       const after = inspectOnDisk(requested);
       if (!after.ok) {
         return NextResponse.json(

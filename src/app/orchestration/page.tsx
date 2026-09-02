@@ -45,6 +45,7 @@ const GROUP_COLORS: Record<string, string> = {
   execution: "#34d399",
   verification: "#fb7185",
   utility: "#c084fc",
+  user: "#f472b6",
 };
 const STATUS_COLORS: Record<string, string> = {
   running: "var(--accent)",
@@ -140,6 +141,10 @@ function computePositions(agents: Agent[]): Map<string, Pos> {
     const off = 36 + idx * (CARD_W + 36);
     pos.set(a.id, { x: side < 0 ? bx - off - CARD_W : bx + CARD_W + off, y: 40, w: CARD_W, h: CARD_H_BIG });
   });
+
+  // Baris 1b — node virtual pengguna login (edge "user:<nama>" dari telemetri
+  // FIX 02-09 temuan #4): tidak ada di roster profil, jadi digambar sendiri.
+  centerRow(agents.filter((a) => a.group === "user").map((a) => a.id), 122, 18, CARD_H);
 
   // Baris 2 — kontroler (terpusat)
   centerRow(agents.filter((a) => a.group === "controller").map((a) => a.id), 178, 18, CARD_H);
@@ -303,8 +308,28 @@ export default function OrchestrationPage() {
     return [...map.values()];
   }, [periodRecords]);
 
-  const positions = useMemo(() => computePositions(agents), [agents]);
-  const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
+  // FIX 02-09-2026 (temuan #4): tambahkan node virtual utk inisiator login
+  // ("user:<nama>") yang muncul di record telemetri tapi tidak ada di roster
+  // profil — tanpa ini edge-nya tak tergambar (edge butuh posisi kedua ujung).
+  const graphAgents = useMemo(() => {
+    const ids = new Set(agents.map((a) => a.id));
+    const extra: Agent[] = [];
+    for (const r of records) {
+      for (const id of [r.from, r.to]) {
+        if (!id || ids.has(id) || !id.startsWith("user:")) continue;
+        ids.add(id);
+        extra.push({
+          id, profile: id, name: id.slice(5), emoji: "👤",
+          role: "Pengguna login · inisiator dispatch", model: "-", level: 1,
+          group: "user", groupLabel: "Pengguna", status: "idle", tasksCompleted: 0,
+        });
+      }
+    }
+    return extra.length ? [...extra, ...agents] : agents;
+  }, [agents, records]);
+
+  const positions = useMemo(() => computePositions(graphAgents), [graphAgents]);
+  const agentById = useMemo(() => new Map(graphAgents.map((a) => [a.id, a])), [graphAgents]);
 
   const filteredRecords = useMemo(() => {
     return records
@@ -508,8 +533,8 @@ export default function OrchestrationPage() {
               title="Filter berdasarkan grup agen"
             >
               <option value="all">Semua grup</option>
-              {[...new Set(agents.map((a) => a.group))].map((g) => (
-                <option key={g} value={g}>{agentById.get(agents.find((x) => x.group === g)!.id)?.groupLabel ?? g}</option>
+              {[...new Set(graphAgents.map((a) => a.group))].map((g) => (
+                <option key={g} value={g}>{agentById.get(graphAgents.find((x) => x.group === g)!.id)?.groupLabel ?? g}</option>
               ))}
             </select>
           </div>
@@ -607,7 +632,7 @@ export default function OrchestrationPage() {
                     })}
 
                   {/* ── kartu node ── */}
-                  {agents.map((a) => {
+                  {graphAgents.map((a) => {
                     const p = positions.get(a.id);
                     if (!p) return null;
                     const gcol = GROUP_COLORS[a.group] || "var(--text-3)";

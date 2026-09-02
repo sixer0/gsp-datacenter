@@ -451,8 +451,17 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [score, setScore] = useState<ScoreData | null>(null);
+  // FIX 02-09-2026 (temuan #1): header shows the SIGNED-IN user (RBAC session),
+  // never a name hardcoded in .env (NEXT_PUBLIC_OWNER_NAME has been removed).
+  const [who, setWho] = useState<{ username: string; displayName: string | null } | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.user) setWho({ username: d.user.username, displayName: d.user.displayName ?? null }); })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     fetch("/api/score").then(r => r.ok ? r.json() : null).then(d => { if (d) setScore(d); }).catch(() => {});
   }, []);
@@ -489,8 +498,10 @@ export default function Dashboard() {
         {/* ── Header ─────────────────────────────────────── */}
         <div className="hq-rise pt-4 pb-10 flex flex-wrap items-end justify-between gap-6" style={rise(0)}>
           <div>
-            <div className="eyebrow mb-2.5">{greeting()}</div>
-            <h1 className="text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--hq-text)]">{process.env.NEXT_PUBLIC_OWNER_NAME || "Founder"}</h1>
+            <div className="eyebrow mb-2.5">{greeting()}{who ? ` · ${who.username}` : ""}</div>
+            <h1 className="text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--hq-text)]" title={who ? `Signed in: ${who.username}` : undefined}>
+              {who?.displayName || who?.username || "Command Center"}
+            </h1>
             <p className="num text-[var(--hq-text-ghost)] text-[12.5px] mt-3">
               {time.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
               {"  ·  "}

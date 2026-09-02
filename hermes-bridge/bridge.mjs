@@ -23,6 +23,8 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+// NAT-R3 pilot (kartu t_ebc486c1): hard-gate prapenyampaian gerbang naturalisasi.
+import { gateForDelivery } from "./gate_transport.mjs";
 
 const execFileP = promisify(execFile);
 const HERMES = process.env.HERMES_BIN || "hermes";
@@ -316,16 +318,36 @@ async function awaitCardCompletion(r, cardId, toAgent) {
     const sem = card.status === "done" ? "done"
       : card.status === "review" ? "needs-review"
       : card.status === "blocked" ? "blocked" : "failed";
+    // NAT-R3 hard-gate prapenyampaian pada jalur defer (kartu t_ebc486c1): hasil
+    // kartu dispatcher juga dipindai sebelum disalin ke AgentRequest/komentar.
+    let delivery = resultText;
+    let gateHeld = false;
+    let gateVerdict = "off";
+    try {
+      const g = await gateForDelivery(r, resultText, log);
+      delivery = g.delivery; gateHeld = !!g.held; gateVerdict = g.verdict;
+      if (g.event) {
+        await emit("gate", `Gate ${g.verdict}: ${r.title}`, {
+          level: g.event.level, detail: g.event.detail,
+          meta: { requestId: r.id, verdict: g.verdict, holdPath: g.holdPath || null, deferred: true },
+        }).catch((e) => log("gate emit err", r.id, e.message.split("\n")[0]));
+      }
+    } catch (e) {
+      log("gate fail-open (defer):", r.id, (e.message || "error").split("\n")[0]);
+      delivery = resultText + `\n\n[catatan gerbang NAT-R3: gerbang error (${String(e.message || "").slice(0, 120)}); dikirim dengan catatan sesuai batas desain fail-open.]`;
+      gateVerdict = "error";
+    }
+    const semFinal = gateHeld ? "needs-review" : sem;
     await q(`UPDATE "AgentRequest" SET status=$2, result=$3, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      [r.id, sem, trimResult(resultText)]);
-    await emit("run", `Kartu dispatcher selesai (${sem}): ${r.title}`, {
-      level: sem === "done" || sem === "needs-review" ? "up" : "warn",
-      detail: resultText.slice(0, 400),
-      meta: { requestId: r.id, orchStatus: sem, cardId, deferred: true },
+      [r.id, semFinal, trimResult(delivery)]);
+    await emit("run", `Kartu dispatcher selesai (${gateHeld ? "tertahan gerbang" : sem}): ${r.title}`, {
+      level: gateHeld || sem === "needs-review" || sem === "done" ? (gateHeld ? "warn" : "up") : "warn",
+      detail: delivery.slice(0, 400),
+      meta: { requestId: r.id, orchStatus: semFinal, cardId, deferred: true, gate: gateVerdict },
     });
-    await closeOrch(r.id, sem, resultText.slice(0, 400));
+    await closeOrch(r.id, semFinal, delivery.slice(0, 400));
     await setAgentState(toAgent, { status: "idle", currentTask: null, action: `Kartu ${cardId} ${card.status}: ${r.title.slice(0, 80)}` });
-    log("defer done:", cardId, card.status, "→ request", r.id, sem);
+    log("defer done:", cardId, card.status, "→ request", r.id, semFinal, "gate=" + gateVerdict);
     return;
   }
   const msg = `Kartu ${cardId} tidak mencapai status terminal dalam batas waktu (status terakhir: ${lastStatus || "?"}).`;
@@ -629,9 +651,12 @@ async function runRequest(r) {
 // SEC-005: varian untuk request yang SUDAH diklaim atomik oleh lane (status sudah 'running').
 async function runRequestClaimed(r) {
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind, profile: r.profile || null } });
-  // Orchestration telemetry: dispatch brahma → profile (hanya jika target profil diisi)
+  // Orchestration telemetry: dispatch <inisiator> → profile (hanya jika target profil diisi)
+  // FIX 02-09-2026 (temuan #4): dulu hardcode "brahma" untuk SEMUA request,
+  // padahal dispatch bisa berasal dari login user lain (WebUI/HQ) atau profil
+  // lain. requestedBy diisi oleh rute pembuat request (sesi RBAC / agentId).
   const isProfile = !!(r.profile && r.profile !== "default" && r.profile !== "brahma");
-  const fromAgent = "brahma";
+  const fromAgent = r.requestedBy || "brahma";
   const toAgent = isProfile ? r.profile : "brahma";
   // Scope fungsi (bukan blok if pertama) agar bisa dipakai di blok if kedua
   // (bug 24-08-2026: ReferenceError "kanbanCardId is not defined" → AgentRequest
@@ -726,22 +751,46 @@ async function runRequestClaimed(r) {
     // oneshot/chat (hasil kerja agent) → selalu needs-review; hanya asignor yang
     // bisa menutup done via PATCH /api/brahma/requests/[id] action=force-done.
     // Operasi infra deterministik (kanban/cron/memory.write/briefing) tetap done otomatis.
-    const infraKind = !["oneshot", "chat"].includes(r.kind);
-    const sem = infraKind ? "done" : semanticStatus(result);
+    const infraKind = !["oneshot", "chat", "nat-r3-test"].includes(r.kind);
+    // NAT-R3 hard-gate prapenyampaian (kartu t_ebc486c1): keluaran agent dipindai
+    // scanner SEBELUM ditulis ke AgentRequest / kartu / event. Keluaran gagal
+    // ditahan (berkas gate-hold + indeks + event gate), yang terkirim hanyalah
+    // notice tertahan; error scanner fallback kirim-dengan-catatan (fail-open).
+    let delivery = result;
+    let gateHeld = false;
+    let gateVerdict = "off";
+    if (!infraKind) {
+      const cleaned = trimResult(result); // yang tersimpan ke DB adalah hasil strip banner
+      try {
+        const g = await gateForDelivery(r, cleaned, log);
+        delivery = g.held ? g.delivery : cleaned; gateHeld = !!g.held; gateVerdict = g.verdict;
+        if (g.event) {
+          await emit("gate", `Gate ${g.verdict}: ${r.title}`, {
+            level: g.event.level, detail: g.event.detail,
+            meta: { requestId: r.id, verdict: g.verdict, holdPath: g.holdPath || null },
+          }).catch((e) => log("gate emit err", r.id, e.message.split("\n")[0]));
+        }
+      } catch (e) {
+        log("gate fail-open:", r.id, (e.message || "error").split("\n")[0]);
+        delivery = cleaned + `\n\n[catatan gerbang NAT-R3: gerbang error (${String(e.message || "").slice(0, 120)}); dikirim dengan catatan sesuai batas desain fail-open.]`;
+        gateVerdict = "error";
+      }
+    }
+    const sem = infraKind ? "done" : (gateHeld ? "needs-review" : semanticStatus(result));
     await q(`UPDATE "AgentRequest" SET status=$2, result=$3, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      [r.id, sem, trimResult(result)]);
-    await emit("run", `${sem === "needs-review" ? "Awaiting review" : sem === "done" ? "Done" : sem === "blocked" ? "Blocked" : "Needs attention"}: ${r.title}`, {
-      level: sem === "needs-review" || sem === "done" ? "up" : "warn",
-      detail: result.slice(0, 400),
-      meta: { requestId: r.id, orchStatus: sem },
+      [r.id, sem, trimResult(delivery)]);
+    await emit("run", `${gateHeld ? "Tertahan gerbang naturalisasi" : sem === "needs-review" ? "Awaiting review" : sem === "done" ? "Done" : sem === "blocked" ? "Blocked" : "Needs attention"}: ${r.title}`, {
+      level: gateHeld ? "warn" : sem === "needs-review" || sem === "done" ? "up" : "warn",
+      detail: delivery.slice(0, 400),
+      meta: { requestId: r.id, orchStatus: sem, gate: gateVerdict },
     });
     if (isProfile) {
-      await closeOrch(r.id, sem, result.slice(0, 400));
-      await closeKanbanCard(r.id, r.hermesTaskId || kanbanCardId, sem, result); // done=complete, needs-review=request-review, blocked/failed=block
+      await closeOrch(r.id, sem, delivery.slice(0, 400));
+      await closeKanbanCard(r.id, r.hermesTaskId || kanbanCardId, sem, delivery); // done=complete, needs-review=request-review, blocked/failed=block
       await setAgentState(toAgent, {
         status: "idle",
         currentTask: null,
-        action: `${sem === "needs-review" ? "Menunggu review asignor" : sem === "done" ? "Selesai" : `Selesai (${sem})`}: ${r.title.slice(0, 80)}`,
+        action: `${gateHeld ? "Keluaran tertahan gerbang naturalisasi" : sem === "needs-review" ? "Menunggu review asignor" : sem === "done" ? "Selesai" : `Selesai (${sem})`}: ${r.title.slice(0, 80)}`,
       });
     }
   } catch (e) {
