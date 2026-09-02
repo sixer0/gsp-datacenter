@@ -2,7 +2,7 @@
 
 - **Repo**: https://github.com/sixer0/gsp-datacenter.git · branch `main`
 - **Sumber data**: `git log` (ekspor `Temp/changelog-push/export.sh` dijalankan ulang dan diverifikasi 2026-08-31)
-- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD pra-commit-dokumen `7b9a22c` (2026-09-01) — total 42 commit terdokumentasi
+- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD `4e957f4` (2026-09-02) — total 44 commit terdokumentasi
 - **Disusun**: 2026-08-31. Entri di-backdate retrospektif: tanggal = tanggal commit ASLI;
   tidak ada manipulasi histori (tanpa rebase/amend/force-push/--date).
 
@@ -10,7 +10,9 @@
 
 | hash | tanggal | tipe | ringkasan perubahan | kronologis |
 |------|---------|------|---------------------|------------|
-| (commit ini) | 2026-09-01 | docs | Changelog: entri commit b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | — |
+| (commit ini) | 2026-09-02 | docs | Changelog: entri af2d0a4..4e957f4 (dokumen changelog 01-09 + fix bind HQ 9011) | — |
+| af2d0a4 | 2026-09-01 | docs | Changelog: entri b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | 1 |
+| 4e957f4 | 2026-09-02 | fix | fix: HQ 9011 default bind 0.0.0.0 (HQ-BIND-002) | 2 |
 
 ## 2026-08-24
 
