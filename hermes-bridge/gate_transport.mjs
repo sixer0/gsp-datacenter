@@ -2,7 +2,10 @@
 //
 // Posisi: lapis pengiriman bridge HQ. Setiap hasil kerja agent (kind oneshot/chat)
 // dipindai scanner deterministik SEBELUM ditulis ke AgentRequest / komentar kartu /
-// event dashboard. Kanal pilot: K5 kanban (ringkasan handoff), sesuai D-TA-07.
+// event dashboard. Kanal gerbang (menahan): keluaran yang dibaca MANUSIA saja
+// (chat/doc/deck/notif/etalase). Kanal `kanban` (K5) = INFO-ONLY: pemindaian tetap
+// jalan sebagai catatan, TIDAK pernah menahan (GATE-NAT-CHAN t_6814f849, 04-09;
+// menegakkan kebijakan 03-09 + putusan nat-s9hil butir 1; D-TA-07 dicabut).
 //
 // Batas desain (body kartu NAT-FOLLOW-R3):
 //   • Tidak ada pembuangan diam-diam: keluaran tertahan ditulis utuh ke gate-hold/
@@ -30,6 +33,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 export const CFG = {
   enabled: process.env.BRIDGE_GATE_ENABLED !== "0",
+  // Default kanal pemindaian tetap `kanban` (hasil kerja agen ditulis ke kartu /
+  // AgentRequest). Kanal ini INFO-ONLY (lihat INFO_ONLY): dipindai, dicatat, tidak
+  // ditahan. Menahan hanya berlaku bila BRIDGE_GATE_CHANNELS diisi kanal keluaran
+  // user (chat|doc|deck|notif|etalase).
   channels: (process.env.BRIDGE_GATE_CHANNELS || "kanban")
     .split(",").map((s) => s.trim()).filter(Boolean),
   python: process.env.BRIDGE_GATE_PYTHON
@@ -39,6 +46,13 @@ export const CFG = {
   timeoutMs: Number(process.env.BRIDGE_GATE_TIMEOUT_MS || 60000),
   holdDir: process.env.BRIDGE_GATE_HOLD_DIR || path.join(HERE, "gate-hold"),
 };
+
+// Kanal yang HANYA dipindai sebagai catatan dan tidak pernah menahan kartu/request.
+// K5 kanban = ringkasan handoff antar-agen: dikecualikan dari gerbang oleh
+// kebijakan user 03-09 (persempitan cakupan) + putusan nat-s9hil butir 1 +
+// gsp-orchestration-execution aturan 11. D-TA-07 (kanban ditagih ambang artefak
+// final) sudah dicabut 03-09; pilot NAT-R3 masih memakainya -> GATE-NAT-CHAN 04-09.
+export const INFO_ONLY_CHANNELS = new Set(["kanban"]);
 
 // Satu pemindaian: tulis teks ke berkas temp, jalankan scanner, klasifikasi.
 // Return { status: 'pass'|'fail'|'error', report, failLines, error }
@@ -170,6 +184,24 @@ export async function gateForDelivery(req, text, log = () => {}) {
     return {
       held: false, delivery: text + note, verdict: "error",
       event: { kind: "gate_note", level: "warn", detail: `scanner error: ${res.error}`.slice(0, 400) },
+    };
+  }
+  // FAIL pada kanal info-only (K5 kanban): pemindaian informatif — dicatat sebagai
+  // event + baris indeks gate-hold.ndjson (bisa diaudit), teks TETAP terkirim utuh,
+  // request/kartu tidak ditahan. Kebijakan 03-09: handoff antar-agen dikecualikan.
+  if (INFO_ONLY_CHANNELS.has(channel)) {
+    fs.mkdirSync(CFG.holdDir, { recursive: true });
+    try {
+      fs.appendFileSync(path.join(CFG.holdDir, "gate-hold.ndjson"), JSON.stringify({
+        at: new Date().toISOString().replace(/[:.]/g, "-"), requestId: req.id,
+        title: (req.title || "").slice(0, 160), profile: req.profile || null, channel,
+        verdict: "info-only", sha256: sha256(text), failLines: res.failLines,
+      }) + "\n", "utf8");
+    } catch { /* catatan indeks tidak boleh menggagalkan pengiriman */ }
+    log("gate: INFO-ONLY (scan FAIL, tidak ditahan)", req.id, channel);
+    return {
+      held: false, delivery: text, verdict: "info-fail",
+      event: { kind: "gate_note", level: "info", detail: `scan FAIL info-only di kanal '${channel}': ${(res.failLines || []).slice(0, 3).join(" | ")}`.slice(0, 400) },
     };
   }
   const { holdPath } = writeHold(req, text, channel, res);
