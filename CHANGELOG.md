@@ -10,7 +10,8 @@
 
 | hash | tanggal | tipe | ringkasan perubahan | kronologis |
 |------|---------|------|---------------------|------------|
-| (commit ini) | 2026-09-03 | docs | Changelog: entri f56decd..79018fd (backfill 02-09 + fix Ask Librarian kind instant) | — |
+| 9ee15ab | 2026-09-03 | docs | Changelog: entri f56decd..79018fd (backfill 02-09 + fix Ask Librarian kind instant) | — |
+| (commit ini) | 2026-09-03 | fix(bridge) | mirror kanban mati senyap sejak 02-09: stdout `kanban list --json` (1,5MB, 970 kartu) kena cap SEC-007 1MB -> JSON terpotong -> 99 baris HermesTask basi; cap per-panggilan (maxOut) + mirror pakai 8MB (kontrak docs/2026-09-03-kanban-triage; berlaku setelah restart bridge oleh user) | 8 |
 | af2d0a4 | 2026-09-01 | docs | Changelog: entri b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | 1 |
 | 4e957f4 | 2026-09-02 | fix | fix: HQ 9011 default bind 0.0.0.0 (HQ-BIND-002) | 2 |
 | 9821e03 | 2026-09-02 | docs | Changelog: entri af2d0a4..4e957f4 (dokumen changelog 01-09 + fix bind HQ 9011) | 3 |

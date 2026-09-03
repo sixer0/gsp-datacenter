@@ -63,11 +63,11 @@ const q = (text, params) => pool.query(text, params);
 //  karena mirrorTick pertama menggantung menunggu hermes CLI yang hang).
 // Strategi: spawn manual + Promise.race + taskkill /T (tree-kill) saat timeout,
 // lalu reject supaya pemanggil selalu selesai dalam waktu bounded.
-async function hermes(args, { timeout = 30000 } = {}) {
+async function hermes(args, { timeout = 30000, maxOut = 1024 * 1024 } = {}) {
   return await new Promise((resolve, reject) => {
     const child = spawn(HERMES, args, { windowsHide: true });
     let stdout = "", stderr = "", settled = false;
-    const MAX_OUT = 1024 * 1024; // SEC-007: cap 1MB stdout
+    const MAX_OUT = maxOut; // SEC-007: cap stdout (default 1MB; pemanggil besar boleh naikkan — fix TRIAGE-0309)
     const killTree = () => {
       try { execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], () => {}); } catch { /* sudah mati */ }
     };
@@ -363,7 +363,10 @@ async function mirrorKanban() {
   let tasks = [];
   try {
     // NB: this Brahma CLI wants --board BEFORE the subcommand.
-    const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 45000 });
+    // TRIAGE-0309: output list 970 kartu = ~1,5MB > cap lama 1MB -> JSON terpotong
+    // ("Unterminated string ... position 1109774") dan mirror mati sejak 02-09.
+    // Cap dinaikkan ke 8MB khusus panggilan mirror ini.
+    const out = await hermes(["kanban", "--board", BOARD, "list", "--json"], { timeout: 45000, maxOut: 8 * 1024 * 1024 });
     const parsed = JSON.parse(out || "[]");
     tasks = Array.isArray(parsed) ? parsed : parsed.tasks || [];
   } catch (e) { log("kanban list failed:", e.message.split("\n")[0]); return; }
