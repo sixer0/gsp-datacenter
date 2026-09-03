@@ -316,7 +316,7 @@ async function awaitCardCompletion(r, cardId, toAgent) {
       || (card.status === "blocked" ? `Kartu ${cardId} diblokir: ${card.block_kind || "tanpa alasan"}` : "")
       || `Kartu ${cardId} berakhir di status ${card.status} tanpa result.`;
     const sem = card.status === "done" ? "done"
-      : card.status === "review" ? "needs-review"
+      : card.status === "review" ? (r.kind === "instant" ? "done" : "needs-review")
       : card.status === "blocked" ? "blocked" : "failed";
     // NAT-R3 hard-gate prapenyampaian pada jalur defer (kartu t_ebc486c1): hasil
     // kartu dispatcher juga dipindai sebelum disalin ke AgentRequest/komentar.
@@ -684,7 +684,7 @@ async function runRequestClaimed(r) {
     //  • HQ-card request lain                → defer ke eksekusi pemiliknya
     //  • kartu sudah terminal (retry)        → salin hasilnya, jangan jalankan
     //  • selain itu (kartu baru milik kita)  → bridge eksekusi sendiri
-    if (kanbanCardId && (r.kind === "oneshot" || r.kind === "chat")) {
+    if (kanbanCardId && (r.kind === "oneshot" || r.kind === "chat" || r.kind === "instant")) {
       const card = await kanbanCardState(kanbanCardId);
       if (card) {
         const body = card.body || "";
@@ -709,7 +709,7 @@ async function runRequestClaimed(r) {
   }
   try {
     let result = "";
-    if (r.kind === "oneshot" || r.kind === "chat") {
+    if (r.kind === "oneshot" || r.kind === "chat" || r.kind === "instant") {
       result = (await hermes([...(isProfile ? ["-p", r.profile] : []), "-z", r.prompt || r.title], { timeout: RUN_TIMEOUT_MS })).trim();
     } else if (r.kind === "kanban") {
       result = (await hermes(["kanban", "--board", BOARD, "create", "--json", r.title], { timeout: 20000 })).trim();
@@ -752,6 +752,12 @@ async function runRequestClaimed(r) {
     // bisa menutup done via PATCH /api/brahma/requests/[id] action=force-done.
     // Operasi infra deterministik (kanban/cron/memory.write/briefing) tetap done otomatis.
     const infraKind = !["oneshot", "chat", "nat-r3-test"].includes(r.kind);
+    // ASK-INST (03-09): kind "instant" = tanya-jawab read-only utk user (Ask
+    // Librarian). Dijalankan spt oneshot di askLane tapi penyelesaiannya
+    // LANGSUNG done tanpa review gate: gerbang review itu utk hasil KERJA agen,
+    // bukan utk jawaban yang diminta user saat itu juga. Scanner NAT-R3 ikut
+    // di-noop-kan utk kind ini (lihat gate_transport.mjs).
+    const isInstant = r.kind === "instant";
     // NAT-R3 hard-gate prapenyampaian (kartu t_ebc486c1): keluaran agent dipindai
     // scanner SEBELUM ditulis ke AgentRequest / kartu / event. Keluaran gagal
     // ditahan (berkas gate-hold + indeks + event gate), yang terkirim hanyalah
@@ -776,7 +782,7 @@ async function runRequestClaimed(r) {
         gateVerdict = "error";
       }
     }
-    const sem = infraKind ? "done" : (gateHeld ? "needs-review" : semanticStatus(result));
+    const sem = (infraKind || isInstant) ? "done" : (gateHeld ? "needs-review" : semanticStatus(result));
     await q(`UPDATE "AgentRequest" SET status=$2, result=$3, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
       [r.id, sem, trimResult(delivery)]);
     await emit("run", `${gateHeld ? "Tertahan gerbang naturalisasi" : sem === "needs-review" ? "Awaiting review" : sem === "done" ? "Done" : sem === "blocked" ? "Blocked" : "Needs attention"}: ${r.title}`, {
@@ -813,7 +819,7 @@ async function processQueue() {
     const { rows } = await q(
       `UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now()
        WHERE id = (SELECT id FROM "AgentRequest"
-                   WHERE status IN ('queued','approved') AND title NOT LIKE 'Ask Librarian%'
+                   WHERE status IN ('queued','approved') AND kind <> 'instant' AND title NOT LIKE 'Ask Librarian%'
                    ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED)
        RETURNING *`
     ); // SEC-005: klaim atomik anti double-process lintas instance
@@ -824,14 +830,14 @@ async function processQueue() {
 }
 
 async function askLane() {
-  // Jalur paralel khusus Ask Librarian: diproses seketika (1 request per waktu),
+  // Jalur paralel Ask Librarian + kind "instant": diproses seketika (1 request per waktu),
   // tanpa mengganggu antrean rebuild di main lane.
   for (;;) {
     try {
       const { rows } = await q(
         `UPDATE "AgentRequest" SET status='running', "startedAt"=now(), "updatedAt"=now()
          WHERE id = (SELECT id FROM "AgentRequest"
-                     WHERE status IN ('queued','approved') AND title LIKE 'Ask Librarian%'
+                     WHERE status IN ('queued','approved') AND (kind = 'instant' OR title LIKE 'Ask Librarian%')
                      ORDER BY "createdAt" ASC LIMIT 1 FOR UPDATE SKIP LOCKED)
          RETURNING *`
       ); // SEC-005b: askLane atomik + sertakan 'approved' (bug: ask sideEffecting stuck permanen)

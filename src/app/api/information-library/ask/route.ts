@@ -5,6 +5,9 @@ import { requireSession } from '@/lib/require-session';
 // POST /api/information-library/ask { question } → dispatch gsp-librarian untuk
 // menjawab pertanyaan user dengan data Information Library, respons STRICT JSON
 // (multi-table). UI mem-poll GET /api/brahma/requests/<id> lalu merender tabel.
+// kind=instant (ASK-INST 03-09): hasil langsung done di askLane. Tanya-jawab
+// read-only tidak lagi melewati review gate oneshot, jadi jawaban tidak nyangkut
+// di needs-review (lihat kontrak docs/2026-09-03-fix-ask-librarian-instant/).
 export async function POST(req: Request) {
   // W2.2 guard (F-SEC-004): tolak tanpa sesi/identitas internal — level route.
   const denied = await requireSession(req);
@@ -63,7 +66,7 @@ Aturan:
   const row = await prisma.agentRequest.create({
     data: {
       origin: "web",
-      kind: "oneshot",
+      kind: "instant",
       title: title.slice(0, 200),
       prompt,
       profile: "gsp-librarian",

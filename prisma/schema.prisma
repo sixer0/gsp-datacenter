@@ -482,7 +482,7 @@ model AgentRequest {
   // browser ("user:<u>"), id agen utk dispatch antar-profil. Null = belum
   // tercatat (data lama) -> telemetri fallback ke "brahma".
   requestedBy   String?
-  kind          String    @default("oneshot") // "oneshot" | "kanban" | "chat"
+  kind          String    @default("oneshot") // "oneshot" | "kanban" | "chat" | "instant" (Ask Librarian: hasil langsung done, tanpa review gate)
   title         String
   prompt        String?
   profile       String?                       // target Hermes profile (gsp-*) — null = default/brahma

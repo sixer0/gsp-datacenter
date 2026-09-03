@@ -61,3 +61,6 @@ hermes-bridge/node_modules/
 
 # backup files sisa hotfix (F-XP-004)
 *.bak-*
+
+# tahanan gerbang NAT-R3 (data runtime, jangan commit)
+/hermes-bridge/gate-hold/

@@ -991,6 +991,7 @@ const ASK_STATUS_LABEL: Record<string, string> = {
   approved: "Disetujui — librarian mulai bekerja…",
   running: "Librarian sedang menelusuri Information Library…",
   done: "Selesai",
+  "needs-review": "Menunggu tinjauan…",
 };
 const ASK_STATUS_SHORT: Record<string, string> = {
   queued: "antre",
@@ -998,6 +999,7 @@ const ASK_STATUS_SHORT: Record<string, string> = {
   approved: "mulai",
   running: "berjalan",
   done: "selesai",
+  "needs-review": "perlu tinjau",
   failed: "gagal",
   rejected: "ditolak",
   cancelled: "batal",
@@ -1008,7 +1010,12 @@ const ASK_STATUS_PROGRESS: Record<string, number> = {
   approved: 35,
   running: 60,
   done: 100,
+  "needs-review": 100,
 };
+// Status yang berarti jawaban Ask SUDAH tersedia (ASK-INST 03-09): kind instant
+// menutup done; needs-review tetap diterima demi kompatibilitas request lama
+// (kind oneshot sebelum fix) agar riwayat lama bisa dibuka lagi.
+const ASK_ANSWERED = new Set(["done", "needs-review"]);
 const ASK_TITLE_PREFIX = "Ask Librarian — ";
 const ASK_SESSION_KEY = "hq.ask.session.v1";
 
@@ -1919,7 +1926,7 @@ export default function InformationLibraryPage() {
     setAskStatus(st ?? null);
     const q = (data.request.title || "").replace(ASK_TITLE_PREFIX, "");
     if (q) setAskQ(q);
-    if (st === "done") {
+    if (ASK_ANSWERED.has(st ?? "")) {
       const raw = data.request.result || "";
       const parsed = parseAskResult(raw);
       setAskResult(parsed);
@@ -1977,7 +1984,7 @@ export default function InformationLibraryPage() {
       if (!data?.request) return;
       const st = data.request.status;
       setAskStatus(st ?? null);
-      if (st === "done") {
+      if (ASK_ANSWERED.has(st ?? "")) {
         clearInterval(iv);
         const raw = data.request.result || "";
         const parsed = parseAskResult(raw);
@@ -2026,7 +2033,7 @@ export default function InformationLibraryPage() {
           return;
         }
         setAskStatus(st);
-        if (st === "done") {
+        if (ASK_ANSWERED.has(st ?? "")) {
           const raw = data.request?.result || "";
           const parsed = parseAskResult(raw);
           setAskResult(parsed);
