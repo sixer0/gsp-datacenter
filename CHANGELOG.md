@@ -2,7 +2,7 @@
 
 - **Repo**: https://github.com/sixer0/gsp-datacenter.git · branch `main`
 - **Sumber data**: `git log` (ekspor `Temp/changelog-push/export.sh` dijalankan ulang dan diverifikasi 2026-08-31)
-- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD `4e957f4` (2026-09-02) — total 44 commit terdokumentasi
+- **Cakupan**: root commit `227cb17` (2026-08-24) s/d HEAD `79018fd` (2026-09-03), total 49 commit terdokumentasi
 - **Disusun**: 2026-08-31. Entri di-backdate retrospektif: tanggal = tanggal commit ASLI;
   tidak ada manipulasi histori (tanpa rebase/amend/force-push/--date).
 
@@ -10,10 +10,14 @@
 
 | hash | tanggal | tipe | ringkasan perubahan | kronologis |
 |------|---------|------|---------------------|------------|
-| (commit ini) | 2026-09-02 | docs | Changelog: entri af2d0a4..4e957f4 (dokumen changelog 01-09 + fix bind HQ 9011) | — |
+| (commit ini) | 2026-09-03 | docs | Changelog: entri f56decd..79018fd (backfill 02-09 + fix Ask Librarian kind instant) | — |
 | af2d0a4 | 2026-09-01 | docs | Changelog: entri b23b680..7b9a22c (dokumen changelog + launcher worker-2 LP) | 1 |
 | 4e957f4 | 2026-09-02 | fix | fix: HQ 9011 default bind 0.0.0.0 (HQ-BIND-002) | 2 |
-| 500bbdb | 2026-09-02 | fix(hq) | 4 temuan user: header dashboard dari sesi login (env OWNER dihapus), akun USER/ADMIN diprovisioni lean sejak lahir (provisionLeanProfile + marker ganda, admin tak lagi 400), telemetri requestedBy (kolom AgentRequest + bridge + backfill 143 edge user:web + node graf user:*); verifikasi 15/15 (kontrak docs/2026-09-02-fix-hq-rbac-telemetry) | 3 |
+| 9821e03 | 2026-09-02 | docs | Changelog: entri af2d0a4..4e957f4 (dokumen changelog 01-09 + fix bind HQ 9011) | 3 |
+| 500bbdb | 2026-09-02 | fix(hq) | 4 temuan user: header dashboard dari sesi login (env OWNER dihapus), akun USER/ADMIN diprovisioni lean sejak lahir (provisionLeanProfile + marker ganda, admin tak lagi 400), telemetri requestedBy (kolom AgentRequest + bridge + backfill 143 edge user:web + node graf user:*); verifikasi 15/15 (kontrak docs/2026-09-02-fix-hq-rbac-telemetry) | 4 |
+| f56decd | 2026-09-02 | docs | Changelog: entri 500bbdb (fix HQ 4 temuan 02-09) | 5 |
+| ca09c52 | 2026-09-03 | test(hq) | test(hq): verifier atribusi agentId jalur mesin (6/6 PASS, kontrak fix-hq-rbac-telemetry) | 6 |
+| 79018fd | 2026-09-03 | fix(hq) | fix(hq): kind 'instant' utk Ask Librarian, jawaban langsung done tanpa nyangkut needs-review (bridge askLane + gate noop + UI ASK_ANSWERED; kontrak docs/2026-09-03-fix-ask-librarian-instant) | 7 |
 
 ## 2026-08-24
 
