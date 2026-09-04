@@ -180,7 +180,13 @@ function InboxCard({
             </button>
             <button
               type="button"
-              onClick={() => patch({ action: "reject" })}
+              onClick={() => {
+                // FIX-RR (defect TRIAGE-0904D): reject meminta alasan (opsional)
+                // agar tercatat di result; batal (null) tidak mengirim apa pun.
+                const reason = window.prompt("alasan penolakan (opsional)");
+                if (reason === null) return;
+                patch({ action: "reject", reason: reason.trim() });
+              }}
               className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--down)]"
               style={{ border: "1px solid var(--line)" }}
             >

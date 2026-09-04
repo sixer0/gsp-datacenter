@@ -35,7 +35,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!actionable.includes(action))
     return NextResponse.json({ error: `cannot ${action || "(empty)"} a ${existing.status} request` }, { status: 409 });
   if (action === "approve") data.status = "approved";
-  else if (action === "reject") data.status = "rejected";
+  else if (action === "reject") {
+    // FIX-RR (defect TRIAGE-0904D): reject wajib merekam alasan ke kolom result
+    // supaya controller tahu dasar penolakan; kosong = penanda tanpa alasan.
+    data.status = "rejected";
+    const reason = (b.reason || "").toString().trim().slice(0, 2000);
+    data.result = `REJECTED BY USER: ${reason || "(tanpa alasan)"}`;
+  }
   else if (action === "edit") { data.status = "approved"; if (b.prompt) data.prompt = b.prompt.toString(); if (b.title) data.title = b.title.toString().slice(0, 200); }
   else if (action === "force-done") {
     data.status = "done";
