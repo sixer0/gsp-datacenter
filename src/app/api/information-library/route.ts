@@ -1,7 +1,76 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Pool as PgPool } from "pg";
 import fs from "node:fs";
 import path from "node:path";
+
+// ─── ILFIX-0927 F1-4 — lapisan baca kandidat dari mirror FTS IlSearchDoc ─────
+// Kontrak mengikat: docs/2026-09-27-ilfix-ingest/f1/F1-DESIGN.md §4.
+// Jalur utama: kandidat id+source dari IlSearchDoc (websearch_to_tsquery 'simple'
+// + ts_rank; fallback trgm ILIKE ter-indeks gin_trgm_ops), lalu HIDRASI memakai
+// pembentuk entri lama di bawah sehingga bentuk respons TIDAK BERUBAH (FR2).
+// Fallback PENUH ke perilaku LIKE hari ini bila: token kosong (kueri <3 char),
+// scope vault/archive (di luar cakupan indeks — lihat komentar §0), tabel kosong/
+// belum ada, query error, atau 0 kandidat. Tidak pernah lebih buruk dari sekarang.
+// Semua nilai user lewat parameter $n — NOL concat SQL: satu-satunya string yang
+// dibangun aplikasi adalah daftar token hasil regex whitelist digabung operator
+// tetap " OR " (mustahil membawa operator tsquery/sintaks SQL).
+const IL_CANDIDATE_CAP = 200; // cap kandidat ts_rank (terukur 2 ms @44MB, F1-DESIGN P-6)
+
+let _ilPool: PgPool | null = null;
+function getIlPool(): PgPool | null {
+  const cs = process.env.DATABASE_URL;
+  if (!cs) return null;
+  if (!_ilPool) {
+    _ilPool = new PgPool({
+      connectionString: cs,
+      max: 2,
+      connectionTimeoutMillis: 2500,
+      statement_timeout: 5000,
+      query_timeout: 5000,
+    });
+  }
+  return _ilPool;
+}
+
+function extractQueryTokens(q: string): string[] {
+  // Kontrak §4.1: min 3 char; Latin+CJK+kana+hangul; maks 20 token pertama; lower-case.
+  // rentang: \\u4e00-\\u9fff Han · \\u3040-\\u30ff kana · \\uac00-\\ud7af hangul
+  const HAN = "\u4e00"; const HAN_END = "\u9fff";
+  const KANA = "\u3040"; const KANA_END = "\u30ff";
+  const HANGUL = "\uac00"; const HANGUL_END = "\ud7af";
+  const re = new RegExp(`[A-Za-z0-9${HAN}-${HAN_END}${KANA}-${KANA_END}${HANGUL}-${HANGUL_END}]{3,}`, "gu");
+  const m = q.match(re);
+  return m ? m.slice(0, 20).map((t) => t.toLowerCase()) : [];
+}
+
+type IlCandidate = { id: string; source: string };
+
+// §4.3 jalur FTS. websearch_to_tsquery pemaaf sintaks (bukti R14: input sampah ->
+// 0 hit, bukan exception). BUKAN websearch atas kalimat mentah (terbukti 0/8, P-7).
+async function ftsCandidates(pool: PgPool, orTokens: string, cap: number): Promise<IlCandidate[]> {
+  const res = await pool.query(
+    `SELECT "id", "source", ts_rank("tsv", q) AS score
+       FROM "IlSearchDoc", websearch_to_tsquery('simple', $1) q
+      WHERE "tsv" @@ q
+      ORDER BY score DESC
+      LIMIT $2`,
+    [orTokens, cap]
+  );
+  return res.rows.map((r: { id: string; source: string }) => ({ id: r.id, source: r.source }));
+}
+
+// §4.5 fallback trgm (CJK tanpa spasi / substring): `||` di sisi SQL atas parameter,
+// bukan concat JS; ter-indeks gin_trgm_ops (EXPLAIN nyata P-8).
+async function trgmCandidates(pool: PgPool, phrase: string, cap: number): Promise<IlCandidate[]> {
+  const res = await pool.query(
+    `SELECT "id", "source" FROM "IlSearchDoc"
+      WHERE "body" ILIKE '%' || $1 || '%' OR "title" ILIKE '%' || $1 || '%'
+      LIMIT $2`,
+    [phrase, cap]
+  );
+  return res.rows.map((r: { id: string; source: string }) => ({ id: r.id, source: r.source }));
+}
 
 // Shared GSP workspace — root tempat AGENTS.md / MEMORY.md / memory/ / docs/ berada.
 // Dapat dioverride via env SHARED_WORKSPACE (default: /Users/mbp/workspace/gsp-hermes/workspace).
@@ -126,6 +195,54 @@ export async function GET(req: Request) {
   const wantVault = scope === "vault" || scope === "all";
   const isArchiveScope = scope === "archive";
 
+  // ── 0. Kandidat IlSearchDoc (ILFIX F1-4, kontrak F1-DESIGN §4) ─────────────
+  // null  => TIDAK ada kandidat tepercaya (tanpa q / token kosong / scope archive
+  //          di luar cakupan indeks / tabel kosong / error) => perilaku LIKE lama utuh.
+  // object => himpunan id mentah per source dari indeks FTS; hidrasi TETAP memakai
+  //          pembentuk entri lama (bentuk respons identik, FR2) dengan keanggotaan
+  //          himpunan ini sebagai penyaring pembanding substring lama.
+  let ilCand: { wiki: Set<string>; ws: Set<string>; vault: Set<string>; tokens: string[] } | null =
+    null;
+  if (q && !isArchiveScope) {
+    const tokens = extractQueryTokens(q);
+    const pool = tokens.length > 0 ? getIlPool() : null;
+    if (pool) {
+      try {
+        // §4.3 FTS utama (token OR, terukur 8/8 recall); error sintaks mustahil
+        // (websearch pemaaf + input sudah whitelist-regex) tapi tetap dalam try/catch.
+        const fts = await ftsCandidates(pool, tokens.join(" OR "), IL_CANDIDATE_CAP).catch(
+          () => [] as IlCandidate[]
+        );
+        // §4.5 trgm substring — pelengkap recall CJK-tanpa-spasi & subtoken Latin
+        // (mis. "supply" tak bertemu token "supply-chain"); ter-indeks, LIMIT cap.
+        const trgm = await trgmCandidates(pool, q, IL_CANDIDATE_CAP).catch(
+          () => [] as IlCandidate[]
+        );
+        const pairs: IlCandidate[] = [];
+        const seen = new Set<string>();
+        for (const c of [...fts, ...trgm]) {
+          const key = `${c.source}\u0000${c.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          pairs.push(c);
+        }
+        if (pairs.length > 0) {
+          const wiki = new Set<string>();
+          const ws = new Set<string>();
+          const vault = new Set<string>();
+          for (const c of pairs) {
+            if (c.source === "wiki") wiki.add(c.id); // id HermesMemory apa adanya
+            else if (c.source === "workspace") ws.add(c.id.replace(/^ws:/, "")); // = rel route.ts
+            else if (c.source === "vault") vault.add(c.id.replace(/^vault:/, "")); // rel root vault
+          }
+          ilCand = { wiki, ws, vault, tokens };
+        }
+      } catch {
+        ilCand = null; // §4.6 fallback penuh — tidak pernah lebih buruk dari hari ini
+      }
+    }
+  }
+
   const wikiEntries: Record<string, unknown>[] = [];
   const wsEntries: Record<string, unknown>[] = [];
 
@@ -134,7 +251,7 @@ export async function GET(req: Request) {
     const where: Record<string, unknown> = {};
     if (status !== "all") where.status = status;
     if (type && type !== "all") where.type = type;
-    if (q) {
+    if (q && !ilCand) {
       where.OR = [
         { title: { contains: q, mode: "insensitive" } },
         { body: { contains: q, mode: "insensitive" } },
@@ -153,22 +270,31 @@ export async function GET(req: Request) {
       "corporate": "corporate", "digital": "digital", "engineering": "engineering",
       "operations": "operations", "library": "library",
     };
-    wikiEntries.push(
-      ...rows.map((r) => {
-        let ddomain = "wiki";
-        const tags = (Array.isArray(r.tags) ? r.tags : []).join(" ").toLowerCase();
-        for (const [k, v] of Object.entries(DOMAIN_TAG_ALIASES)) {
-          if (tags.includes(k)) { ddomain = v; break; }
-        }
-        return {
-          ...r,
-          source: "wiki",
-          confidence: r.confidence != null ? Number(r.confidence) : null,
-          domain: ddomain,
-          project: null,
-        };
-      })
-    );
+    let mapped = rows.map((r) => {
+      let ddomain = "wiki";
+      const tags = (Array.isArray(r.tags) ? r.tags : []).join(" ").toLowerCase();
+      for (const [k, v] of Object.entries(DOMAIN_TAG_ALIASES)) {
+        if (tags.includes(k)) { ddomain = v; break; }
+      }
+      return {
+        ...r,
+        source: "wiki",
+        confidence: r.confidence != null ? Number(r.confidence) : null,
+        domain: ddomain,
+        project: null,
+      };
+    });
+    // jalur kandidat: muat semua baris terfilter lalu saring dgn himpunan id indeks;
+    // tag HermesMemory TIDAK terindeks tsv → tetap pakai kecocokan tag lama sebagai OR.
+    if (q && ilCand) {
+      const cand = ilCand;
+      mapped = mapped.filter(
+        (r) =>
+          cand.wiki.has(String(r.id)) ||
+          (Array.isArray(r.tags) ? (r.tags as string[]).some((t) => t.toLowerCase() === q) : false)
+      );
+    }
+    wikiEntries.push(...mapped);
   }
 
   // ── 2. Shared workspace (filesystem) ─────────────────────
@@ -187,7 +313,13 @@ export async function GET(req: Request) {
       const stat = fs.statSync(f.abs);
       const title = extractTitle(f.rel, body);
       const haystack = `${f.rel} ${title} ${body}`.toLowerCase();
-      if (q && !haystack.includes(q)) continue;
+      // F1-4: jalur kandidat → keanggotaan himpunan indeks ATAU kecocokan token per
+      // kata atas haystack lama (path+title+body); tanpa kandidat → substring lama.
+      if (q) {
+        if (ilCand) {
+          if (!ilCand.ws.has(f.rel) && !ilCand.tokens.some((t) => haystack.includes(t))) continue;
+        } else if (!haystack.includes(q)) continue;
+      }
       // type asli dari path; filter type HANYA menyaring (bukan memaksa type)
       const t = inferType(f.rel);
       if (type && type !== "all" && t !== type) continue;
@@ -240,7 +372,13 @@ export async function GET(req: Request) {
         const nonMd = walkFiles(abs).filter((f) => !/\.(md|markdown|mdx)$/i.test(f.rel));
         // hanya folder yang punya artefak non-md (folder .md saja sudah terwakili)
         if (nonMd.length === 0) continue;
-        if (q && !`docs/${dir}`.toLowerCase().includes(q)) continue;
+        // entri folder sintetis TIDAK terindeks IlSearchDoc — tetap substring/token atas path
+        if (q) {
+          const hay = `docs/${dir}`.toLowerCase();
+          if (ilCand) {
+            if (!ilCand.tokens.some((t) => hay.includes(t))) continue;
+          } else if (!hay.includes(q)) continue;
+        }
         // entri folder docs selalu type "project" — hormati filter type
         if (type && type !== "all" && type !== "project") continue;
         const bodyLines = [
@@ -312,7 +450,13 @@ export async function GET(req: Request) {
         const vtype = fm.type || "note";
         const vstatus = fm.status || "usulan";
         const haystack = `vault/${f.rel} ${title} ${body} ${vtype} ${vstatus}`.toLowerCase();
-        if (q && !haystack.includes(q)) continue;
+        // F1-4: jalur kandidat vault (indeks id = "vault:"+rel root vault = f.rel);
+        // tanpa kandidat → substring lama.
+        if (q) {
+          if (ilCand) {
+            if (!ilCand.vault.has(f.rel) && !ilCand.tokens.some((t) => haystack.includes(t))) continue;
+          } else if (!haystack.includes(q)) continue;
+        }
         if (type && type !== "all" && vtype !== type) continue;
         // status: di scope "all", tampilkan SEMUA lifecycle vault (usulan/dll) —
         // analisa adalah pengetahuan; filter status hanya berlaku di scope vault.
