@@ -298,6 +298,84 @@ describe.skipIf(!envReady)(
   },
 );
 
+// ── F1-7 (D-10b): paritas recall scope wiki untuk token高频 ─────────────────
+// Verdict F1 CHECK 7 (M-1): pada korpus nyata, LIKE-lama menemukan 549 baris wiki
+// utk 'vendor' sementara gabungan kandidat unik tercap 200/kueri hanya 190 — klaim
+// DIFF-NOTE "tidak pernah lebih sedikit dari LIKE" SALAH utk scope wiki karena
+// hidrasi wiki hanya menyaring dgn himpunan id indeks + tag eksak (tanpa fallback
+// token seperti jalur workspace :320). Tes ini meniru kondisi itu di DB uji:
+// seed 550 baris HermesMemory (di atas gabungan cap FTS 200 + trgm 200) yang TIDAK
+// ada di mirror IlSearchDoc — lapisan tanpa fallback token akan membuang semuanya
+// (MERAH), lapisan tertambal menemukannya lewat token in-memory (HIJAU).
+// Baseline pembanding dihitung INDEPENDEN lewat SQL LIKE mentah (bukan lewat rute),
+// sesuai predikat LIKE lama route.ts: title/body contains + tags-has.
+describe.skipIf(!envReady)(
+  'ILFIX F1-7 paritas recall scope wiki (token高频 vendor, DB uji ilfix_uji)',
+  () => {
+    const SEED_N = 550; // > gabungan cap kandidat (200+200) => tanpa fallback PASTI kalah dari LIKE
+    const TOKEN = 'vendor';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let seedPool: any = null;
+
+    beforeAll(async () => {
+      process.env.DATABASE_URL = dbUrl(BASE_URL!, 'ilfix_uji');
+      seedPool = new (req('pg')).Pool({
+        connectionString: dbUrl(BASE_URL!, 'ilfix_uji'),
+        connectionTimeoutMillis: 3000,
+      });
+      // Bersihkan residu giliran sebelumnya sebelum mengukur.
+      await seedPool.query(`DELETE FROM "HermesMemory" WHERE id LIKE 'f17v-%'`);
+      await seedPool.query(
+        `INSERT INTO "HermesMemory"
+           (id, path, type, title, status, tags, links, body, "updatedAt", "syncedAt")
+         SELECT 'f17v-' || g,
+                'f17/vendor-' || g || '.md',
+                'fact',
+                'Profil vendor uji F1-7 nomor ' || g,
+                'active',
+                '{}', '{}',
+                'Baris seed paritas F1-7: entri wiki menyebut vendor ke-' || g || '.',
+                now(), now()
+           FROM generate_series(1, $1) g`,
+        [SEED_N],
+      );
+    });
+    afterAll(async () => {
+      if (seedPool) {
+        await seedPool.query(`DELETE FROM "HermesMemory" WHERE id LIKE 'f17v-%'`);
+        await seedPool.end();
+        seedPool = null;
+      }
+      lastUrl = null;
+      routeMod = null;
+    });
+
+    it(
+      '(f17-a) scope=wiki token高频: hasil lapisan baru >= hasil LIKE-lama (paritas)',
+      async () => {
+        // Baseline LIKE-lama — predikat verbatim jalur lama, dihitung di luar rute.
+        const base = await seedPool.query(
+          `select count(*)::int n from "HermesMemory"
+            where title ILIKE '%'||$1||'%' or body ILIKE '%'||$1||'%' or $1 = any(tags)`,
+          [TOKEN],
+        );
+        const likeCount = Number(base.rows[0].n);
+        expect(likeCount, 'sanity: seed harus terlihat predikat LIKE').toBe(SEED_N);
+        const { status, json } = await freshGet(
+          'scope=wiki&q=' + encodeURIComponent(TOKEN),
+        );
+        expect(status).toBe(200);
+        const got = (json.entries as unknown[]).length;
+        expect(
+          got,
+          `gap recall M-1: lapisan kandidat ${got} < LIKE-lama ${likeCount}`,
+        ).toBeGreaterThanOrEqual(likeCount);
+      },
+      120_000,
+    );
+  },
+);
+
 describe('ILFIX F1-5 gerbang statis: nol concat SQL (tanpa DB)', () => {
   it('(e2) fungsi SQL memakai parameter $n, nol interpolasi ${}', () => {
     const src = fs.readFileSync(

@@ -62,10 +62,15 @@ async function ftsCandidates(pool: PgPool, orTokens: string, cap: number): Promi
 
 // §4.5 fallback trgm (CJK tanpa spasi / substring): `||` di sisi SQL atas parameter,
 // bukan concat JS; ter-indeks gin_trgm_ops (EXPLAIN nyata P-8).
+// F1-7 (D-10b): ORDER BY similarity DESC + tie-break id sebelum LIMIT — cap 200
+// deterministik (baris terbaik yang terpotong, bukan urutan fisik nondeterministik).
 async function trgmCandidates(pool: PgPool, phrase: string, cap: number): Promise<IlCandidate[]> {
   const res = await pool.query(
-    `SELECT "id", "source" FROM "IlSearchDoc"
+    `SELECT "id", "source",
+            GREATEST(similarity("body", $1), similarity("title", $1)) AS sim
+       FROM "IlSearchDoc"
       WHERE "body" ILIKE '%' || $1 || '%' OR "title" ILIKE '%' || $1 || '%'
+      ORDER BY sim DESC, "id" ASC
       LIMIT $2`,
     [phrase, cap]
   );
@@ -286,13 +291,20 @@ export async function GET(req: Request) {
     });
     // jalur kandidat: muat semua baris terfilter lalu saring dgn himpunan id indeks;
     // tag HermesMemory TIDAK terindeks tsv → tetap pakai kecocokan tag lama sebagai OR.
+    // F1-7 (D-10b) opsi (a): fallback token in-memory atas title+body — pola sama dgn
+    // jalur workspace (:320). Tanpa ini, himpunan id tercap 200/kueri MEMANGKAS recall
+    // LIKE-lama pada token高频 (M-1: 549 vs 190 pada korpus nyata) sehingga klaim
+    // paritas DIFF-NOTE §2 salah utk wiki. Token adalah subsequence lowercase dari q
+    // => bila LIKE-lama (substring q utuh) kena, token fallback pasti kena: superset.
     if (q && ilCand) {
       const cand = ilCand;
-      mapped = mapped.filter(
-        (r) =>
-          cand.wiki.has(String(r.id)) ||
-          (Array.isArray(r.tags) ? (r.tags as string[]).some((t) => t.toLowerCase() === q) : false)
-      );
+      mapped = mapped.filter((r) => {
+        if (cand.wiki.has(String(r.id))) return true;
+        if (Array.isArray(r.tags) && (r.tags as string[]).some((t) => t.toLowerCase() === q))
+          return true;
+        const hay = `${r.title} ${r.body}`.toLowerCase();
+        return cand.tokens.some((t) => hay.includes(t));
+      });
     }
     wikiEntries.push(...mapped);
   }
