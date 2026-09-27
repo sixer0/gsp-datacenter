@@ -551,6 +551,32 @@ model HermesMemory {
   @@index([status])
 }
 
+// ILFIX-0927 F1-2 — mirror FTS Information Library (data turunan, dibangun ulang oleh sync F1-3).
+// Skema mengikat: docs/2026-09-27-ilfix-ingest/f1/F1-DESIGN.md §3.
+// Kolom hasil `tsv tsvector GENERATED STORED` + indeks GIN tsvector/trgm TIDAK bisa diekspresikan
+// penuh di Prisma. tsv dipetakan Unsupported("tsvector") (opsi eksplisit F1-DESIGN §3) supaya
+// terlihat di skema; ia TIDAK bisa dibaca/ditulis lewat client (dibaca via $queryRaw di F1-4).
+// Uji nyata `prisma migrate diff` 27-09 (DB uji ilfix_uji): keluaran drift identik dengan atau
+// tanpa pemetaan tsv — Prisma tetap menuntut rebuild indeks dgn nama konvensinya. Sumber
+// kebenaran struktur = migration.sql 20260927154000_add_ilsearchdoc. DILARANG `prisma db push`
+// terhadap tabel ini (akan menjatuhkan tsv generated + indeks GIN); jalankan perubahan lewat
+// migrasi SQL baru.
+model IlSearchDoc {
+  id        String   @id // wiki: slug HermesMemory; workspace/vault: prefix ws:/vault: + path relatif
+  source    String // wiki | workspace | vault
+  path      String
+  title     String
+  body      String   @default("")
+  domain    String?
+  project   String?
+  type      String   @default("note")
+  status    String   @default("active")
+  rank      Int      @default(3)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+  syncedAt  DateTime @default(now()) @db.Timestamptz(6)
+  tsv       Unsupported("tsvector")?
+}
+
 // ─── WebUI RBAC users (Brahma WebUI on port 9012) ─────────────────────────
 // Mapping user → role → Hermes profile. One Hermes profile per user (cloned
 // from the default profile at signup); administrators keep full access and
