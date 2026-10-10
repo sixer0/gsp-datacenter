@@ -8,7 +8,7 @@ export HERMES_BOARD="$(grep '^HERMES_BOARD=' ../.env | head -1 | cut -d= -f2- | 
 export HERMES_BIN="$(grep '^HERMES_BIN=' ../.env | head -1 | cut -d= -f2- | tr -d '"')"
 export HERMES_WIKI="$(grep '^HERMES_WIKI=' ../.env | head -1 | cut -d= -f2- | tr -d '"')"
 export BRIEF_HOUR="$(grep '^BRIEF_HOUR=' ../.env | head -1 | cut -d= -f2- | tr -d '"')"
-export BRIDGE_RUN_TIMEOUT_MS=1800000
+export BRIDGE_RUN_TIMEOUT_MS=3600000
 # Kredensial kilocode dibaca dari Hermes home .env — WAJIB agar dispatch ber-profil
 # (hermes -p gsp-* -z) tidak gagal 'No usable credentials for provider kilocode'.
 export KILOCODE_API_KEY="$(grep '^KILOCODE_API_KEY=' 'C:/Users/TRIAL/AppData/Local/hermes/.env' | head -1 | cut -d= -f2- | tr -d '"')"
