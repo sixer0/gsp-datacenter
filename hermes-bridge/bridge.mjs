@@ -245,12 +245,14 @@ async function createKanbanCard(r) {
     return dup.id;
   }
   try {
-    const out = await hermes(
-      ["kanban", "--board", BOARD, "create", "--json", r.title.slice(0, 140),
+    // STA13-B1 (SERAH-TERIMA-ASIGNOR-1013): oper pencipta kartu = profil penugasan
+    // AgentRequest agar gerbang ACK gsp_deleg_watch _owner() menunjuk penugas sejati,
+    // bukan 'user'. Flag hanya bila r.profile terisi (guard risiko 02#S6 baris l2).
+    const argv = ["kanban", "--board", BOARD, "create", "--json", r.title.slice(0, 140),
        "--body", `HQ dispatch ${r.id} · profile=${r.profile}`,
-       "--idempotency-key", `hq-${r.id}`],
-      { timeout: 20000 }
-    );
+       "--idempotency-key", `hq-${r.id}`];
+    if (r.profile) argv.push("--created-by", r.profile);
+    const out = await hermes(argv, { timeout: 20000 });
     const parsed = JSON.parse(out || "{}");
     if (parsed && parsed.id) {
       log("kanban card:", parsed.id, "for", r.id);
@@ -715,7 +717,11 @@ async function runRequestClaimed(r) {
     if (r.kind === "oneshot" || r.kind === "chat" || r.kind === "instant") {
       result = (await hermes([...(isProfile ? ["-p", r.profile] : []), "-z", r.prompt || r.title], { timeout: RUN_TIMEOUT_MS })).trim();
     } else if (r.kind === "kanban") {
-      result = (await hermes(["kanban", "--board", BOARD, "create", "--json", r.title], { timeout: 20000 })).trim();
+      // STA13-B1 (SERAH-TERIMA-ASIGNOR-1013): jalur create kedua — oper profil
+      // penugasan sebagai pencipta kartu (flag hanya bila r.profile terisi).
+      const kbArgv = ["kanban", "--board", BOARD, "create", "--json", r.title];
+      if (r.profile) kbArgv.push("--created-by", r.profile);
+      result = (await hermes(kbArgv, { timeout: 20000 })).trim();
     } else if (r.kind.startsWith("cron.")) {
       const op = r.kind.split(".")[1];
       const a = JSON.parse(r.prompt || "{}");
