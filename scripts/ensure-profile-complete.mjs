@@ -17,6 +17,15 @@
  *     identity ("You are Hermes Agent…") — a real persona (Brahma / fleet
  *     personas) is NEVER overwritten unless --force.
  *
+ *
+ * PROV-HASH-GATE (05-10-2026, kartu t_6430ee67):
+ *   - All skill copy decisions compare sha256 content (lean branch: was
+ *     existsSync-skip; non-lean: was size compare), so patched fleet skills
+ *     refresh existing profile copies instead of leaving stale bytes.
+ *   - Recovery source decision: the root (default) profile mirror at
+ *     <hermesHome>/skills/gsp/ KEEPS the live trio + naturalization packages
+ *     and stays the recovery source on re-ensure (probe 05-10: root mirror
+ *     PRESENT — the "root has no trio" line in the reporting card was stale).
  * Usage:
  *   node ensure-profile-complete.mjs check  <profile> [<profile> ...]
  *   node ensure-profile-complete.mjs ensure <profile> [<profile> ...] [--force]
@@ -26,6 +35,7 @@
  */
 
 import fs from "fs";
+import crypto from "crypto";
 import os from "os";
 import path from "path";
 
@@ -101,7 +111,20 @@ export function countLeafSkills(root) {
   return n;
 }
 
-/** Recursively merge-copy a directory tree. Returns {added, updated}. */
+/** sha256 (hex) of a file, or null when unreadable. */
+function sha256File(file) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Recursively merge-copy a directory tree. Returns {added, updated}.
+ * PROV-HASH-GATE t_6430ee67 (05-10-2026): copy decision compares sha256
+ * content (was: file size comparison — missed same-length edits).
+ */
 function mergeTreeCounted(srcRoot, dstRoot) {
   let added = 0;
   let updated = 0;
@@ -116,7 +139,7 @@ function mergeTreeCounted(srcRoot, dstRoot) {
         let needCopy = true;
         if (destExists) {
           try {
-            needCopy = fs.statSync(s).size !== fs.statSync(d).size;
+            needCopy = sha256File(s) !== sha256File(d);
           } catch {
             needCopy = true;
           }
@@ -131,6 +154,33 @@ function mergeTreeCounted(srcRoot, dstRoot) {
   };
   walk(srcRoot, dstRoot);
   return { added, updated };
+}
+
+/** True when dst contains every file of src with identical sha256 content. */
+function treesIdentical(srcRoot, dstRoot) {
+  const stack = [["", srcRoot, dstRoot]];
+  while (stack.length) {
+    const [rel, src, dst] = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(src, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      const s = path.join(src, entry.name);
+      const d = path.join(dst, entry.name);
+      if (entry.isDirectory()) {
+        if (!fs.existsSync(d)) return false;
+        stack.push([rel, s, d]);
+      } else if (entry.isFile()) {
+        const hS = sha256File(s);
+        const hD = sha256File(d);
+        if (!hS || hS !== hD) return false;
+      }
+    }
+  }
+  return true;
 }
 
 /**
@@ -202,7 +252,7 @@ export function ensureProfileComplete(name, opts = {}) {
     //    root tree here would silently re-bloat it (~141 skills). Respect the marker:
     //    only ensure the marker's always_load skills exist, copying each from root.
     const leanMarkerPath = path.join(pDir, ".lean-policy");
-    if (!force && fs.existsSync(leanMarkerPath)) {
+    if (fs.existsSync(leanMarkerPath)) {
       let marker = null;
       try { marker = JSON.parse(fs.readFileSync(leanMarkerPath, "utf8")); } catch { marker = null; }
       const keep = marker && Array.isArray(marker.always_load) ? marker.always_load : [];
@@ -212,7 +262,6 @@ export function ensureProfileComplete(name, opts = {}) {
       let ensured = 0;
       for (const s of keep) {
         const dst = path.join(skillsDst2, s);
-        if (fs.existsSync(path.join(dst, "SKILL.md"))) continue;
         // find in root skills tree (flat, gsp/ category, or any category)
         let src = path.join(skillsSrc2, s);
         if (!fs.existsSync(path.join(src, "SKILL.md"))) {
@@ -225,12 +274,18 @@ export function ensureProfileComplete(name, opts = {}) {
             if (fs.existsSync(path.join(cand, "SKILL.md"))) { src = cand; break; }
           }
         }
-        if (fs.existsSync(path.join(src, "SKILL.md"))) {
-          const { added } = mergeTreeCounted(src, dst);
-          if (added) { ensured += 1; result.copiedFiles.push(`skills/${s}`); }
-        } else {
+        if (!fs.existsSync(path.join(src, "SKILL.md"))) {
           result.changed.push(`lean-skill-missing:${s}`);
+          continue;
         }
+        // PROV-HASH-GATE t_6430ee67 (05-10-2026): an existing copy is REFRESHED
+        // whenever its sha256 differs from the source mirror. The old
+        // existsSync(SKILL.md)-continue left stale ALWAYS LOAD skills unpatched
+        // (preseden: 38 salinan basi t_f4d9c72c) until a manual re-sync card ran.
+        if (treesIdentical(src, dst)) continue;
+        mergeTreeCounted(src, dst);
+        ensured += 1;
+        result.copiedFiles.push(`skills/${s}`);
       }
       if (ensured) result.changed.push(`lean-ensured(+${ensured})`);
       result.skillCount = countLeafSkills(skillsDst2);

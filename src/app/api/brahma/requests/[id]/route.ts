@@ -26,10 +26,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const data: Record<string, unknown> = { decidedAt: new Date() };
   // Review gate: needs-review hanya boleh disentuh asignor (force-done / request-changes).
+  // TRG-0904G-FIX: blocked/failed juga boleh ditutup asignor — sebelumnya request yang
+  // diblokir bridge lalu kartunya ditutup jalur lain jadi jejak abadi tanpa penutupan (409).
   const actionable =
     existing.status === "awaiting_approval" || existing.status === "queued"
       ? ["approve", "reject", "edit"]
-      : existing.status === "needs-review"
+      : existing.status === "needs-review" || existing.status === "blocked" || existing.status === "failed"
         ? ["force-done", "request-changes"]
         : [];
   if (!actionable.includes(action))

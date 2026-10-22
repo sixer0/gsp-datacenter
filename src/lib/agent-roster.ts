@@ -103,12 +103,14 @@ export const PROFILE_META: Record<
   "gsp-grounding-specialist": { name: "Grounding & Lightning Specialist", emoji: "⛱️", role: "Pembumian & proteksi petir: Wenner, fall-of-potential, rolling sphere", level: 3, group: "execution" },
   "gsp-security-specialist": { name: "Security & Forensics Specialist", emoji: "🛡️", role: "Bukti digital, rantai kustodi, DEMS, keamanan siber", level: 3, group: "execution" },
   "gsp-infra-specialist": { name: "IT Infrastructure Specialist", emoji: "🖥️", role: "Konfigurasi jaringan/storage/server, RAID, BDP, workbook audit", level: 3, group: "execution" },
+  "gsp-3d-specialist": { name: "3D Precision Specialist", emoji: "🧊", role: "3D presisi jalur Blender headless: parameter sheet, dim_check, export GLB/OBJ, render still CPU, QA", level: 3, group: "execution" },
   "gsp-document-reader": { name: "Document Reader", emoji: "📚", role: "Parse PDF · DOCX · XLSX · PPTX", level: 3, group: "utility" },
   "gsp-pm-planner": { name: "PM Planner", emoji: "🗺️", role: "Rencana Implementasi Terlacak", level: 3, group: "utility" },
   "gsp-system-manager": { name: "System Manager", emoji: "🛠️", role: "Pengaturan sistem ekosistem Swarm: config, .env, gateway, watchdog, autostart, ROSTER", level: 3, group: "execution" },
   "gsp-system-control": { name: "System Control", emoji: "🎛️", role: "Kontrol, review & verifikasi setiap perubahan sistem ekosistem Swarm", level: 3, group: "verification" },
   "gsp-skill-manager": { name: "Skill Manager", emoji: "📦", role: "Distribusi skill on-demand dari request agent aktif; meminta Skill Creator jika belum dimiliki", level: 3, group: "execution" },
   "gsp-skill-creator": { name: "Skill Creator", emoji: "🧩", role: "CRUD skill & tools fleet: create, patch, edit, delete (registry kanonik/fleet)", level: 3, group: "execution" },
+  "gsp-imagegen-worker": { name: "Imagegen Worker", emoji: "🖼️", role: "Eksekutor render Imagegen 2.1 (Qwen-Image-2.1 recipe A4): generate/edit slide via inference-kaytus, verifikasi struktur vision, PNG + record.json", level: 3, group: "execution" },
 };
 
 /**
