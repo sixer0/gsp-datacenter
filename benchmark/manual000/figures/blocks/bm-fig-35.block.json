@@ -1,0 +1,31 @@
+{
+ "type": "image",
+ "asset": "bm-fig-35",
+ "caption": {
+  "label": "Gambar 10.9",
+  "separator": "   ",
+  "inline": {
+   "text": "Simbol DFD, UML, dan contoh tingkat Kontainer pada model C4."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.9."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "bentuk konvensional"
+    }
+   ]
+  }
+ },
+ "widthMm": 166.0,
+ "heightMm": 61.021
+}

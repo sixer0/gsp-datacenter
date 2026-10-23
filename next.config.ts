@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Studio (S03): playwright-core dimuat apa adanya dari node_modules di sisi server, tidak dibundel.
+  serverExternalPackages: ["playwright-core"],
   experimental: {
     serverActions: {
       bodySizeLimit: "4mb",

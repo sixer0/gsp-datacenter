@@ -1,0 +1,132 @@
+{
+ "$schema": "studio.diagram/v1",
+ "family": "sld",
+ "id": "10.12",
+ "title": "Diagram satu garis catu daya pos perimeter dengan simbol IEC 60617 dan penandaan IEC 81346.",
+ "classification": "TERBATAS",
+ "width_mm": 166,
+ "apparatus": "page",
+ "labels_verified": true,
+ "sources": [
+  "Panduan Simbol Engineering GSP v1.0 Gambar 6.1. ATS digambar sebagai kontak pindah dan fungsi kendali; UPS sebagai blok berpenandaan."
+ ],
+ "nodes": [
+  {
+   "id": "mdp",
+   "label": "Rel MDP",
+   "tag": "masuk -Q1 (PLN/G via -Q0 ATS)",
+   "shape": "bus",
+   "class": {}
+  },
+  {
+   "id": "f1",
+   "label": "-F1 SPD",
+   "shape": "box",
+   "class": {
+    "col": 0
+   }
+  },
+  {
+   "id": "q2",
+   "label": "-Q2 ke UPS -U1",
+   "sub": "blok fungsi",
+   "shape": "box",
+   "class": {
+    "col": 1,
+    "accent": true
+   }
+  },
+  {
+   "id": "q6",
+   "label": "-Q6 penerangan",
+   "shape": "box",
+   "class": {
+    "col": 2
+   }
+  },
+  {
+   "id": "ups",
+   "label": "Rel hilir UPS -U1",
+   "shape": "bus",
+   "class": {}
+  },
+  {
+   "id": "q3",
+   "label": "-Q3 ke Kamera",
+   "shape": "box",
+   "class": {
+    "col": 0
+   }
+  },
+  {
+   "id": "q4",
+   "label": "-Q4 ke Radar",
+   "shape": "box",
+   "class": {
+    "col": 1
+   }
+  },
+  {
+   "id": "q5",
+   "label": "-Q5 ke Radio",
+   "shape": "box",
+   "class": {
+    "col": 2
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "mdp",
+   "to": "f1",
+   "kind": "data",
+   "label": "SPD"
+  },
+  {
+   "from": "mdp",
+   "to": "q2",
+   "kind": "data",
+   "label": "UPS"
+  },
+  {
+   "from": "mdp",
+   "to": "q6",
+   "kind": "data",
+   "label": "lampu"
+  },
+  {
+   "from": "q2",
+   "to": "ups",
+   "kind": "data",
+   "label": "hilir"
+  },
+  {
+   "from": "ups",
+   "to": "q3",
+   "kind": "data",
+   "label": "kamera"
+  },
+  {
+   "from": "ups",
+   "to": "q4",
+   "kind": "data",
+   "label": "radar"
+  },
+  {
+   "from": "ups",
+   "to": "q5",
+   "kind": "data",
+   "label": "radio"
+  }
+ ],
+ "legend": [
+  "penghantar",
+  "rel daya"
+ ],
+ "notes": [
+  "Penandaan IEC 81346: =sistem +lokasi -komponen.",
+  "FIX-B2 (D-277, D-137 opsi D, F-052): struktur dikembalikan ke isi acuan (assets/image26__simbol12.png): rel MDP dengan tiga cabang (-F1 SPD, -Q2, -Q6 penerangan) DAN rel hilir UPS -U1 dengan tiga pengumpan (-Q3 ke Kamera, -Q4 ke Radar, -Q5 ke Radio) yang dibuang IP-02/IP-42c; lebar 166 mm (= BM) kini lolos build (B-2). Label = teks acuan satu baris; sub hanya bila acuan menulis baris kedua ('-U1 (blok fungsi)').",
+  "Selisih terdokumentasi yang tersisa (D-113): rantai masuk PLN =G01+P01-T1, G =G01+P01-G1, -Q0 kontak pindah + fungsi kendali ATS, -Q1 pemutus utama tetap sebagai tag rel MDP (keluarga sld menempatkan rel di atas; simpul kotak 3 baseline untuk 4 elemen hulu akan menambah sekitar 3 tingkat); -Q2 dan blok UPS -U1 satu simpul; jalur cadangan G (putus-putus) tidak tergambar. Label aliran ASUMSI.",
+  "Judul dalam gambar: CONTOH 1 · DIAGRAM SATU GARIS (IEC 60617) — CATU DAYA POS PERIMETER (ILUSTRASI)."
+ ]
+}

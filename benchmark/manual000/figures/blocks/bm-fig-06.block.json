@@ -1,0 +1,200 @@
+{
+ "type": "diagram",
+ "caption": {
+  "label": "Gambar 2.1",
+  "separator": "   ",
+  "inline": {
+   "text": "Pembagian pemilik dari isi sampai berkas terbit: DATUM adalah satu-satunya simpul yang menerima keempat masukan."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "SKILL.md DATUM §15 · STD-GAYA-AHLI-001 Bab 6 · digambar dengan datum_diagram.py keluarga layered."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "pembagian pemilik [TERUKUR]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 125.706,
+ "keyRow": {
+  "runs": [
+   {
+    "t": "KUNCI  "
+   },
+   {
+    "t": "garis penuh isi · putus-putus keputusan · titik-titik rekam · amber jalur terbit"
+   }
+  ]
+ },
+ "spec": {
+  "$schema": "studio.diagram/v1",
+  "family": "layered",
+  "id": "2.1",
+  "title": "Pembagian pemilik dari isi sampai berkas terbit: DATUM adalah satu-satunya simpul yang menerima keempat masukan.",
+  "classification": "TERBATAS",
+  "width_mm": 166,
+  "apparatus": "page",
+  "labels_verified": true,
+  "sources": [
+   "SKILL.md DATUM §15 · STD-GAYA-AHLI-001 Bab 6 · digambar dengan datum_diagram.py keluarga layered."
+  ],
+  "nodes": [
+   {
+    "id": "spesialis",
+    "label": "Spesialis domain",
+    "shape": "box",
+    "class": {
+     "tier": 0,
+     "lane": "ISI DAN KEPUTUSAN",
+     "col": 0
+    },
+    "sub": "angka dan sumber"
+   },
+   {
+    "id": "prisma",
+    "label": "PRISMA",
+    "shape": "box",
+    "class": {
+     "tier": 0,
+     "lane": "ISI DAN KEPUTUSAN",
+     "col": 1
+    },
+    "sub": "keputusan visual"
+   },
+   {
+    "id": "veritas",
+    "label": "veritas",
+    "shape": "box",
+    "class": {
+     "tier": 0,
+     "lane": "ISI DAN KEPUTUSAN",
+     "col": 2
+    },
+    "sub": "sertifikasi angka"
+   },
+   {
+    "id": "datum",
+    "label": "DATUM",
+    "shape": "box",
+    "class": {
+     "tier": 1,
+     "lane": "BENTUK DAN SUARA",
+     "col": 0,
+     "accent": true
+    },
+    "sub": "bentuk dan kepatuhan"
+   },
+   {
+    "id": "gba",
+    "label": "Gaya Bahasa Ahli",
+    "shape": "box",
+    "class": {
+     "tier": 1,
+     "lane": "BENTUK DAN SUARA",
+     "col": 1
+    },
+    "sub": "kalimat dan suara"
+   },
+   {
+    "id": "arsip",
+    "label": "ARSIP",
+    "shape": "box",
+    "class": {
+     "tier": 2,
+     "lane": "HIDUP BERKAS",
+     "col": 0
+    },
+    "sub": "nomor dan versi"
+   },
+   {
+    "id": "lokus",
+    "label": "LOKUS",
+    "shape": "box",
+    "class": {
+     "tier": 2,
+     "lane": "HIDUP BERKAS",
+     "col": 1
+    },
+    "sub": "folder proyek"
+   },
+   {
+    "id": "kronik",
+    "label": "KRONIK",
+    "shape": "box",
+    "class": {
+     "tier": 2,
+     "lane": "HIDUP BERKAS",
+     "col": 2
+    },
+    "sub": "rekam jejak SHA-256"
+   }
+  ],
+  "edges": [
+   {
+    "from": "spesialis",
+    "to": "datum",
+    "kind": "data",
+    "label": "isi bersumber"
+   },
+   {
+    "from": "prisma",
+    "to": "datum",
+    "kind": "control",
+    "label": "spec gambar"
+   },
+   {
+    "from": "veritas",
+    "to": "datum",
+    "kind": "control",
+    "label": "angka tersertifikasi"
+   },
+   {
+    "from": "gba",
+    "to": "datum",
+    "kind": "control",
+    "label": "naskah lulus L6"
+   },
+   {
+    "from": "datum",
+    "to": "arsip",
+    "kind": "accent",
+    "label": "berkas terbit"
+   },
+   {
+    "from": "arsip",
+    "to": "lokus",
+    "kind": "data",
+    "label": "nama dan nomor"
+   },
+   {
+    "from": "lokus",
+    "to": "kronik",
+    "kind": "sync",
+    "label": "indeks"
+   }
+  ],
+  "legend": [
+   "garis penuh isi",
+   "putus-putus keputusan",
+   "titik-titik rekam",
+   "amber jalur terbit"
+  ],
+  "notes": [
+   "Label pita tingkat dicetak di parit kiri (class.lane); bingkai DATUM beraksen signal."
+  ]
+ }
+}

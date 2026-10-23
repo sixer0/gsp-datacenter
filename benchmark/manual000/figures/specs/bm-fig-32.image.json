@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.6",
+ "title": "Anatomi simbol satuan: bingkai, ikon fungsi, dan penguat eselon, contoh generik.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.6.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "d72633e73a80bccf5e908e7b61d11942d7da7b0866b7499b6ae7a0f5182f5579",
+  "path": "benchmark/manual000/figures/assets/image20__simbol6.png",
+  "widthPx": 1148,
+  "heightPx": 334
+ },
+ "widthMm": 166.0,
+ "heightMm": 48.296,
+ "dpiMin": 150
+}

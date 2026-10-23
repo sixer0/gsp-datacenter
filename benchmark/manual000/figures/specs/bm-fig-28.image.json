@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.2",
+ "title": "Bentuk konvensional tambahan untuk proyek komunikasi, belum ada di DATUM.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.2.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "b393b274b93a3f742c504019497f87f96250622def008e3b3d9a663ed99c048d",
+  "path": "benchmark/manual000/figures/assets/image16__simbol2.png",
+  "widthPx": 1119,
+  "heightPx": 257
+ },
+ "widthMm": 166.0,
+ "heightMm": 38.125,
+ "dpiMin": 150
+}

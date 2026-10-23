@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Task docs contain Windows paths whose backslash sequences the class scanner reads as CSS escapes (D-249). */
+@source not "../../docs";
 
 /* ── Agent Office Animations ─────────────────────────────── */
 

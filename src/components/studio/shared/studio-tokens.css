@@ -1,0 +1,39 @@
+/*
+ * Token lokal Studio (FIX-4a; UX-01 §1.3, §6.1). Tidak ditaruh di globals.css:
+ * hanya berlaku di dalam wadah `.studio-root` (app/studio/layout.tsx).
+ * Lembar baca = satu-satunya permukaan terang di HQ (T-12 menunggu putusan
+ * user; tokennya tetap tersedia agar SR-30 dapat memakainya atau menggantinya).
+ */
+.studio-root {
+  --studio-paper: #eceef1;
+  --studio-ink: #1b1f24;   /* sekitar 14,2:1 terhadap paper */
+  --studio-ink-2: #4a515b; /* sekitar 6,9:1 terhadap paper */
+  --studio-mark: color-mix(in srgb, var(--accent) 22%, var(--studio-paper));
+  /*
+   * A14 (WCAG AA 4,5:1, SR52-F5): `--text-3` HQ (#6b6e74) hanya 3,3-3,9:1 di
+   * permukaan gelap Studio (eyebrow, judul panel, pil). Di dalam Studio teks
+   * tersier dinaikkan: #8a8d93 = 5,92:1 (bg), 5,68:1 (surface-1), 5,35:1
+   * (surface-2), 5,12:1 (#1b1c1f pil), 4,90:1 (surface-3). Tetap di bawah
+   * `--text-2` (#a0a3a8) sehingga hierarki teks terjaga. Lembar baca terang
+   * memakai `--studio-ink`/`--studio-ink-2`, bukan token ini.
+   */
+  --text-3: #8a8d93;
+}
+
+/* Latar dialog bawaan (<dialog>.showModal()) di atas HQ gelap. */
+.studio-dialog::backdrop {
+  background: color-mix(in srgb, #05060a 62%, transparent);
+}
+
+@keyframes studio-notice-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-root *,
+  .studio-dialog {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}

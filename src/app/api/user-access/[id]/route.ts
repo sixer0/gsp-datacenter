@@ -79,7 +79,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
   // Optional hermesProfile re-bind (fix 2026-08-27 — previously impossible,
   // so a mis-typed binding like "GSP-1" could never be corrected from the UI).
-  let data: Record<string, unknown> = {};
+  const data: Record<string, unknown> = {};
   if (body.hermesProfile !== undefined) {
     const requested = String(body.hermesProfile || "").trim() || usernameToProfile(user.username);
     if (!isValidProfileName(requested)) {

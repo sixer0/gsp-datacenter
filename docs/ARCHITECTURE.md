@@ -115,7 +115,19 @@ Perubahan/penambahan di atas template asli (Hermy → GSP):
 
 ## 6. Asumsi & Batasan
 
-- Proyek **tanpa folder migrations** — perubahan schema memakai `npx prisma db push`.
+- Schema dikelola dengan **Prisma Migrate**: riwayat di `prisma/migrations/` (`0_init` s.d.
+  `20261022120000_add_studio` dan `20261023150000_worker_trace_baseline`). Cara kerja yang berlaku
+  (keputusan D-21/D-24 di `docs/2026-10-22_doc_artifact_studio/decisions/decisions.md`):
+  - **Dilarang `prisma migrate dev` dan `prisma db push`** — keduanya dapat mendeteksi drift dan
+    menawarkan reset DB (destruktif). Skrip `npm run db:migrate` = `prisma migrate deploy`.
+  - Migrasi baru dibuat dengan `npx prisma migrate diff --from-migrations prisma/migrations
+    --to-schema-datamodel prisma/schema.prisma --shadow-database-url <shadow> --script`, dikurangi
+    baseline diff yang diambil sebelum schema disunting (drift indeks `IlSearchDoc` yang dikenal),
+    dicek tanpa `DROP`, lalu diterapkan dengan `npx prisma migrate deploy`.
+  - Tabel `WorkerTrace` dan `IlSearchDoc` tidak boleh dihapus. `WorkerTrace` dulu hanya ada di DB;
+    kini dimodelkan di `schema.prisma` (hasil introspeksi) dan migrasi baselinenya memakai
+    `CREATE TABLE IF NOT EXISTS`. Pada DB yang tabelnya sudah ada, tandai dengan
+    `npx prisma migrate resolve --applied 20261023150000_worker_trace_baseline` alih-alih menjalankannya.
 - Bridge butuh **URL Postgres langsung** (`postgres://`), bukan `prisma://` Accelerate.
 - CLI arg shapes di `bridge.mjs` best-effort untuk Hermes v0.17.x — bila versi berubah, sesuaikan `runRequest()`.
 - Dashboard inti berjalan tanpa API key; fitur konten (YouTube/X/LLM) baru aktif bila key diisi.

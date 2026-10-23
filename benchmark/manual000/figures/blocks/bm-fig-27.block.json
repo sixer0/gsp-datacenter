@@ -1,0 +1,35 @@
+{
+ "type": "symbolSheet",
+ "dialect": "iec",
+ "cols": 6,
+ "caption": {
+  "label": "Gambar 10.1",
+  "separator": "   ",
+  "inline": {
+   "text": "Pustaka DATUM iec: enam belas simbol listrik."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "datum_symbols.py --sheet, via Panduan Simbol Engineering GSP v1.0 Gambar 5.1."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "geometri [TERUKUR dari pustaka]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 100.707
+}

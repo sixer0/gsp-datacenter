@@ -21,7 +21,14 @@ type Agent = {
   tasksCompleted: number;
 };
 
-type Record = {
+type OrchStats = {
+  total?: number;
+  byKind?: Record<string, number>;
+  byStatus?: Record<string, number>;
+  byPair?: Record<string, number>;
+};
+
+type OrchRecord = {
   id: string;
   runId: string | null;
   from: string;
@@ -197,8 +204,8 @@ function edgePath(p1: Pos, p2: Pos): { d: string; mid: [number, number] } {
 
 export default function OrchestrationPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [records, setRecords] = useState<Record[]>([]);
-  const [stats, setStats] = useState<any>({ total: 0, byKind: {}, byStatus: {}, byPair: {} });
+  const [records, setRecords] = useState<OrchRecord[]>([]);
+  const [stats, setStats] = useState<OrchStats>({ total: 0, byKind: {}, byStatus: {}, byPair: {} });
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<"graph" | "timeline">("graph");
   const [selected, setSelected] = useState<string | null>(null);
@@ -401,10 +408,11 @@ export default function OrchestrationPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Graf hidup jejak delegasi, handoff, verifikasi, dan pelaporan antar profil — direkam via bridge & gsp-hq-record.
+          (Dulu prop `hint`, yang tidak didukung SectionHeader dan tidak pernah dirender.) */}
       <SectionHeader
         label="Orchestration"
         title="Interaksi antar profil ekosistem GSP"
-        hint="Graf hidup jejak delegasi, handoff, verifikasi, dan pelaporan antar profil — direkam via bridge & gsp-hq-record."
       />
 
       {/* ── Stats ── */}
@@ -813,7 +821,7 @@ export default function OrchestrationPage() {
                     <div>
                       <div className="text-[11px] font-semibold text-[var(--text-3)] uppercase tracking-wide mb-2">Pasangan tersibuk</div>
                       <div className="flex flex-col gap-1.5">
-                        {Object.entries(stats.byPair).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 6).map(([pair, n]) => {
+                        {Object.entries(stats.byPair as Record<string, number>).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 6).map(([pair, n]) => {
                           const [f, t] = pair.split("→");
                           return (
                             <button key={pair} className="flex items-center justify-between text-[11.5px] bg-[var(--surface-2)] border border-[var(--line)] rounded-[10px] px-3 py-2 hover:border-[var(--text-3)] cursor-pointer" onClick={() => setSelEdge(pair)}>
@@ -858,7 +866,7 @@ export default function OrchestrationPage() {
 }
 
 // ── Baris timeline: klik untuk memperluas detail (khusus failed: pesan utuh, merah) ──
-function TimelineRow({ r, fa, ta }: { r: Record; fa?: Agent; ta?: Agent }) {
+function TimelineRow({ r, fa, ta }: { r: OrchRecord; fa?: Agent; ta?: Agent }) {
   const [open, setOpen] = useState(false);
   const hasDetail = !!(r.message || r.artifactPath);
   const isFailed = r.status === "failed";
@@ -913,6 +921,6 @@ function TimelineRow({ r, fa, ta }: { r: Record; fa?: Agent; ta?: Agent }) {
 }
 
 // helper terpisah agar tidak membebani render utama
-function selRecords(agentId: string, records: Record[]): Record[] {
+function selRecords(agentId: string, records: OrchRecord[]): OrchRecord[] {
   return records.filter((r) => r.from === agentId || r.to === agentId).slice(0, 12);
 }

@@ -1,0 +1,115 @@
+{
+ "verdict": "PASS",
+ "doc": "C:\\Users\\TRIAL\\gsp-swarm-hq-v2.1\\benchmark\\manual000\\doc.json",
+ "docx": "C:\\Users\\TRIAL\\workspace\\Manual DATUM GSP\\Manual_Komprehensif_DATUM_GSP_000-GSP-STD-X-2026_RevA.docx",
+ "checks": {
+  "V1_skeleton": {
+   "pass": true,
+   "bmNodes": 899,
+   "docNodes": 899,
+   "diffs": []
+  },
+  "V2_paragraphs": {
+   "pass": true,
+   "bodyBm": 748,
+   "bodyDoc": 748,
+   "cellBm": 4159,
+   "cellDoc": 4159,
+   "bodyDiffs": [],
+   "cellDiffs": []
+  },
+  "V3_headerFooter": {
+   "pass": true,
+   "unitsBm": 29,
+   "unitsDoc": 29,
+   "diffs": []
+  },
+  "V4_s96Units": {
+   "pass": true,
+   "unitsBm": 4544,
+   "unitsDoc": 4544,
+   "identicalInOrder": 4544,
+   "byKindDoc": {
+    "paragraph": 350,
+    "caption": 115,
+    "source": 24,
+    "cell": 4055
+   },
+   "s96Counts": {
+    "chapters": 17,
+    "appendices": 4,
+    "tables": 151,
+    "figures": 52,
+    "bodyParagraphs": 748,
+    "nestedTables": 2,
+    "units": 4544,
+    "unitsByKind": {
+     "paragraph": 350,
+     "caption": 115,
+     "source": 24,
+     "cell": 4055
+    }
+   },
+   "diffs": []
+  },
+  "V5_counts": {
+   "pass": true,
+   "chapters": 17,
+   "appendices": 4,
+   "tableConstructsTop": 151,
+   "nested": 2,
+   "figureRefs": 52,
+   "figureRefsExplicit": 31,
+   "figureRefsDerived": 21,
+   "constructs": [
+    "aside",
+    "colophon",
+    "controlBlock",
+    "derivation",
+    "derivation.lines(nested)",
+    "derived:part.chapterList",
+    "device:sealBand",
+    "monoBlock",
+    "paragraph+rail(table3col)",
+    "signatureBlock",
+    "table",
+    "table(controlSheet)",
+    "toc.entries"
+   ],
+   "topTablesByConstruct": {
+    "device:sealBand": 8,
+    "controlBlock": 1,
+    "colophon": 1,
+    "table(controlSheet)": 3,
+    "signatureBlock": 1,
+    "toc.entries": 1,
+    "derived:part.chapterList": 5,
+    "paragraph+rail(table3col)": 24,
+    "table": 91,
+    "aside": 10,
+    "derivation": 2,
+    "monoBlock": 4
+   }
+  },
+  "V6_mapping": {
+   "pass": true,
+   "body": 748,
+   "cells": 4159,
+   "unmapped": 0,
+   "badPointers": []
+  },
+  "V7_figures": {
+   "pass": true,
+   "idsSequential": true,
+   "explicitResolve": true,
+   "mediaSha256": true,
+   "explicit": 31,
+   "kinds": {
+    "datumRule128": 21,
+    "datumRule166": 6,
+    "figure": 24,
+    "logo": 1
+   }
+  }
+ }
+}

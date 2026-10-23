@@ -1,0 +1,24 @@
+-- Rollback Studio (S82, DB uji gsp_agent_hq_v21_uji dulu). Tanpa CASCADE: gagal keras bila ada ketergantungan tak terduga.
+BEGIN;
+DROP TABLE IF EXISTS "StudioOutputFile";
+DROP TABLE IF EXISTS "StudioRenderJob";
+DROP TABLE IF EXISTS "StudioBlock";
+DROP TABLE IF EXISTS "StudioRevision";
+DROP TABLE IF EXISTS "StudioArtifact";
+DROP TABLE IF EXISTS "StudioDocument";
+DROP TABLE IF EXISTS "StudioTemplateVersion";
+DROP TABLE IF EXISTS "StudioTemplate";
+DROP TABLE IF EXISTS "StudioSectionType";
+DROP TYPE IF EXISTS "StudioTier";
+DROP TYPE IF EXISTS "StudioParamClass";
+DROP TYPE IF EXISTS "StudioReleaseStatus";
+DROP TYPE IF EXISTS "StudioOutputFormat";
+DROP TYPE IF EXISTS "StudioRenderJobStatus";
+DROP TYPE IF EXISTS "StudioArtifactKind";
+DROP TYPE IF EXISTS "StudioTemplateKind";
+DROP TYPE IF EXISTS "StudioSectionGroup";
+DROP TYPE IF EXISTS "StudioSectionRegister";
+DROP TYPE IF EXISTS "StudioOutputRole";
+DROP TYPE IF EXISTS "StudioNumberSource";
+DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20261022120000_add_studio';
+COMMIT;

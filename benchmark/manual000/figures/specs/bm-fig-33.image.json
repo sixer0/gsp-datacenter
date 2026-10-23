@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.7",
+ "title": "Delapan simbol ISO 5807 yang paling sering dipakai.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.7.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "51c58562498899b841f867f9ae226a321b8f869d2d3a32122ea79b8bfdc249d8",
+  "path": "benchmark/manual000/figures/assets/image21__simbol7.png",
+  "widthPx": 1148,
+  "heightPx": 283
+ },
+ "widthMm": 166.0,
+ "heightMm": 40.922,
+ "dpiMin": 150
+}

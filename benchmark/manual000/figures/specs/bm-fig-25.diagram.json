@@ -1,0 +1,133 @@
+{
+ "$schema": "studio.diagram/v1",
+ "family": "rack",
+ "id": "9.3",
+ "title": "Elevasi rak 24U dengan nomor U dari bawah, konvensi EIA-310.",
+ "classification": "TERBATAS",
+ "width_mm": 128,
+ "apparatus": "page",
+ "labels_verified": true,
+ "sources": [
+  "Panduan Simbol Engineering GSP v1.0 Gambar 6.5. Untuk gambar nyata cantumkan daya, berat, dan label aset TIA-606-D."
+ ],
+ "nodes": [
+  {
+   "id": "u24",
+   "label": "Patch panel serat",
+   "shape": "box",
+   "tag": "U24",
+   "u": 1,
+   "class": {
+    "row": 0
+   }
+  },
+  {
+   "id": "u23",
+   "label": "Switch inti",
+   "shape": "box",
+   "tag": "U23",
+   "u": 1,
+   "class": {
+    "row": 1
+   }
+  },
+  {
+   "id": "u22",
+   "label": "Firewall",
+   "shape": "box",
+   "tag": "U22",
+   "u": 1,
+   "class": {
+    "row": 2
+   }
+  },
+  {
+   "id": "u21",
+   "label": "kosong",
+   "shape": "box",
+   "tag": "U21",
+   "u": 1,
+   "class": {
+    "row": 3,
+    "secondary": true
+   }
+  },
+  {
+   "id": "u19",
+   "label": "Server VMS",
+   "shape": "box",
+   "tag": "U19-U20",
+   "u": 1,
+   "class": {
+    "row": 4
+   }
+  },
+  {
+   "id": "u17",
+   "label": "Server analitik",
+   "shape": "box",
+   "tag": "U17-U18",
+   "u": 1,
+   "class": {
+    "row": 5
+   }
+  },
+  {
+   "id": "u13",
+   "label": "Penyimpanan 4U",
+   "shape": "box",
+   "tag": "U13-U16",
+   "u": 1,
+   "class": {
+    "row": 6
+   }
+  },
+  {
+   "id": "u12",
+   "label": "Pengatur kabel",
+   "shape": "box",
+   "tag": "U12",
+   "u": 1,
+   "class": {
+    "row": 7
+   }
+  },
+  {
+   "id": "u07",
+   "label": "kosong",
+   "shape": "box",
+   "tag": "U7-U11",
+   "u": 1,
+   "class": {
+    "row": 8,
+    "secondary": true
+   }
+  },
+  {
+   "id": "u04",
+   "label": "UPS 3U",
+   "shape": "box",
+   "tag": "U4-U6",
+   "u": 1,
+   "class": {
+    "row": 9
+   }
+  },
+  {
+   "id": "u01",
+   "label": "Baterai UPS",
+   "shape": "box",
+   "tag": "U1-U3",
+   "u": 1,
+   "class": {
+    "row": 10
+   }
+  }
+ ],
+ "notes": [
+  "Aturan: U dihitung dari bawah (U1); beban berat di bawah; sisakan U kosong untuk aliran udara; label tiap perangkat = penandaan aset; tulis daya (W) & berat per perangkat.",
+  "Judul dalam gambar: CONTOH 5 · ELEVASI RAK 24U (EIA-310, 1U = 44,45 mm) — ILUSTRASI.",
+  "IP-42c (D-137 opsi D): lebar BM 100 mm tidak sah (spec P1-width_mm: 128 atau 166; blok DATUM-31 FIGURE_WIDTHS_MM 128/166) -> 128 mm = lebar sah terdekat; blok widthMm ikut 128 agar figur tidak diskalakan.",
+  "IP-42c: tinggi direstrukturisasi, setiap slot digambar 1U (u = 1; rak Garis A 1U = 2 baseline = 9,525 mm): 11 slot = 123,825 mm (BM 112,938 mm; proporsional 23U = 238,125 mm). Rentang U asli tetap di tag (U24 ... U1-U3); tinggi kotak TIDAK sebanding jumlah U (deviasi terdokumentasi). 112,9 mm butuh <= 10 slot = menghapus satu slot acuan, tidak dilakukan."
+ ]
+}

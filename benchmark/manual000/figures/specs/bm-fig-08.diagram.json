@@ -1,0 +1,154 @@
+{
+ "$schema": "studio.diagram/v1",
+ "family": "graph",
+ "id": "3.1",
+ "title": "Urutan membangun dokumen DATUM dari nomor sampai serah, dengan jalur tolak ke sumber.",
+ "classification": "TERBATAS",
+ "width_mm": 166,
+ "apparatus": "page",
+ "labels_verified": true,
+ "sources": [
+  "SKILL.md DATUM §2, §8a, §13 · ARSIP §3 · STD-GAYA-AHLI-001 Bab 7 · datum_diagram.py keluarga graph."
+ ],
+ "nodes": [
+  {
+   "id": "nomor",
+   "label": "Ambil nomor",
+   "shape": "stadium",
+   "class": {
+    "col": 0,
+    "row": 0
+   },
+   "sub": "Register Induk"
+  },
+  {
+   "id": "tier",
+   "label": "Tetapkan tier",
+   "shape": "box",
+   "class": {
+    "col": 1,
+    "row": 0
+   },
+   "sub": "NOTA, TERBIT, SERAH"
+  },
+  {
+   "id": "register",
+   "label": "Register kuantitas",
+   "shape": "box",
+   "class": {
+    "col": 2,
+    "row": 0
+   },
+   "sub": "rantai hitung"
+  },
+  {
+   "id": "draf",
+   "label": "Draf faktual",
+   "shape": "box",
+   "class": {
+    "col": 3,
+    "row": 0
+   },
+   "sub": "angka terikat"
+  },
+  {
+   "id": "spec",
+   "label": "Spec gambar",
+   "shape": "box",
+   "class": {
+    "col": 3,
+    "row": 1
+   },
+   "sub": "oleh PRISMA"
+  },
+  {
+   "id": "bangun",
+   "label": "Bangun berkas",
+   "shape": "box",
+   "class": {
+    "col": 2,
+    "row": 1
+   },
+   "sub": "docx, xlsx, pptx"
+  },
+  {
+   "id": "gerbang",
+   "label": "Gerbang rilis",
+   "shape": "box",
+   "class": {
+    "col": 1,
+    "row": 1,
+    "accent": true
+   },
+   "sub": "lint dan juri"
+  },
+  {
+   "id": "serah",
+   "label": "Serah",
+   "shape": "stadium",
+   "class": {
+    "col": 0,
+    "row": 1
+   },
+   "sub": "LOKUS"
+  }
+ ],
+ "edges": [
+  {
+   "from": "nomor",
+   "to": "tier",
+   "kind": "data",
+   "label": "nomor"
+  },
+  {
+   "from": "tier",
+   "to": "register",
+   "kind": "data",
+   "label": "tier"
+  },
+  {
+   "from": "register",
+   "to": "draf",
+   "kind": "data",
+   "label": "nilai"
+  },
+  {
+   "from": "draf",
+   "to": "spec",
+   "kind": "data",
+   "label": "naskah"
+  },
+  {
+   "from": "spec",
+   "to": "bangun",
+   "kind": "data",
+   "label": "SVG"
+  },
+  {
+   "from": "bangun",
+   "to": "gerbang",
+   "kind": "data",
+   "label": "berkas"
+  },
+  {
+   "from": "gerbang",
+   "to": "serah",
+   "kind": "accent",
+   "label": "lulus"
+  },
+  {
+   "from": "gerbang",
+   "to": "register",
+   "kind": "alert",
+   "label": "gagal, perbaiki sumber"
+  }
+ ],
+ "legend": [
+  "stadion mulai dan selesai",
+  "bingkai amber gerbang",
+  "garis merah putus-putus jalur tolak"
+ ],
+ "notes": [
+  "IP-02: gerbang rilis digambar kotak beraksen (acuan: segi enam); satu dialek ISO 5807 per gambar (DATUM-35)."
+ ]
+}

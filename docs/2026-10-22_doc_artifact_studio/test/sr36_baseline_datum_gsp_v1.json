@@ -1,0 +1,2476 @@
+{
+ "database": "gsp_agent_hq_v21",
+ "capturedAt": "2026-10-22T23:36:45.082Z",
+ "row": "SR-36",
+ "slug": "datum-gsp",
+ "versionNo": 1,
+ "versionId": "cmvjwg7n00002v12cjgflpdpg",
+ "paramsSha256": "f7767a7549d4fc4249be5fd50679fd8c34c9631e39e6f30cfc2631a5e908ec5a",
+ "recomputedSha256": "f7767a7549d4fc4249be5fd50679fd8c34c9631e39e6f30cfc2631a5e908ec5a",
+ "keyCount": 721,
+ "overrideCount": 83,
+ "baseVersionId": "cmvjvlqsp0001v1yc9nshen9n",
+ "resolvedParams": {
+  "org.nib": "9120208940517",
+  "ahs.rows": [
+   {
+    "row": "A",
+    "label": "tenaga kerja"
+   },
+   {
+    "row": "B",
+    "label": "bahan"
+   },
+   {
+    "row": "C",
+    "label": "peralatan"
+   },
+   {
+    "row": "D",
+    "label": "jumlah",
+    "formula": "A + B + C"
+   },
+   {
+    "row": "E",
+    "label": "biaya umum dan keuntungan"
+   },
+   {
+    "row": "F",
+    "label": "harga satuan",
+    "formula": "D + E"
+   }
+  ],
+  "c4.levels": [
+   "Konteks",
+   "Kontainer",
+   "Komponen",
+   "Kode"
+  ],
+  "aside.fill": "none",
+  "diagram.id": "",
+  "doc.number": "{urut}/GSP/{kodeJenis}/{bulanRomawi}/{tahun}",
+  "boq.columns": [
+   "No",
+   "uraian",
+   "volume",
+   "satuan",
+   "harga satuan",
+   "jumlah"
+  ],
+  "cover.align": "left",
+  "doc.channel": "dokumen",
+  "doc.urgency": "biasa",
+  "letter.font": "Arial",
+  "page.sizeMm": [
+   210,
+   297
+  ],
+  "rack.unitMm": 44.45,
+  "rules.index": [
+   "DT-01..DT-44",
+   "CH-01..CH-14",
+   "SM-01..SM-12",
+   "SG-L0..L6 (68)"
+  ],
+  "brief.master": "light",
+  "chart.engine": "pustakachart",
+  "doc.language": "ID",
+  "doc.revision": "A",
+  "doc.typeCode": [
+   "KT",
+   "PT",
+   "RAB",
+   "SPH",
+   "SP",
+   "BA",
+   "DS",
+   "STD"
+  ],
+  "icd203.bands": [
+   {
+    "label": "hampir tidak mungkin",
+    "toPercent": 5,
+    "fromPercent": 1
+   },
+   {
+    "label": "sangat kecil kemungkinannya",
+    "toPercent": 20,
+    "fromPercent": 5
+   },
+   {
+    "label": "kecil kemungkinannya",
+    "toPercent": 45,
+    "fromPercent": 20
+   },
+   {
+    "label": "kira-kira berimbang",
+    "toPercent": 55,
+    "fromPercent": 45
+   },
+   {
+    "label": "kemungkinan besar",
+    "toPercent": 80,
+    "fromPercent": 55
+   },
+   {
+    "label": "sangat mungkin",
+    "toPercent": 95,
+    "fromPercent": 80
+   },
+   {
+    "label": "hampir pasti",
+    "toPercent": 99,
+    "fromPercent": 95
+   }
+  ],
+  "prose.emDash": {
+   "inHeadings": 0,
+   "maxPer1000Words": 0
+  },
+  "rules.hairMm": 0.2,
+  "artifact.tier": "NOTA",
+  "brief.closing": {
+   "keyNumbers": 4,
+   "neverThankYou": true,
+   "requestedDecision": true
+  },
+  "color.retired": [
+   "1A2B4A",
+   "C9A84C"
+  ],
+  "diagram.title": "",
+  "grid.gutterMm": 6,
+  "hps.roundDown": true,
+  "letter.sizePt": 12,
+  "org.shortName": "GSP",
+  "vat.dppFactor": "11/12",
+  "ahs.laborCodes": {
+   "unit": "OH",
+   "codes": [
+    "L.01",
+    "L.02",
+    "L.03",
+    "L.04"
+   ]
+  },
+  "brief.marginMm": null,
+  "chart.audience": "pejabat",
+  "chart.question": "",
+  "diagram.family": null,
+  "doc.monthRoman": "I-XII",
+  "fire.minLegend": [
+   "detektor asap",
+   "detektor panas",
+   "titik panggil manual",
+   "alarm bunyi dan visual",
+   "panel MCFA",
+   "APAR atau hidran",
+   "jalur evakuasi"
+  ],
+  "jury.minJudges": 2,
+  "letter.closing": "Atas perhatian Saudara, kami ucapkan terima kasih.",
+  "org.entityName": "PT GEMILANG SATRIA PERKASA",
+  "render.png.dpi": 300,
+  "symbol.dialect": null,
+  "type.face.mono": "IBM Plex Mono",
+  "workbook.print": {
+   "paper": "A4",
+   "gridlines": false,
+   "fitToWidth": true,
+   "repeatHeaderRows": true,
+   "registerBlockFooter": true
+  },
+  "wrapper.header": [
+   "KLASIFIKASI · {kelas}",
+   "SALINAN INDUK · PENGGUNAAN INTERNAL GSP"
+  ],
+  "artifact.format": "md",
+  "brief.forbidden": [
+   "animasi masuk",
+   "transisi",
+   "logo tiap slide",
+   "foto stok",
+   "set ikon",
+   "gradien",
+   "bayangan",
+   "sudut membulat",
+   "aksen kedua"
+  ],
+  "chart.gridlines": "none",
+  "chart.maxColors": 5,
+  "chart.minFontPt": 5.5,
+  "chart.sortOrder": "valueDesc",
+  "color.role.body": "ink700",
+  "cover.scopeLine": "",
+  "diagram.edges[]": [],
+  "diagram.nodes[]": [],
+  "diagram.notes[]": [],
+  "diagram.widthMm": 128,
+  "grid.fullSpanMm": 166,
+  "grid.latticeXMm": 10.6667,
+  "grid.latticeYMm": 4.7625,
+  "grid.subcolumns": 12,
+  "jury.dimensions": [
+   "kejelasan",
+   "kedalaman",
+   "kematangan susunan",
+   "penjaga pola"
+  ],
+  "labels.standard": "ANSI/TIA-606-D",
+  "layout.railMode": "A",
+  "numbering.scope": "perChapter",
+  "page.background": "light",
+  "render.toc.mode": "static",
+  "rules.primaryMm": 0.45,
+  "source.position": "below",
+  "source.required": true,
+  "type.baselinePt": 13.5,
+  "type.body.align": "justify",
+  "type.face.serif": "IBM Plex Serif",
+  "vat.inUnitPrice": false,
+  "aside.ruleBottom": "rules.hair",
+  "caption.position": "above",
+  "caption.required": true,
+  "color.role.alert": "alert",
+  "color.role.label": "ink400",
+  "color.role.zebra": "zebra15",
+  "confidence.label": "konservatif",
+  "diagram.legend[]": [],
+  "doc.openingOrder": "answerFirst",
+  "gate.stepsByTier": [
+   {
+    "no": 1,
+    "tool": "Penulis",
+    "check": "sisir sendiri",
+    "tiers": [
+     "NOTA",
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 2,
+    "tool": "datumcheck.py",
+    "check": "penjaga titik panggil saat bangun",
+    "tiers": [
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 3,
+    "tool": "datum_diagram.py, datum_render.py",
+    "check": "lint gambar saat bangun",
+    "tiers": [
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 4,
+    "tool": "lint_mutu.py, scan_ai_footprint.py",
+    "check": "pemeriksaan mekanik naskah dan jejak mesin per kanal",
+    "tiers": [
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 5,
+    "tool": "datum_lint.py",
+    "check": "lint berkas DATUM",
+    "tiers": [
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 6,
+    "tool": "datumbind audit_docx, audit_retired",
+    "check": "audit pengikatan angka",
+    "tiers": [
+     "SERAH"
+    ]
+   },
+   {
+    "no": 7,
+    "tool": "Pemeriksa",
+    "check": "pemeriksaan mata",
+    "tiers": [
+     "TERBIT",
+     "SERAH"
+    ]
+   },
+   {
+    "no": 8,
+    "tool": "Dua juri bukan penulis",
+    "check": "penilaian juri buta",
+    "tiers": [
+     "SERAH"
+    ]
+   },
+   {
+    "no": 9,
+    "tool": "Pemeriksa bukan penulis dan bukan juri",
+    "check": "pemeriksaan independen dan uji fotokopi",
+    "tiers": [
+     "SERAH"
+    ]
+   },
+   {
+    "no": 10,
+    "tool": "ARSIP, LOKUS, KRONIK",
+    "check": "serah dan rekam",
+    "tiers": [
+     "NOTA",
+     "TERBIT",
+     "SERAH"
+    ]
+   }
+  ],
+  "iso5807.maxSteps": 10,
+  "iso7010.prefixes": {
+   "E": "evakuasi",
+   "F": "kebakaran",
+   "M": "kewajiban",
+   "P": "larangan",
+   "W": "peringatan"
+  },
+  "mil.echelonMarks": {
+   "X": "brigade",
+   "|": "kompi",
+   "XX": "divisi",
+   "||": "batalyon"
+  },
+  "rules.asideTopMm": 0.44,
+  "brief.bullets.max": 5,
+  "brief.slideSizeMm": [
+   338.7,
+   190.5
+  ],
+  "chart.inPlotTitle": false,
+  "chart.legend.mode": "direct",
+  "color.role.accent": "signal",
+  "color.role.verify": "verd",
+  "color.wrapper.ink": "14110F",
+  "cover.addressLine": "Divisi Engineering & Technical Intelligence · Jl. Bangka Raya No. 27, Pela Mampang, Jakarta Selatan 12720 · Tel. (021) 22715320",
+  "cover.kicker.text": "",
+  "device.spine.face": "mono",
+  "diagram.apparatus": "page",
+  "diagram.maxColors": 5,
+  "diagram.minFontPt": 5.5,
+  "diagram.sources[]": [],
+  "doc.readerPronoun": "Anda",
+  "gate.lintRegistry": [
+   "DATUM-01",
+   "DATUM-02",
+   "DATUM-03",
+   "DATUM-04",
+   "DATUM-05",
+   "DATUM-06",
+   "DATUM-07",
+   "DATUM-08",
+   "DATUM-09",
+   "DATUM-10",
+   "DATUM-11",
+   "DATUM-12",
+   "DATUM-13",
+   "DATUM-14",
+   "DATUM-15",
+   "DATUM-16",
+   "DATUM-17",
+   "DATUM-18",
+   "DATUM-19",
+   "DATUM-20",
+   "DATUM-21",
+   "DATUM-22",
+   "DATUM-23",
+   "DATUM-24",
+   "DATUM-25",
+   "DATUM-26",
+   "DATUM-27",
+   "DATUM-28",
+   "DATUM-29",
+   "DATUM-30",
+   "DATUM-31",
+   "DATUM-32",
+   "DATUM-33",
+   "DATUM-34",
+   "DATUM-35",
+   "DATUM-36",
+   "DATUM-37",
+   "DATUM-38",
+   "DATUM-39"
+  ],
+  "grid.textColumnMm": 128,
+  "isa.locationLines": {
+   "lapangan": "tanpa garis",
+   "lokasiBantu": "dua garis",
+   "ruangKendaliUtama": "satu garis",
+   "takTerjangkauOperator": "garis putus"
+  },
+  "jury.snippetWords": [
+   150,
+   600
+  ],
+  "render.cover.mode": "explicit",
+  "render.html.paged": true,
+  "rules.hair.colour": "ink200",
+  "specTable.columns": [
+   "PARAMETER",
+   "KONDISI UJI",
+   "NILAI",
+   "SATUAN"
+  ],
+  "time.zoneRequired": true,
+  "type.heading.form": "label",
+  "brief.bodyWordsMax": 55,
+  "chart.gspRelevance": {
+   "gantt": {
+    "code": "W-07",
+    "chart": "Gantt",
+    "useCase": "Jadwal pelaksanaan di proposal teknis, kajian, dan rencana kerja",
+    "relevance": "Tinggi"
+   },
+   "sankey": {
+    "code": "K-11",
+    "chart": "Sankey",
+    "useCase": "Aliran RAB dari total ke kelompok biaya ke item; aliran data antar tier",
+    "relevance": "Tinggi"
+   },
+   "barcode": {
+    "code": "W-08",
+    "chart": "Barcode",
+    "useCase": "Linimasa forensik digital: login, akses berkas, USB, ekspor",
+    "relevance": "Tinggi"
+   },
+   "horizon": {
+    "code": "W-09",
+    "chart": "Horizon",
+    "useCase": "Dashboard pusat komando: puluhan sensor perimeter, radar, kamera",
+    "relevance": "Tinggi"
+   },
+   "network": {
+    "code": "H-07",
+    "chart": "Network",
+    "useCase": "Analisis relasi OSINT; topologi; peta pemangku kepentingan",
+    "relevance": "Tinggi"
+   },
+   "tileMap": {
+    "code": "G-01",
+    "chart": "Tile map",
+    "useCase": "Sebaran nasional per provinsi, Polda, atau Kodam tanpa bias luas",
+    "relevance": "Tinggi"
+   },
+   "flowchart": {
+    "code": "G-04",
+    "chart": "Flowchart",
+    "useCase": "SOP, rantai kustodi barang bukti, alur keputusan",
+    "relevance": "Tinggi"
+   },
+   "ridgeline": {
+    "code": "S-05",
+    "chart": "Ridgeline",
+    "useCase": "Pergeseran sebaran waktu penyelesaian tiket",
+    "relevance": "Sedang"
+   },
+   "beeswarmStrip": {
+    "code": "S-07",
+    "chart": "Beeswarm, strip",
+    "useCase": "Sebaran waktu respons per satuan; skor evaluasi vendor",
+    "relevance": "Sedang"
+   },
+   "radialHistogram": {
+    "code": "S-08",
+    "chart": "Radial histogram",
+    "useCase": "Arah deteksi radar dan perimeter, hasil direction finding",
+    "relevance": "Tinggi"
+   },
+   "radialBarNightingaleWordCloud": {
+    "code": null,
+    "chart": "Radial bar, nightingale, word cloud",
+    "useCase": "Hiasan; presisinya rendah untuk pejabat dan panitia tender",
+    "relevance": "Rendah"
+   }
+  },
+  "chart.heatmap.ramp": [
+   "paper",
+   "signal"
+  ],
+  "chart.purposeGroup": null,
+  "chart.zeroBaseline": true,
+  "color.brief.accent": "D98324",
+  "color.brief.ground": "0E1216",
+  "color.role.heading": "ink900",
+  "color.role.numeral": "ink900",
+  "color.wrapper.body": "33302C",
+  "color.wrapper.meta": "7A756E",
+  "color.wrapper.rule": "C4BEB4",
+  "color.wrapper.seal": "6E1420",
+  "cover.elementOrder": [
+   "pita segel",
+   "logo",
+   "baris alamat di atas garis rambut",
+   "ruang putih",
+   "Datum Rule 166 mm",
+   "kicker jenis dokumen",
+   "judul",
+   "standfirst",
+   "baris cakupan",
+   "blok kendali",
+   "kolofon",
+   "string punggung"
+  ],
+  "cover.leftMarginMm": 24,
+  "cover.title.sizePt": 25,
+  "diagram.accent.max": 1,
+  "diagram.node.class": {
+   "col": null,
+   "row": null,
+   "lane": null,
+   "tier": null
+  },
+  "diagram.node.shape": "box",
+  "gate.channelRoutes": {
+   "dek": {
+    "gate": "langkah 1, 3, 5, 7",
+    "passWhen": "setiap slide satu klaim; lint dek bersih"
+   },
+   "chat": {
+    "gate": "pemindai kanal chat",
+    "passWhen": "jawaban di baris pertama; nol pelanggaran absolut"
+   },
+   "chart": {
+    "gate": "langkah 3, 7",
+    "passWhen": "dua belas butir 8.6 tercentang"
+   },
+   "workbook": {
+    "gate": "langkah 2, 5, 7",
+    "passWhen": "bendera induk SELURUH UJI LULUS"
+   },
+   "notifikasi": {
+    "gate": "pemindai kanal notifikasi",
+    "passWhen": "pembaca tahu langkah berikutnya tanpa membuka kanal lain"
+   },
+   "suratDinas": {
+    "gate": "langkah 1, 4, 7",
+    "passWhen": "sapaan benar; satu usul yang bisa dijawab"
+   },
+   "gambarTeknik": {
+    "gate": "langkah 3, 7",
+    "passWhen": "lint bangun bersih; legenda ada"
+   },
+   "dokumenProposal": {
+    "gate": "langkah 1 sampai 10 sesuai tier",
+    "passWhen": "lint 27 dari 27; LEPAS untuk SERAH"
+   }
+  },
+  "grid.innerMarginMm": 24,
+  "grid.outerMarginMm": 20,
+  "marks.asumsi.glyph": "△",
+  "paragraph.maxWords": 150,
+  "render.rail.colsTw": [
+   7257,
+   340,
+   1814
+  ],
+  "rules.tintsPercent": [
+   15,
+   30
+  ],
+  "rules.wordLadderSz": [
+   5,
+   6,
+   8,
+   10,
+   11
+  ],
+  "runningHead.fields": [
+   "entitas",
+   "jenis dokumen",
+   "BAB {n}",
+   "judul bab"
+  ],
+  "sheet.legend.style": "keyRow",
+  "stampDuty.amountRp": 10000,
+  "symbol.kakOverride": true,
+  "table.zebra.colour": "zebra15",
+  "type.fontEmbedding": {
+   "pdf": "tanam dan subset",
+   "docx": "tanam (embed_fonts.py)",
+   "pptx": "kirim assets/fonts + PASANG-DULU.txt",
+   "xlsx": "kirim assets/fonts + PASANG-DULU.txt"
+  },
+  "bpmn.gatewaySymbols": {
+   "paralel": "plus",
+   "inklusif": "lingkaran",
+   "eksklusif": "silang"
+  },
+  "brief.ideasPerSlide": 1,
+  "brief.slidePatterns": [
+   "claimNumberBlock",
+   "chartOneAccent",
+   "specTable3Col",
+   "assumption",
+   "request"
+  ],
+  "color.interior.link": "0563C1",
+  "color.interior.verd": "2F6F6B",
+  "color.role.hairline": "ink200",
+  "color.wrapper.cream": "F6E9E9",
+  "color.wrapper.paper": "FBFAF7",
+  "cover.kicker.colour": "seal",
+  "device.spine.fields": [
+   "jenis",
+   "subjek",
+   "bahasa",
+   "revisi",
+   "bulan",
+   "tahun"
+  ],
+  "device.spine.sizePt": 6,
+  "diagram.hopRadiusMm": 0.9,
+  "diagram.latticeSnap": {
+   "xMm": 10.6667,
+   "yMm": 4.7625
+  },
+  "diagram.maxHeightMm": 247,
+  "diagram.minStrokeMm": 0.18,
+  "doc.number.fileForm": "{urut}-GSP-{kodeJenis}-{bulanRomawi}-{tahun}",
+  "gate.callSiteGuards": [
+   "G1",
+   "G2",
+   "G3",
+   "N1",
+   "03",
+   "04",
+   "09",
+   "10",
+   "16"
+  ],
+  "grid.evidenceRailMm": 32,
+  "grid.marginBottomMm": 24,
+  "grid.pageWidthCheck": 210,
+  "isa.shapeByFunction": {
+   "plc": "belah ketupat dalam persegi",
+   "fungsiKomputer": "segi enam",
+   "instrumenTunggal": "lingkaran",
+   "tampilanAtauKendaliBersama": "lingkaran dalam persegi"
+  },
+  "letter.marginLeftCm": 3,
+  "marks.asumsi.colour": "alert",
+  "marks.oncePerClause": true,
+  "marks.pemasok.glyph": "◇",
+  "marks.terukur.glyph": "■",
+  "mil.identityByShape": {
+   "kawan": "persegi panjang",
+   "lawan": "belah ketupat",
+   "netral": "bujur sangkar",
+   "takDikenal": "quatrefoil"
+  },
+  "naming.file.pattern": "{judul} {nomorBerkas}",
+  "render.table.layout": {
+   "fixed": true,
+   "borders": "none",
+   "indentTw": 0,
+   "cellMarginTw": {
+    "left": 0,
+    "right": 0
+   }
+  },
+  "rules.belowHeaderMm": 0.25,
+  "rules.revisionBarMm": 0.5,
+  "table.numeral.align": "right",
+  "table.totalRow.fill": "none",
+  "table.zebra.minRows": 1000,
+  "topology.layerOrder": [
+   "WAN",
+   "inti",
+   "agregasi",
+   "lapangan"
+  ],
+  "type.face.condensed": "IBM Plex Sans Cond",
+  "artifact.pdf.enabled": false,
+  "chart.kind.H-03.ramp": [
+   "white",
+   "signal"
+  ],
+  "chart.kind.K-07.grid": "10x10",
+  "chart.kind.K-08.grid": null,
+  "chart.kind.K-08.icon": "person",
+  "chart.kind.P-01.sort": "valueDesc",
+  "chart.kind.P-04.sort": "valueDesc",
+  "chart.kind.P-06.sort": "byDifference",
+  "chart.kind.S-01.bins": [
+   10,
+   20
+  ],
+  "chart.kind.W-09.fold": true,
+  "chart.output.widthMm": 128,
+  "classification.level": "Terbatas",
+  "color.interior.alert": "9B1C1C",
+  "color.interior.paper": "FCFCFB",
+  "device.spine.enabled": true,
+  "diagram.legend.style": "keyRow",
+  "gate.manualChecklist": [
+   "Cetak 100 %, fotokopi dua kali, baca dari 40 cm.",
+   "Setiap headline brief adalah klaim, dan tidak ada judul laporan berbentuk pertanyaan.",
+   "Rel bukti jujur: kosong bila memang tidak ada yang perlu dikatakan.",
+   "Setiap turunan ditutup dengan akibat bila asumsinya gagal.",
+   "Setiap regulasi yang dikutip adalah yang berlaku, dan setiap edisi standar adalah edisi pada Tabel 10.1.",
+   "Terbilang cocok dengan angka di atasnya.",
+   "Logo muncul tepat di satu halaman.",
+   "ID persyaratan, kuantitas, dan total cocok di seluruh paket.",
+   "Di setiap diagram, setiap kotak adalah komponen nyata dan setiap garis antarmuka nyata.",
+   "Setiap chart lolos uji lima detik oleh orang yang tidak ikut membuatnya."
+  ],
+  "glossary.termClasses": [
+   "nama produk, model, merek, nomor standar",
+   "protokol atau antarmuka berbentuk token teknis",
+   "istilah umum berpadanan baku",
+   "padanan belum mapan di bidang",
+   "idiom korespondensi Inggris",
+   "pasangan sementara"
+  ],
+  "jury.threshold.lepas": {
+   "adjudicators": 2,
+   "dimension1Min": 4,
+   "dimension2Min": 4,
+   "dimension3Min": 4,
+   "dimension4Min": 3
+  },
+  "letter.marginRightCm": 2,
+  "letter.requestToPeer": "mohon",
+  "letter.selfReference": "kami",
+  "marks.overflowTarget": "rail",
+  "marks.pemasok.colour": "ink400",
+  "marks.terukur.colour": "ink900",
+  "mil.frameRatioLocked": true,
+  "naming.sheet.pattern": "KAPITAL-TANDA-HUBUNG",
+  "register.maxDecimals": 3,
+  "render.rail.renderer": "table3col",
+  "rules.primary.colour": "ink900",
+  "runningHead.docLabel": "",
+  "symbol.editionStatus": null,
+  "table.groupBand.fill": "none",
+  "table.totalRow.style": {
+   "face": "condensed",
+   "fill": "none",
+   "weight": 600,
+   "ruleAbove": "rules.primary"
+  },
+  "type.face.workbookUi": "IBM Plex Sans",
+  "type.scale.body.face": "serif",
+  "type.scale.body.size": 9.5,
+  "admiralty.credibility": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5",
+   "6"
+  ],
+  "admiralty.reliability": [
+   "A",
+   "B",
+   "C",
+   "D",
+   "E",
+   "F"
+  ],
+  "artifact.lint.enabled": false,
+  "assumption.id.pattern": "ASM-{domain}-{nn}",
+  "caption.sentenceCount": 1,
+  "chart.kind.S-02.box50": true,
+  "chart.kind.W-09.bands": [
+   2,
+   3
+  ],
+  "color.interior.ink100": "EFF2F4",
+  "color.interior.ink200": "C3CBD1",
+  "color.interior.ink400": "6B7783",
+  "color.interior.ink700": "2B3640",
+  "color.interior.ink900": "101418",
+  "color.interior.signal": "B45309",
+  "cover.colophon.fields": [
+   "entitas",
+   "NIB",
+   "cap terbit",
+   "klasifikasi"
+  ],
+  "derivation.id.pattern": "D-{bab}.{urut}",
+  "diagram.anchorFanning": true,
+  "diagram.render.pngDpi": 300,
+  "governance.precedence": [
+   "regulasi-kontrak",
+   "kepatuhan-DATUM",
+   "bentuk-DATUM",
+   "isi-pilihan",
+   "edisi-terbaru"
+  ],
+  "grid.rederiveForNonA4": true,
+  "iec.switchFamilyMarks": {
+   "pemisah": "garis pendek pada kontak; hanya mengisolasi",
+   "kontaktor": "busur pada kontak; ditahan kumparan",
+   "pemutusDaya": "tanda silang pada kontak; memutus arus gangguan"
+  },
+  "jury.threshold.saring": {
+   "dimension4Min": 3,
+   "meanDimensions1to3Min": 4,
+   "noDimension1to3AtOrBelow": 2
+  },
+  "mil.sidcRequiredForC2": true,
+  "naming.folder.pattern": "NN Judul Kapital",
+  "naming.sheet.maxChars": 31,
+  "rack.numberFromBottom": true,
+  "runningHead.ruleBelow": "rules.hair",
+  "type.face.symbolGlyph": "DejaVu Sans",
+  "workbook.fontShipping": {
+   "folder": "assets/fonts",
+   "notice": "PASANG-DULU.txt",
+   "embeddable": false
+  },
+  "workbook.sheetClasses": [
+   {
+    "kelas": "Tampilan",
+    "sheet": "COVER",
+    "fungsi": "Identitas dan angka kunci, semuanya lewat rujukan"
+   },
+   {
+    "kelas": "Kendali",
+    "sheet": "PETUNJUK",
+    "fungsi": "Kunci warna, peta sheet, batas model BTS-nn"
+   },
+   {
+    "kelas": "Kendali",
+    "sheet": "KENDALI",
+    "fungsi": "Pemeriksaan silang dan bendera induk"
+   },
+   {
+    "kelas": "Tampilan",
+    "sheet": "RINGKASAN EKSEKUTIF",
+    "fungsi": "Angka kunci dengan satuan dan provenans"
+   },
+   {
+    "kelas": "Tampilan",
+    "sheet": "REKAPITULASI",
+    "fungsi": "Nilai per bab, PPN, total, terbilang"
+   },
+   {
+    "kelas": "Tampilan",
+    "sheet": "RAB",
+    "fungsi": "Daftar kuantitas dan harga"
+   },
+   {
+    "kelas": "Dasar harga",
+    "sheet": "AHS",
+    "fungsi": "Analisa harga satuan, Permen PUPR 8/2023"
+   },
+   {
+    "kelas": "Hitung",
+    "sheet": "HITUNG-nama",
+    "fungsi": "Satu domain per sheet; satu-satunya rumah konstanta"
+   }
+  ],
+  "artifact.tierSuggested": "NOTA",
+  "brief.headline.isClaim": true,
+  "chapter.kicker.pattern": "BAB {n}",
+  "chart.colorRole.accent": "signal",
+  "chart.forbiddenEffects": [
+   "3D",
+   "dua sumbu Y",
+   "bayangan",
+   "gradien",
+   "ujung bar membulat",
+   "bingkai",
+   "label berkotak"
+  ],
+  "chart.kind.K-04.groups": 2,
+  "chart.kind.K-12.widths": null,
+  "chart.kind.P-01.accent": "topBarOnly",
+  "chart.kind.S-02.median": true,
+  "color.maxValuesPerPage": 5,
+  "device.datumRule.ticks": 12,
+  "device.sealBand.colour": "seal",
+  "diagram.classification": "Terbatas",
+  "diagram.labelsVerified": false,
+  "doc.changeLog.required": true,
+  "doc.pivotMoment.window": [
+   0.25,
+   0.75
+  ],
+  "doc.readerKnowledgeMap": {
+   "dijelaskan": [],
+   "dianggapDiketahui": []
+  },
+  "grid.textBlockHeightMm": 247,
+  "grid.topBottomMarginMm": 26,
+  "letter.readerReference": "Bapak, Ibu, Saudara",
+  "lineWeight.seriesR10Mm": [
+   0.13,
+   0.18,
+   0.25,
+   0.35,
+   0.5,
+   0.7,
+   1
+  ],
+  "marks.diturunkan.glyph": "◈",
+  "numbers.bindToRegister": true,
+  "page.darkRequestReason": "",
+  "registerBlock.position": "footer",
+  "render.docx.embedFonts": [
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Serif",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Sans Cond",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Mono",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Sans",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold"
+    ],
+    "family": "DejaVu Sans"
+   }
+  ],
+  "render.section.wrapper": {
+   "cols": {
+    "num": 1,
+    "spaceTw": 720
+   },
+   "footer": {
+    "mode": "empty",
+    "format": {
+     "lineTw": 40,
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "header": {
+    "mode": "empty",
+    "format": {
+     "lineTw": 40,
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "marginTw": {
+    "top": 1474,
+    "left": 1361,
+    "right": 1134,
+    "bottom": 1361,
+    "footer": 737,
+    "gutter": 0,
+    "header": 737
+   },
+   "pageSizeTw": [
+    11906,
+    16838
+   ],
+   "docGridLinePitch": 360
+  },
+  "render.spacer.autoMode": "none",
+  "render.spacer.defaults": {
+   "list": {
+    "lineTw": 68,
+    "lineRule": "exact"
+   },
+   "table": {
+    "lineTw": 135,
+    "lineRule": "exact"
+   }
+  },
+  "requirement.id.pattern": "REQ-{subsistem}-{nn}",
+  "rules.derivationLeftMm": 0.45,
+  "rules.photocopyFloorMm": 0.18,
+  "sheet.revisionOnChange": true,
+  "sourceRegister.columns": [
+   "DOKUMEN",
+   "VERSI/TANGGAL",
+   "BAHASA/HALAMAN",
+   "KLASIFIKASI",
+   "DIPAKAI DI"
+  ],
+  "table.columnWidthSumMm": 166,
+  "type.body.measureChars": [
+   66,
+   80
+  ],
+  "type.role.data.weights": [
+   400,
+   600
+  ],
+  "type.scale.body.colour": "ink700",
+  "type.scale.body.weight": 400,
+  "vat.nominalRatePercent": 12,
+  "ahs.coefficientDecimals": 3,
+  "chart.eyeCheck.required": [
+   12,
+   13,
+   25,
+   27,
+   28
+  ],
+  "chart.kind.H-09.maxSets": 3,
+  "chart.kind.K-08.caption": null,
+  "chart.kind.S-02.whisker": 1.5,
+  "chart.kind.S-08.northUp": true,
+  "chart.kind.W-07.todayAt": null,
+  "color.classificationInk": {
+   "B": "ink900",
+   "R": "alert",
+   "T": "ink900",
+   "SR": "alert"
+  },
+  "cover.datumRule.widthMm": 166,
+  "cover.standfirst.italic": true,
+  "device.sealBand.enabled": true,
+  "device.spine.placements": [
+   "margin luar sampul"
+  ],
+  "diagram.trustZone.style": {
+   "edge": "dashed",
+   "fill": "none",
+   "labelTab": true
+  },
+  "marks.diturunkan.colour": "signal",
+  "marks.prose.maxPerWords": 20,
+  "render.docx.docDefaults": {
+   "lang": "en-US",
+   "lineTw": 276,
+   "langBidi": "ar-SA",
+   "lineRule": "auto",
+   "szHalfPt": 22,
+   "rFontsTheme": {
+    "cs": "minorBidi",
+    "ascii": "minorHAnsi",
+    "hAnsi": "minorHAnsi",
+    "eastAsia": "minorEastAsia"
+   },
+   "langEastAsia": "en-US",
+   "spacingAfterTw": 200
+  },
+  "render.docx.normalStyle": {
+   "lang": "id-ID",
+   "color": "2B3640",
+   "lineTw": 270,
+   "faceRole": "serif",
+   "lineRule": "exact",
+   "szHalfPt": 19,
+   "spacingAfterTw": 0
+  },
+  "render.section.interior": {
+   "cols": {
+    "num": 1,
+    "spaceTw": 720
+   },
+   "footer": {
+    "mode": "registerBlock"
+   },
+   "header": {
+    "mode": "runningHead",
+    "format": {
+     "tabs": [
+      {
+       "val": "right",
+       "posTw": 9411
+      }
+     ],
+     "lineTw": 180,
+     "borders": {
+      "bottom": {
+       "sz": 5,
+       "val": "single",
+       "color": "C3CBD1",
+       "space": 1
+      }
+     },
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "marginTw": {
+    "top": 1474,
+    "left": 1361,
+    "right": 1134,
+    "bottom": 1361,
+    "footer": 737,
+    "gutter": 0,
+    "header": 737
+   },
+   "pageSizeTw": [
+    11906,
+    16838
+   ],
+   "docGridLinePitch": 360
+  },
+  "sheet.titleBlock.fields": [
+   "judul satu kalimat",
+   "nomor gambar",
+   "revisi",
+   "tanggal",
+   "skala atau tanpa skala",
+   "pembuat",
+   "pemeriksa",
+   "klasifikasi"
+  ],
+  "source.glyphKey.include": true,
+  "type.forbiddenBodyFaces": [
+   "Calibri",
+   "Times New Roman",
+   "Aptos",
+   "Arial"
+  ],
+  "type.role.data.fallback": "Consolas",
+  "type.scale.body.leading": 13.5,
+  "type.scale.caption.face": "condensed",
+  "type.scale.caption.size": 7.5,
+  "units.planeAngleNoSpace": true,
+  "workbook.kendali.checks": [
+   "jumlah silang",
+   "PPN",
+   "total",
+   "AHS ke RAB",
+   "uji nol"
+  ],
+  "caption.identifier.style": "condensedCaps",
+  "chart.accent.maxSubjects": 1,
+  "chart.colorRole.textAxis": "ink900",
+  "chart.kind.G-04.maxSteps": 10,
+  "chart.kind.H-07.nodeSize": "degree",
+  "chart.kind.P-08.upColour": "verd",
+  "chart.kind.W-01.maxLines": 3,
+  "checklist.preSerah.items": [
+   {
+    "item": "Tier ditetapkan dengan uji satu kalimat; nomor diambil dari Register Induk",
+    "rules": "DT-02, DT-04"
+   },
+   {
+    "item": "Kanal dan audiens ditetapkan; urutan pembuka sesuai kanal",
+    "rules": "SG-L0-05"
+   },
+   {
+    "item": "Halaman pertama: jenis dokumen, penyusun, kebutuhan, satu jangkar terukur",
+    "rules": "SG-L0-01, L0-02"
+   },
+   {
+    "item": "Klasifikasi sesuai skema penerima; regulasi yang dikutip hidup",
+    "rules": "DT-28, DT-29"
+   },
+   {
+    "item": "Angka beban terikat ke register dan bertanda; tanda maks. sekali per klausa",
+    "rules": "DT-21 sampai DT-23"
+   },
+   {
+    "item": "Setiap tabel dan gambar: caption, SUMBER, dipanggil di prosa",
+    "rules": "DT-15"
+   },
+   {
+    "item": "Tabel: garis mendatar, kolom satuan, numeral mono, tanpa isian",
+    "rules": "DT-16, DT-17"
+   },
+   {
+    "item": "Chart: pertanyaan satu kalimat, satu aksen, caption kesimpulan, mulai nol",
+    "rules": "CH-01 sampai CH-07"
+   },
+   {
+    "item": "Gambar teknik dari spec; labels_verified true; satu dialek; legenda",
+    "rules": "DT-35, DT-39, SM-04"
+   },
+   {
+    "item": "Satuan berspasi, ± berarti, numeral Indonesia, satu varian per berkas",
+    "rules": "DT-30, SG-L4-06"
+   },
+   {
+    "item": "Kalimat berpredikat; titik-koma maks. 5,4 per 1.000 kata; ritme berselang",
+    "rules": "SG-L3-08, L3-09"
+   },
+   {
+    "item": "Pelaku keputusan manusia; tanpa identifier skema di prosa",
+    "rules": "SG-L4-01, L4-03"
+   },
+   {
+    "item": "Sapaan institusional di kanal resmi; tanpa kamu",
+    "rules": "SG-L5-08"
+   },
+   {
+    "item": "Momen pembalik di badan dokumen tebal",
+    "rules": "SG-L1-10"
+   },
+   {
+    "item": "Penutup menyebut aksi dan penerima",
+    "rules": "SG-L0-03"
+   },
+   {
+    "item": "datumcheck bersih; lint berkas 27 dari 27; lint bangun bersih",
+    "rules": "DT-42"
+   },
+   {
+    "item": "SERAH: audit angka, dua juri buta mencapai LEPAS, pemeriksa independen",
+    "rules": "14.6, 16.3"
+   },
+   {
+    "item": "Uji fotokopi: cetak 100 %, fotokopi dua kali, baca 40 cm",
+    "rules": "DT-11, DT-34"
+   },
+   {
+    "item": "Nama berkas sama dengan judul, tanpa garis bawah; catatan perubahan ditulis",
+    "rules": "DT-12"
+   },
+   {
+    "item": "Kolofon: pernyataan jujur berbahasa pembaca",
+    "rules": "16.6"
+   }
+  ],
+  "classification.everyPage": true,
+  "color.decorative.allowed": false,
+  "content.authorClaimMarks": [
+   "TERUKUR",
+   "DITURUNKAN",
+   "ASUMSI"
+  ],
+  "derivation.toleranceMode": "absolute",
+  "device.datumRule.enabled": true,
+  "device.issueStamp.format": "// {YYYYMMDD} {BAHASA} {KELAS} -- TERBITAN {n}",
+  "device.sealBand.heightMm": 6.1736,
+  "device.spine.rotationDeg": 0,
+  "doc.pivotMoment.required": true,
+  "doc.sequenceMap.required": true,
+  "letter.requestToSuperior": "berkenan, perkenan",
+  "lexicon.forbiddenClasses": [
+   "nama proses atau alat internal",
+   "kode mentah dan sidik jari",
+   "status mesin kapital",
+   "jejak alamat berkas dan markup",
+   "riwayat edisi di badan",
+   "stempel korporat keliru",
+   "kata peremeh dan kasar-metaforis"
+  ],
+  "lint.enforcementOverride": {},
+  "photocopy.acceptanceTest": {
+   "photocopyPasses": 2,
+   "photocopySettings": "bawaan",
+   "printScalePercent": 100,
+   "readingDistanceCm": 40,
+   "failIfAnythingLost": true
+  },
+  "render.caption.separator": "   ",
+  "render.list.bulletMarker": {
+   "b": false,
+   "i": false,
+   "t": "–",
+   "face": "IBM Plex Serif",
+   "color": "6B7783",
+   "szHalfPt": 19
+  },
+  "render.list.numberMarker": {
+   "b": true,
+   "i": false,
+   "face": "IBM Plex Mono",
+   "color": "B45309",
+   "szHalfPt": 16
+  },
+  "rules.belowHeader.colour": "ink400",
+  "rules.revisionBar.colour": "ink900",
+  "sheet.lineLabel.required": true,
+  "symbol.viewCone.fromLens": true,
+  "table.headerFill.allowed": false,
+  "table.totalRow.ruleAbove": "rules.primary",
+  "table.zebra.onPrintedBoq": false,
+  "vat.effectiveRatePercent": 11,
+  "workbook.masterFlag.text": [
+   "SELURUH UJI LULUS",
+   "ADA UJI YANG GAGAL, JANGAN TERBITKAN"
+  ],
+  "ahs.overheadProfitPercent": 10,
+  "chart.colorRole.improving": "verd",
+  "chart.kind.H-01.trendLine": false,
+  "chart.kind.K-05.clockwise": true,
+  "chart.kind.K-05.maxSlices": 5,
+  "chart.kind.K-06.maxSlices": 5,
+  "chart.kind.K-11.maxLevels": 3,
+  "chart.kind.P-03.maxSeries": 3,
+  "chart.kind.P-05.gridlines": true,
+  "chart.kind.P-06.endColour": "signal",
+  "chart.kind.P-09.actualBar": true,
+  "chart.kind.S-03.bandwidth": null,
+  "chart.kind.S-04.bandwidth": null,
+  "chart.kind.S-05.maxGroups": 12,
+  "chart.kind.S-08.clockwise": true,
+  "chart.kind.W-05.maxLayers": 4,
+  "chart.kind.W-07.todayLine": true,
+  "chart.limits.pieMaxSlices": 5,
+  "chart.limits.topNOverflow": {
+   "max": 15,
+   "min": 10
+  },
+  "cover.controlBlock.fields": [
+   "NOMOR DOKUMEN",
+   "REVISI",
+   "PENYUSUN",
+   "KUSTODIAN",
+   "DITUJUKAN KEPADA",
+   "TIER",
+   "DASAR",
+   "BAHASA"
+  ],
+  "device.datumRule.weightMm": 0.2,
+  "governance.decisionOwners": {
+   "isi": "spesialis",
+   "angka": "veritas",
+   "bentuk": "DATUM",
+   "kalimat": "Gaya Ahli",
+   "hidup-berkas": [
+    "ARSIP",
+    "LOKUS",
+    "KRONIK"
+   ],
+   "perlu-ada-gambar": "PRISMA"
+  },
+  "letter.salutation.address": "Yth. Bapak/Ibu/Saudara + jabatan",
+  "letter.salutation.opening": "Dengan hormat,",
+  "lineType.code0501.meaning": "pekerjaan di luar kontrak",
+  "lineWeight.thinThickRatio": "1/2",
+  "naming.artifactId.pattern": "{Jenis} {bab}.{urut}",
+  "naming.underscore.allowed": false,
+  "numerals.decimalSeparator": ",",
+  "prose.capsEmphasis.policy": "rare",
+  "rules.diagramFillHatchDeg": [
+   45,
+   135
+  ],
+  "specTable.condition.style": {
+   "ruled": false,
+   "indented": true
+  },
+  "symbol.dialectsPerDrawing": 1,
+  "table.cellText.fitsColumn": true,
+  "table.unitColumn.required": true,
+  "terbilang.generatedByCode": true,
+  "type.role.reading.weights": {
+   "styles": [
+    "italic"
+   ],
+   "weights": [
+    400,
+    600
+   ]
+  },
+  "type.scale.asideBody.size": 8.5,
+  "type.scale.caption.colour": "ink700",
+  "type.scale.caption.weight": 400,
+  "type.scale.groupBand.size": 7,
+  "type.scale.tableBody.face": "serif",
+  "type.scale.tableBody.size": 8,
+  "workbook.derivedByFormula": true,
+  "archimate.versionOnDrawing": true,
+  "artifact.tierJustification": "",
+  "assumption.impact.required": true,
+  "assumptionRegister.columns": [
+   "ID",
+   "ASUMSI",
+   "DAMPAK BILA SALAH",
+   "VERIFIKASI"
+  ],
+  "caption.chart.isConclusion": true,
+  "chart.kind.G-01.singleRamp": true,
+  "chart.kind.H-03.scaleShown": true,
+  "chart.kind.K-05.startAngle": 0,
+  "chart.kind.K-11.accentLink": null,
+  "chart.kind.P-01.valueLabel": "barEnd",
+  "chart.kind.P-04.stemWeight": "thin",
+  "chart.kind.P-08.downColour": "alert",
+  "chart.kind.P-09.bandLevels": 3,
+  "chart.kind.P-09.targetLine": true,
+  "chart.kind.S-05.sharedAxis": true,
+  "chart.kind.W-02.maxPeriods": 12,
+  "chart.kind.W-07.milestones": [
+   "BAST",
+   "UAT"
+  ],
+  "chart.kind.W-07.rowPerTask": true,
+  "chart.kind.W-07.todayLabel": "hari ini",
+  "chart.kind.W-08.riskyTypes": [],
+  "chart.kind.W-09.bandLegend": true,
+  "chart.limits.lineMaxSeries": 3,
+  "chart.recommendedByDocType": {
+   "laporanOsint": {
+    "dokumen": "Laporan OSINT",
+    "dihindari": [
+     "Word cloud sebagai satu-satunya bukti"
+    ],
+    "disarankan": [
+     "Network",
+     "barcode",
+     "heatmap aktivitas",
+     "bar frekuensi"
+    ]
+   },
+   "paparanPejabat": {
+    "dokumen": "Paparan ke pejabat",
+    "dihindari": [
+     "Box plot",
+     "horizon",
+     "network tanpa penjelasan"
+    ],
+    "disarankan": [
+     "Bar urut",
+     "line",
+     "bullet",
+     "tile map",
+     "satu pesan per slide"
+    ]
+   },
+   "rabBoqPenawaran": {
+    "dokumen": "RAB, BoQ, penawaran",
+    "dihindari": [
+     "Pie dengan banyak irisan"
+    ],
+    "disarankan": [
+     "Sankey atau treemap untuk komposisi biaya",
+     "waterfall",
+     "100 % stacked bar untuk TKDN"
+    ]
+   },
+   "layarPusatKomando": {
+    "dokumen": "Layar pusat komando",
+    "dihindari": [
+     "3D",
+     "animasi berlebihan",
+     "stream graph"
+    ],
+    "disarankan": [
+     "Horizon",
+     "line",
+     "heatmap hari x jam",
+     "bullet",
+     "dot map"
+    ]
+   },
+   "proposalTeknisKajian": {
+    "dokumen": "Proposal teknis, kajian",
+    "dihindari": [
+     "Radar untuk membandingkan vendor"
+    ],
+    "disarankan": [
+     "Gantt",
+     "flowchart",
+     "bar untuk perbandingan opsi",
+     "bullet",
+     "threshold"
+    ]
+   },
+   "laporanForensikDigital": {
+    "dokumen": "Laporan forensik digital",
+    "dihindari": [
+     "Chart yang menyembunyikan waktu kejadian persis"
+    ],
+    "disarankan": [
+     "Barcode",
+     "flowchart rantai kustodi",
+     "table chart"
+    ]
+   },
+   "laporanKinerjaInternal": {
+    "dokumen": "Laporan kinerja internal",
+    "dihindari": [
+     "Deretan gauge"
+    ],
+    "disarankan": [
+     "Bullet",
+     "dumbbell",
+     "arrow",
+     "beeswarm",
+     "ridgeline"
+    ]
+   }
+  },
+  "currency.prefixBeforeValue": [
+   "Rp",
+   "USD",
+   "EUR",
+   "SGD"
+  ],
+  "device.registerBlock.cells": [
+   "GSP · {nomor}",
+   "REV · {tanggal}",
+   "LEMBAR {n} DARI {N}",
+   "{kelas}"
+  ],
+  "diagram.edgeKind.data.head": "solid",
+  "diagram.edgeKind.sync.head": "open",
+  "diagram.notationsPerFigure": 1,
+  "doc.authorityUmbrellaFirst": true,
+  "grid.allowedFigureWidthsMm": [
+   128,
+   166
+  ],
+  "iec.atsAsChangeoverContact": true,
+  "lexicon.controlledGlossary": {
+   "pasangan sementara": "belum wajib; jangan diajarkan sebagai aturan",
+   "idiom korespondensi Inggris": "konsistensi rumah dengan satu penutup kanonis",
+   "istilah umum berpadanan baku": "wajib padanan, bentuk asli di kurung sekali",
+   "padanan belum mapan di bidang": "pertahankan, definisikan sekali, tanpa miring setengah hati",
+   "nama produk, model, merek, nomor standar": "pertahankan apa adanya, ejaan konsisten",
+   "protokol atau antarmuka berbentuk token teknis": "pertahankan dengan label manusia saat muncul pertama"
+  },
+  "render.derivation.renderer": "nestedTable",
+  "render.docx.settingsExtras": {},
+  "table.header.verticalAlign": "bottom",
+  "table.row.splitAcrossPages": false,
+  "type.role.reading.fallback": "Georgia",
+  "type.scale.caption.leading": 11,
+  "type.scale.derivation.face": "mono",
+  "type.scale.derivation.size": 7,
+  "type.scale.groupBand.upper": true,
+  "type.scale.sourceLine.face": "condensed",
+  "type.scale.sourceLine.size": 6.5,
+  "type.scale.unitColumn.face": "condensed 400",
+  "type.scale.unitColumn.size": 7.2,
+  "units.dimensionsRepeatUnit": true,
+  "units.toleranceParentheses": true,
+  "workbook.kendali.minChecks": 5,
+  "workbook.petunjuk.sections": [
+   "kunci warna dengan contoh",
+   "struktur workbook",
+   "daftar bernomor batas dan kelemahan model"
+  ],
+  "audit.retiredValues.enabled": false,
+  "chart.colorRole.contextMain": "ink400",
+  "chart.illustrativeDataLabel": "CONTOH DATA SINTETIS",
+  "chart.kind.G-01.valueInTile": true,
+  "chart.kind.K-02.maxSegments": 4,
+  "chart.kind.K-06.oneDominant": true,
+  "chart.kind.K-10.stageValues": true,
+  "chart.kind.K-11.maxEndNodes": 12,
+  "chart.kind.P-06.startColour": "ink400",
+  "chart.kind.P-12.sharedScale": true,
+  "chart.kind.S-05.periodOrder": true,
+  "chart.output.vectorRealText": true,
+  "classification.schemeLevels": {
+   "anri": {
+    "levels": [
+     "Biasa",
+     "Terbatas",
+     "Rahasia",
+     "Sangat Rahasia"
+    ],
+    "instrument": "Peraturan ANRI No. 5 Tahun 2021, Pasal 104 sampai 109"
+   },
+   "polri": {
+    "levels": [
+     "Biasa",
+     "Terbatas",
+     "Rahasia",
+     "Sangat Rahasia"
+    ],
+    "instrument": "Perkap Polri No. 1 Tahun 2023, Pasal 79"
+   },
+   "kemhanTni": {
+    "levels": [
+     "Biasa",
+     "Rahasia",
+     "Sangat Rahasia"
+    ],
+    "instrument": "Permenhan No. 26 Tahun 2017, Pasal 3"
+   }
+  },
+  "compliance.regulations.dead": [
+   "Perpres 16/2018 jo 12/2021",
+   "Permenpan RB 22/2008",
+   "Permenpan RB 80/2012",
+   "Perkap 7/2017",
+   "Permenhan 60/2014",
+   "Permenhan 25/2015",
+   "Permen PUPR 28/2016",
+   "Permen PUPR 1/2022",
+   "PPN 10 % atau 12 % rata",
+   "meterai Rp 6.000"
+  ],
+  "compliance.regulations.live": [
+   "Perpres 46/2025",
+   "Perlem LKPP 12/2021 jo 4/2024",
+   "ANRI 5/2021",
+   "Perkap 1/2023",
+   "Permenhan 30/2019",
+   "Permen PUPR 8/2023",
+   "PMK 131/2024",
+   "UU 10/2020"
+  ],
+  "derivation.markPerInputLine": true,
+  "derivation.verdictDirection": "lessOrEqual",
+  "device.datumRule.placements": [
+   "atas judul bab",
+   "sampul",
+   "pembatas"
+  ],
+  "device.evidenceRail.enabled": true,
+  "device.sealBand.leftContent": "klasifikasi",
+  "diagram.dashPatternMm.solid": "none",
+  "diagram.edgeKind.alert.head": "open",
+  "diagram.widthPerTier.single": true,
+  "jury.adjudicationDiffPoints": 2,
+  "numerals.thousandsSeparator": ".",
+  "render.docx.saveSubsetFonts": false,
+  "render.runningHead.runProps": {},
+  "render.section.breakPerUnit": true,
+  "rules.derivationLeft.colour": "signal",
+  "symbol.houseLegend.required": true,
+  "table.header.repeatEachPage": true,
+  "table.verticalRules.allowed": false,
+  "type.scale.asideLabel.style": "condensed kapital",
+  "type.scale.groupBand.colour": "ink900",
+  "type.scale.runningHead.face": "condensed",
+  "type.scale.runningHead.size": 6.5,
+  "type.scale.tableBody.colour": "ink700",
+  "type.scale.tableBody.weight": 400,
+  "type.scale.tableHeader.face": "condensed",
+  "type.scale.tableHeader.size": 6.5,
+  "workbook.emptyCellNeedsNote": true,
+  "artifact.mustBeCalledInProse": true,
+  "caption.effectiveDateInTitle": true,
+  "chart.kind.H-02.directLabels": true,
+  "chart.kind.K-09.labelsInside": true,
+  "chart.kind.P-03.targetColour": "ink200",
+  "chart.kind.P-04.zeroBaseline": true,
+  "chart.kind.S-01.medianMarker": true,
+  "chart.kind.S-07.medianMarker": true,
+  "chart.kind.W-04.zeroBaseline": true,
+  "chart.numbersBoundToRegister": true,
+  "chart.source.dataDateAndMark": true,
+  "color.body.pureBlack.allowed": false,
+  "device.evidenceRail.contents": [
+   "tanda",
+   "digraf Admiralty",
+   "sumber",
+   "REQ",
+   "batang revisi"
+  ],
+  "device.registerBlock.enabled": true,
+  "device.sealBand.rightContent": "kendali salinan bernomor",
+  "diagram.dashPatternMm.dashed": "3.2/1.6",
+  "diagram.dashPatternMm.dotted": "0.2/1.1",
+  "diagram.edgeKind.accent.head": "solid",
+  "diagram.edgeKind.data.colour": "ink900",
+  "diagram.edgeKind.sync.colour": "ink400",
+  "diagram.edgeKind.verify.head": "open",
+  "diagram.figmaCopy.reviewOnly": true,
+  "diagram.mermaidInDeliverable": false,
+  "render.docx.defaultTabStopTw": 720,
+  "render.table.sourcePlacement": "lastRowMerged",
+  "symbol.standardByDrawingType": {
+   "pid": {
+    "usedIn": "Tambang, migas, pelabuhan, utilitas",
+    "library": "isa: (label 2022)",
+    "editions": [
+     {
+      "ref": "ANSI/ISA-5.1-2024",
+      "note": "menggantikan 2022",
+      "status": "T"
+     }
+    ],
+    "standard": "ANSI/ISA-5.1",
+    "drawingType": "P&ID, instrumentasi"
+   },
+   "elevasiRak": {
+    "usedIn": "Ruang server, NOC",
+    "library": "rack",
+    "editions": [
+     {
+      "ref": "EIA-310",
+      "note": "1U = 44,45 mm",
+      "status": "S"
+     }
+    ],
+    "standard": "EIA-310, rak 19 inci",
+    "drawingType": "Elevasi rak"
+   },
+   "labelKabel": {
+    "usedIn": "Ruang server, gedung",
+    "library": "tidak ada",
+    "editions": [
+     {
+      "ref": "ANSI/TIA-606-D",
+      "status": "S"
+     }
+    ],
+    "standard": "ANSI/TIA-606-D",
+    "drawingType": "Label kabel"
+   },
+   "diagramAlir": {
+    "usedIn": "Kajian teknis, SOP",
+    "library": "bentuk simpul",
+    "editions": [
+     {
+      "ref": "ISO 5807:1985",
+      "note": "dikonfirmasi 2019",
+      "status": "T"
+     }
+    ],
+    "standard": "ISO 5807",
+    "drawingType": "Diagram alir, SOP"
+   },
+   "sldCatuDaya": {
+    "usedIn": "Pos perimeter, ruang server, NOC",
+    "library": "iec:",
+    "editions": [
+     {
+      "ref": "IEC 60617:2026 DB",
+      "status": "T"
+     },
+     {
+      "ref": "IEC 81346-1:2022",
+      "status": "D"
+     }
+    ],
+    "standard": "IEC 60617 dan penandaan IEC 81346-1; instalasi PUIL 2020 (SNI 0225:2020)",
+    "drawingType": "Diagram satu garis catu daya"
+   },
+   "prosesBisnis": {
+    "usedIn": "SPBE, alur kerja",
+    "library": "usulan bpmn:",
+    "editions": [
+     {
+      "ref": "BPMN 2.0.2",
+      "status": "K"
+     }
+    ],
+    "standard": "BPMN 2.0.2 (ISO/IEC 19510)",
+    "drawingType": "Proses bisnis"
+   },
+   "denahKeamanan": {
+    "usedIn": "CCTV, akses, intrusi, perimeter",
+    "library": "sec:",
+    "editions": [
+     {
+      "ref": "SIA AG-01 v3.0",
+      "status": "T"
+     }
+    ],
+    "standard": "Legenda rumah GSP, atau SIA AG-01 v3.0 bila klien memakai standar AS",
+    "drawingType": "Denah keamanan"
+   },
+   "jenisTebalGaris": {
+    "usedIn": "Semua gambar teknik",
+    "library": "ya",
+    "editions": [
+     {
+      "ref": "ISO 128-2:2022",
+      "status": "D"
+     }
+    ],
+    "standard": "ISO 128-2",
+    "drawingType": "Jenis dan tebal garis"
+   },
+   "skematikKendali": {
+    "usedIn": "Panel sensor, kotak antarmuka",
+    "library": "sebagian",
+    "editions": [
+     {
+      "ref": "IEEE 315",
+      "note": "belum terverifikasi",
+      "status": null
+     }
+    ],
+    "standard": "IEC 60617; IEEE 315 hanya bila klien memakai standar AS",
+    "drawingType": "Skematik kendali"
+   },
+   "gambarOperasiCop": {
+    "usedIn": "TNI, pusat komando",
+    "library": "mil:",
+    "editions": [
+     {
+      "ref": "MIL-STD-2525E",
+      "status": "D"
+     },
+     {
+      "ref": "APP-6E 2025",
+      "status": "S"
+     }
+    ],
+    "standard": "MIL-STD-2525; NATO APP-6",
+    "drawingType": "Gambar operasi, COP"
+   },
+   "rambuKeselamatan": {
+    "usedIn": "Jalur evakuasi, APAR",
+    "library": "tidak ada",
+    "editions": [
+     {
+      "ref": "ISO 7010:2019 + Amd 9:2025",
+      "status": "T"
+     }
+    ],
+    "standard": "ISO 7010",
+    "drawingType": "Rambu keselamatan"
+   },
+   "topologiJaringan": {
+    "usedIn": "Hampir semua proyek",
+    "library": "usulan net:",
+    "editions": [],
+    "standard": "Tidak ada standar formal; ikon vendor tanpa diubah, atau legenda generik GSP",
+    "drawingType": "Topologi jaringan"
+   },
+   "diagramAliranData": {
+    "usedIn": "Analisis sistem",
+    "library": "shadowed",
+    "editions": [],
+    "standard": "Gane-Sarson, konvensi de facto",
+    "drawingType": "Diagram aliran data"
+   },
+   "denahAlarmKebakaran": {
+    "usedIn": "Gedung, ruang server",
+    "library": "tidak ada",
+    "editions": [
+     {
+      "ref": "NFPA 170:2024",
+      "status": "S"
+     }
+    ],
+    "standard": "NFPA 170; rujukan Indonesia SNI 03-3985-2000",
+    "drawingType": "Denah alarm kebakaran"
+   },
+   "arsitekturEnterprise": {
+    "usedIn": "SPBE, transformasi digital",
+    "library": "tidak ada",
+    "editions": [
+     {
+      "ref": "ArchiMate 4, April 2026",
+      "status": "T"
+     }
+    ],
+    "standard": "ArchiMate",
+    "drawingType": "Arsitektur enterprise"
+   },
+   "arsitekturPerangkatLunak": {
+    "usedIn": "DEMS, OSINT, platform",
+    "library": "sebagian",
+    "editions": [
+     {
+      "ref": "UML 2.5.1; model C4",
+      "status": "K"
+     }
+    ],
+    "standard": "UML 2.5.1; model C4",
+    "drawingType": "Arsitektur perangkat lunak"
+   }
+  },
+  "symbol.vendorIcon.modifiable": false,
+  "type.role.structural.weights": [
+   400,
+   600
+  ],
+  "type.role.workbookUi.weights": [
+   400,
+   600
+  ],
+  "type.scale.chapterTitle.face": "condensed",
+  "type.scale.chapterTitle.size": 16,
+  "type.scale.derivation.colour": "ink900",
+  "type.scale.derivation.weight": 400,
+  "type.scale.evidenceRail.face": "mono",
+  "type.scale.evidenceRail.size": 5.5,
+  "type.scale.runningHead.upper": true,
+  "type.scale.sourceLine.colour": "ink400",
+  "type.scale.sourceLine.weight": 400,
+  "type.scale.tableBody.leading": 11,
+  "type.scale.tableHeader.upper": true,
+  "type.scale.unitColumn.colour": "ink400",
+  "type.tracking.displayTighter": -0.012,
+  "chart.colorRole.limitExceeded": "alert",
+  "chart.kind.P-13.quadrantNames": [],
+  "chart.kind.S-02.outlierPoints": true,
+  "chart.kind.S-05.slightOverlap": true,
+  "chart.limits.barCategoryRange": {
+   "max": 30,
+   "min": 6
+  },
+  "chart.output.rasterDpiForWord": 300,
+  "classification.doubleEnvelope": true,
+  "controlSheet.signatures.roles": [
+   "DISUSUN",
+   "DIPERIKSA",
+   "DISAHKAN"
+  ],
+  "conventions.oneVariantPerFile": true,
+  "designation.iec81346.prefixes": {
+   "+": "lokasi",
+   "-": "produk",
+   ":": "terminal",
+   "=": "fungsi"
+  },
+  "device.issueStamp.issueNumber": 1,
+  "diagram.dashPatternMm.dashdot": "7.1/1.6/0.2/1.6",
+  "diagram.edgeKind.alert.colour": "alert",
+  "diagram.edgeKind.control.head": "open",
+  "diagram.edgeKind.data.pattern": "solid",
+  "diagram.edgeKind.sync.pattern": "dotted",
+  "gate.colophon.honestStatement": true,
+  "gate.lintFailureBlocksRelease": true,
+  "iso5807.terminatorOnlyRounded": true,
+  "naming.figureFile.fromCaption": true,
+  "prose.maxInlineNameValuePairs": 3,
+  "render.docx.compatibilityMode": 14,
+  "symbol.houseLegend.disclaimer": "bukan simbol standar",
+  "symbol.paidStandardsNotCopied": true,
+  "threshold.wordsPerSentenceAvg": [
+   18,
+   32
+  ],
+  "type.role.structural.fallback": "Segoe UI Semibold",
+  "type.role.workbookUi.fallback": "Arial Narrow",
+  "type.scale.chapterKicker.face": "condensed",
+  "type.scale.chapterKicker.size": 6.5,
+  "type.scale.derivation.leading": 11,
+  "type.scale.evidenceRail.upper": true,
+  "type.scale.registerBlock.face": "mono",
+  "type.scale.registerBlock.size": 6,
+  "type.scale.runningHead.colour": "ink400",
+  "type.scale.runningHead.weight": 400,
+  "type.scale.sectionNumber.face": "mono",
+  "type.scale.sourceLine.leading": 9,
+  "type.scale.tableHeader.colour": "ink400",
+  "type.scale.tableHeader.weight": 600,
+  "type.scale.tableNumerals.face": "mono",
+  "type.scale.tableNumerals.size": 7,
+  "type.tracking.microLabelWider": 0.09,
+  "workbook.unitPerNumericColumn": true,
+  "admiralty.excludedFromProposal": [
+   "F6"
+  ],
+  "audit.untrackedNumbers.enabled": false,
+  "brief.sourceLineOnNumberSlides": true,
+  "chart.kind.G-01.standardAbbrev": true,
+  "chart.kind.G-04.standardShapes": "ISO 5807",
+  "chart.kind.K-02.keySegmentLeft": true,
+  "chart.kind.S-07.columnPerGroup": true,
+  "chart.kind.S-08.uniformSectors": true,
+  "chart.kind.W-01.labelAtLineEnd": true,
+  "chart.kind.W-07.rowsInProposal": [
+   8,
+   15
+  ],
+  "classification.codeInDocNumber": "T",
+  "classification.recipientScheme": "anri",
+  "controlSheet.verificationChain": {
+   "layers": [
+    {
+     "id": "V1",
+     "method": "Baca baris per baris"
+    },
+    {
+     "id": "V2",
+     "method": "Eksekusi"
+    },
+    {
+     "id": "V3",
+     "method": "Render dan periksa"
+    }
+   ],
+   "columns": [
+    "LAPIS",
+    "METODE",
+    "OBJEK",
+    "HASIL"
+   ]
+  },
+  "device.registerBlock.separator": " ",
+  "diagram.dashPatternMm.longdash": "7.1/1.6",
+  "diagram.edgeKind.accent.colour": "signal",
+  "diagram.edgeKind.alert.pattern": "longdash",
+  "diagram.edgeKind.verify.colour": "verd",
+  "doc.identityStatement.required": true,
+  "governance.tokensOverrideProse": true,
+  "naming.engineeringId.separator": "-",
+  "register.rejectUnmarkedEntries": true,
+  "render.derivation.nestedColsTw": null,
+  "render.docx.embedTrueTypeFonts": true,
+  "render.docx.headerFooterStyles": {
+   "Footer": {
+    "tabs": [
+     {
+      "val": "center",
+      "posTw": 4680
+     },
+     {
+      "val": "right",
+      "posTw": 9360
+     }
+    ],
+    "lineTw": 240,
+    "basedOn": "Normal",
+    "lineRule": "auto",
+    "spacingAfterTw": 0
+   },
+   "Header": {
+    "tabs": [
+     {
+      "val": "center",
+      "posTw": 4680
+     },
+     {
+      "val": "right",
+      "posTw": 9360
+     }
+    ],
+    "lineTw": 240,
+    "basedOn": "Normal",
+    "lineRule": "auto",
+    "spacingAfterTw": 0
+   }
+  },
+  "render.docx.updateFieldsOnOpen": false,
+  "render.section.numberSeparator": "   ",
+  "sheet.colour.reinforcementOnly": true,
+  "type.scale.chapterKicker.upper": true,
+  "type.scale.chapterTitle.colour": "ink900",
+  "type.scale.chapterTitle.weight": 600,
+  "type.scale.evidenceRail.colour": "ink400",
+  "type.scale.evidenceRail.weight": 400,
+  "type.scale.sectionHeading.face": "condensed",
+  "type.scale.sectionHeading.size": 11,
+  "type.scale.tableHeader.trackEm": 0.0923,
+  "units.spaceBetweenValueAndUnit": true,
+  "workbook.kendali.passTolerance": 0.5,
+  "workbook.modelLimit.id.pattern": "BTS-{nn}",
+  "workbook.numeralColour.formula": "ink900",
+  "chart.kind.K-09.limitSmallBoxes": true,
+  "chart.kind.P-08.labelsBothSides": true,
+  "chart.kind.P-11.overLimitColour": "alert",
+  "chart.kind.W-05.largestAtBottom": true,
+  "chart.kind.W-08.highlightWindow": null,
+  "chart.kind.W-08.riskyTypeColour": "alert",
+  "chart.kind.W-08.rowPerEventType": true,
+  "chart.specialOnlyIfDefaultFails": true,
+  "controlSheet.signatures.holders": [
+   "Divisi Engineering",
+   "Kendali Mutu",
+   "Direktur Utama"
+  ],
+  "device.datumRule.frontSegmentMm": 9,
+  "device.registerBlock.boldFields": [
+   "nomor dokumen",
+   "nomor lembar"
+  ],
+  "diagram.edgeKind.accent.pattern": "solid",
+  "diagram.edgeKind.control.colour": "ink700",
+  "diagram.edgeKind.verify.pattern": "dashdot",
+  "gate.pdf.checkPageBeforeRelease": true,
+  "marks.requiredOnDecisionNumbers": true,
+  "sentence.sehinggaMaxPerSentence": 1,
+  "source.provenanceField.required": true,
+  "symbol.verifyBeforeConstruction": true,
+  "table.rowCellCount.equalsHeader": true,
+  "type.scale.chapterKicker.colour": "signal",
+  "type.scale.chapterKicker.weight": 600,
+  "type.scale.chapterTitle.leading": 20,
+  "type.scale.evidenceRail.leading": 8.4,
+  "type.scale.groupBand.faceWeight": "condensed 600",
+  "type.scale.registerBlock.colour": "ink400",
+  "type.scale.registerBlock.weight": 400,
+  "type.scale.sectionNumber.colour": "ink400",
+  "type.scale.tableNumerals.colour": "ink900",
+  "type.scale.tableNumerals.weight": 400,
+  "units.plusMinusMeaning.required": true,
+  "workbook.numeralColour.constant": "signal",
+  "chart.kind.H-01.xIsPresumedCause": true,
+  "chart.kind.H-02.areaProportional": true,
+  "chart.kind.H-07.highlightBridges": true,
+  "chart.kind.P-15.colourRuleLegend": true,
+  "chart.kind.W-09.subtractBaseline": true,
+  "device.evidenceRail.emptyAllowed": true,
+  "diagram.edgeKind.control.pattern": "dashed",
+  "lexicon.blacklistA4.wordBoundary": true,
+  "marks.asumsi.requiresIdAndImpact": true,
+  "type.scale.chapterKicker.trackEm": 0.2154,
+  "type.scale.sectionHeading.colour": "ink900",
+  "type.scale.sectionHeading.weight": 600,
+  "type.scale.tableNumerals.tabular": true,
+  "uncertainty.maxSignificantDigits": 2,
+  "artifact.audience.outsideDivision": false,
+  "chart.colorRole.contextBackground": "ink200",
+  "chart.kind.K-10.conversionPercent": true,
+  "chart.kind.P-10.signedDeltaLabels": true,
+  "chart.limits.denseScatterStrategy": "transparency",
+  "chart.limits.logScaleNoteRequired": true,
+  "chart.threshold.limitLineLabelled": true,
+  "controlSheet.distribution.columns": [
+   "SALINAN",
+   "PEMEGANG",
+   "MEDIA",
+   "KEMBALI"
+  ],
+  "device.datumRule.pdfProgressMeter": true,
+  "list.numberedWhenItemsGreaterThan": 3,
+  "normativeQuote.literalWithArticle": true,
+  "threshold.distinctOpenerRatio.min": 0.2,
+  "type.scale.sectionHeading.leading": 13.5,
+  "admiralty.requiredOnExternalClaims": true,
+  "chart.kind.K-03.meaningfulMidpoint": true,
+  "chart.kind.P-10.endsGroundedAtZero": true,
+  "chart.kind.P-11.limitLine.labelled": true,
+  "classification.minLevelForSiteData": "Rahasia",
+  "classification.numberedCopyControl": true,
+  "icd203.mixLikelihoodWithConfidence": false,
+  "render.section.registerBlockLayout": {},
+  "render.specTable.conditionIndentMm": 0,
+  "serah.reconciliationTable.required": false,
+  "symbol.genericIconsForBrandNeutral": true,
+  "threshold.redundantCopiesNarrative": {
+   "check": "C-14",
+   "layer": "narasi",
+   "whitelist": [
+    "blok tanda tangan",
+    "kepala turunan",
+    "baris notasi"
+   ]
+  },
+  "artifact.pageReconciliation.enabled": false,
+  "derivation.closingSentence.required": true,
+  "derivation.recomputeAgainstRegister": true,
+  "diagram.routing.avoidUnrelatedBoxes": true,
+  "letter.secretariatException.enabled": false,
+  "prose.englishTerms.decorativeItalic": false,
+  "runningHead.classification.position": "right",
+  "threshold.clausesPerSentenceAvg.max": 2.2,
+  "threshold.inlineProvenanceMarks.max": 0.05,
+  "workbook.numeralColour.externalLink": "alert",
+  "brief.speakerNotes.evidenceWithMarks": true,
+  "chart.kind.P-13.dividerJustification": null,
+  "color.distinctionRedundancy.required": true,
+  "controlSheet.revisionHistory.columns": [
+   "REV",
+   "TANGGAL",
+   "PENYUSUN",
+   "PERUBAHAN",
+   "STATUS"
+  ],
+  "cover.logo.maxOccurrencesPerDocument": 1,
+  "threshold.semicolonsPer1000Words.max": 5.4,
+  "workbook.numeralColour.crossSheetRef": "verd",
+  "controlSheet.methodStatement.required": true,
+  "diagram.roundedCorners.onlyTerminator": true,
+  "requirement.id.immutableAcrossPackage": true,
+  "serah.secondIndependentRoute.required": false,
+  "threshold.chainedSentencesPercent.max": 20,
+  "topology.linkLabel.capacityOrProtocol": true,
+  "workbook.constants.onlyInHitungSheets": true,
+  "workbook.mergedCellsInComputationZone": false,
+  "brief.speakerNotes.oneSentencePerChart": true,
+  "chart.dashboardTiles.allowedInDocument": false,
+  "chart.kind.G-04.singleReadingDirection": true,
+  "grid.verticalRhythm.multipleOfBaseline": true,
+  "table.unitInHeader.singleUnitException": false,
+  "threshold.metaProcessToObjectRatio.max": 8,
+  "threshold.schemaIdentifiersInProse.max": 0,
+  "chapter.datumRule.onlyAboveChapterTitle": true,
+  "device.registerBlock.sheetFromPageField": true,
+  "doc.closing.actionAndRecipient.required": true,
+  "diagram.docxPlacement.exactLineSpacingPt": 13.5,
+  "admiralty.scaleTablePrintedOnceInAppendix": true,
+  "threshold.decisionVerbArtifactSubject.max": 2,
+  "designation.sameAcrossDrawingBoqAcceptance": true,
+  "compliance.regulations.reviewIntervalMonths": 12,
+  "threshold.spellingVariantsPerValueClass.max": 1
+ },
+ "overrides": {
+  "page.sizeMm": [
+   210,
+   297
+  ],
+  "grid.gutterMm": 6,
+  "render.png.dpi": 300,
+  "type.face.mono": "IBM Plex Mono",
+  "layout.railMode": "A",
+  "render.toc.mode": "static",
+  "type.baselinePt": 13.5,
+  "type.body.align": "justify",
+  "type.face.serif": "IBM Plex Serif",
+  "rules.asideTopMm": 0.44,
+  "color.wrapper.ink": "14110F",
+  "grid.textColumnMm": 128,
+  "render.cover.mode": "explicit",
+  "render.html.paged": true,
+  "color.wrapper.body": "33302C",
+  "color.wrapper.meta": "7A756E",
+  "color.wrapper.rule": "C4BEB4",
+  "color.wrapper.seal": "6E1420",
+  "cover.title.sizePt": 25,
+  "grid.innerMarginMm": 24,
+  "grid.outerMarginMm": 20,
+  "color.wrapper.cream": "F6E9E9",
+  "grid.evidenceRailMm": 32,
+  "render.table.layout": {
+   "fixed": true,
+   "borders": "none",
+   "indentTw": 0,
+   "cellMarginTw": {
+    "left": 0,
+    "right": 0
+   }
+  },
+  "table.numeral.align": "right",
+  "table.zebra.minRows": 1000,
+  "type.face.condensed": "IBM Plex Sans Cond",
+  "color.interior.alert": "9B1C1C",
+  "render.rail.renderer": "table3col",
+  "type.face.workbookUi": "IBM Plex Sans",
+  "type.scale.body.size": 9.5,
+  "color.interior.ink200": "C3CBD1",
+  "color.interior.ink400": "6B7783",
+  "color.interior.ink700": "2B3640",
+  "color.interior.ink900": "101418",
+  "color.interior.signal": "B45309",
+  "type.face.symbolGlyph": "DejaVu Sans",
+  "grid.topBottomMarginMm": 26,
+  "render.docx.embedFonts": [
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Serif",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Sans Cond",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Mono",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold",
+     "italic",
+     "boldItalic"
+    ],
+    "family": "IBM Plex Sans",
+    "boldFace": "semibold"
+   },
+   {
+    "slots": [
+     "regular",
+     "bold"
+    ],
+    "family": "DejaVu Sans"
+   }
+  ],
+  "render.section.wrapper": {
+   "cols": {
+    "num": 1,
+    "spaceTw": 720
+   },
+   "footer": {
+    "mode": "empty",
+    "format": {
+     "lineTw": 40,
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "header": {
+    "mode": "empty",
+    "format": {
+     "lineTw": 40,
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "marginTw": {
+    "top": 1474,
+    "left": 1361,
+    "right": 1134,
+    "bottom": 1361,
+    "footer": 737,
+    "gutter": 0,
+    "header": 737
+   },
+   "pageSizeTw": [
+    11906,
+    16838
+   ],
+   "docGridLinePitch": 360
+  },
+  "render.spacer.autoMode": "none",
+  "table.columnWidthSumMm": 166,
+  "device.spine.placements": [
+   "margin luar sampul"
+  ],
+  "render.docx.docDefaults": {
+   "lang": "en-US",
+   "lineTw": 276,
+   "langBidi": "ar-SA",
+   "lineRule": "auto",
+   "szHalfPt": 22,
+   "rFontsTheme": {
+    "cs": "minorBidi",
+    "ascii": "minorHAnsi",
+    "hAnsi": "minorHAnsi",
+    "eastAsia": "minorEastAsia"
+   },
+   "langEastAsia": "en-US",
+   "spacingAfterTw": 200
+  },
+  "render.docx.normalStyle": {
+   "lang": "id-ID",
+   "color": "2B3640",
+   "lineTw": 270,
+   "faceRole": "serif",
+   "lineRule": "exact",
+   "szHalfPt": 19,
+   "spacingAfterTw": 0
+  },
+  "render.section.interior": {
+   "cols": {
+    "num": 1,
+    "spaceTw": 720
+   },
+   "footer": {
+    "mode": "registerBlock"
+   },
+   "header": {
+    "mode": "runningHead",
+    "format": {
+     "tabs": [
+      {
+       "val": "right",
+       "posTw": 9411
+      }
+     ],
+     "lineTw": 180,
+     "borders": {
+      "bottom": {
+       "sz": 5,
+       "val": "single",
+       "color": "C3CBD1",
+       "space": 1
+      }
+     },
+     "lineRule": "exact",
+     "spacingAfterTw": 0,
+     "spacingBeforeTw": 0
+    }
+   },
+   "marginTw": {
+    "top": 1474,
+    "left": 1361,
+    "right": 1134,
+    "bottom": 1361,
+    "footer": 737,
+    "gutter": 0,
+    "header": 737
+   },
+   "pageSizeTw": [
+    11906,
+    16838
+   ],
+   "docGridLinePitch": 360
+  },
+  "type.scale.body.leading": 13.5,
+  "type.scale.caption.size": 7.5,
+  "device.sealBand.heightMm": 6.1736,
+  "device.spine.rotationDeg": 0,
+  "render.caption.separator": "   ",
+  "render.list.bulletMarker": {
+   "b": false,
+   "i": false,
+   "t": "–",
+   "face": "IBM Plex Serif",
+   "color": "6B7783",
+   "szHalfPt": 19
+  },
+  "render.list.numberMarker": {
+   "b": true,
+   "i": false,
+   "face": "IBM Plex Mono",
+   "color": "B45309",
+   "szHalfPt": 16
+  },
+  "type.scale.asideBody.size": 8.5,
+  "type.scale.groupBand.size": 7,
+  "type.scale.tableBody.size": 8,
+  "render.derivation.renderer": "nestedTable",
+  "type.scale.caption.leading": 11,
+  "type.scale.derivation.size": 7,
+  "type.scale.sourceLine.size": 6.5,
+  "render.docx.saveSubsetFonts": false,
+  "render.section.breakPerUnit": true,
+  "type.scale.runningHead.size": 6.5,
+  "type.scale.tableHeader.size": 6.5,
+  "render.docx.defaultTabStopTw": 720,
+  "render.table.sourcePlacement": "lastRowMerged",
+  "type.scale.chapterTitle.size": 16,
+  "type.scale.evidenceRail.size": 5.5,
+  "type.scale.tableBody.leading": 11,
+  "render.docx.compatibilityMode": 14,
+  "type.scale.chapterKicker.size": 6.5,
+  "type.scale.derivation.leading": 11,
+  "type.scale.registerBlock.size": 6,
+  "type.scale.sourceLine.leading": 9,
+  "type.scale.tableNumerals.size": 7,
+  "render.docx.embedTrueTypeFonts": true,
+  "render.docx.updateFieldsOnOpen": false,
+  "type.scale.sectionHeading.size": 11,
+  "type.scale.tableHeader.trackEm": 0.0923,
+  "type.scale.chapterTitle.leading": 20,
+  "type.scale.evidenceRail.leading": 8.4,
+  "type.scale.chapterKicker.trackEm": 0.2154,
+  "type.scale.sectionHeading.leading": 13.5
+ }
+}

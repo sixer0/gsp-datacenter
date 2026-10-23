@@ -24,6 +24,18 @@ import {
   Check,
   type LucideIcon,
 } from "lucide-react";
+import { STUDIO_NAV, STUDIO_PALETTE_ACTIONS, studioNavFor } from "@/lib/studio/contract/ui";
+import { useViewer } from "@/components/studio/shared/use-viewer";
+
+// Studio: href, label palet ("Studio: …"), ikon, dan audiens dari kontrak
+// STUDIO_NAV (U72; FIX-4a satu sumber, S86 R14). Entri admin hanya untuk ADMINISTRATOR.
+function studioPaletteItems(isAdmin: boolean): NavItem[] {
+  return [...studioNavFor(isAdmin, STUDIO_NAV), ...studioNavFor(isAdmin, STUDIO_PALETTE_ACTIONS)].map((entry) => ({
+    label: entry.paletteLabel,
+    href: entry.href,
+    icon: entry.icon,
+  }));
+}
 
 interface NavItem {
   label: string;
@@ -91,13 +103,16 @@ export function CommandPalette() {
   }, [open]);
 
   // ── fuzzy (case-insensitive substring) nav filter ─────────
+  // Studio: entri sesuai peran (USER tidak melihat Alat developer/Sistem).
+  const { isAdmin } = useViewer();
+  const allNav = useMemo(() => [...NAV, ...studioPaletteItems(isAdmin)], [isAdmin]);
   const navMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return NAV;
-    return NAV.filter(
+    if (!q) return allNav;
+    return allNav.filter(
       (n) => n.label.toLowerCase().includes(q) || n.href.toLowerCase().includes(q),
     );
-  }, [query]);
+  }, [query, allNav]);
 
   // Build the flat row list. Dispatch shows as the last option whenever
   // there's a query, or as the sole option when nothing matches nav.

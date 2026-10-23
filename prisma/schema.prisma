@@ -604,3 +604,598 @@ model WebUiUser {
   @@index([role])
   @@unique([hermesProfile])
 }
+
+// ─── Doc Artifact Studio (v2.1, S03 contract landing) ─────────────────────
+// Spesifikasi: docs/2026-10-22_doc_artifact_studio/masterplan/01_specs.md §1.2-1.3.
+// Aditif saja. Tautan misi (missionFolder/agentRequestId/hermesTaskId) sengaja
+// tanpa FK ke tabel lama (KD-01). Agregat dokumen Cascade, rujukan lintas
+// agregat Restrict (KD-02). Migrasi: 20261022120000_add_studio (D-21: dibuat
+// lewat prisma migrate diff dikurangi baseline drift IlSearchDoc, diterapkan
+// prisma migrate deploy; DILARANG migrate dev / db push).
+
+enum StudioTier {
+  NOTA
+  TERBIT
+  SERAH
+}
+
+enum StudioParamClass {
+  B
+  K
+  T
+}
+
+enum StudioReleaseStatus {
+  PENDING
+  PASS
+  FAIL
+  NOT_RUN
+}
+
+enum StudioOutputFormat {
+  DOCX
+  PDF
+  HTML
+  SVG
+  PNG
+}
+
+enum StudioRenderJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+enum StudioArtifactKind {
+  CHART
+  DIAGRAM
+  IMAGE
+  HTML
+}
+
+enum StudioTemplateKind {
+  DOCUMENT
+  CHART
+  DIAGRAM
+  IMAGE
+  HTML
+}
+
+enum StudioSectionGroup {
+  DOCUMENT
+  PAGE_DEVICE
+  CHANNEL
+}
+
+enum StudioSectionRegister {
+  WRAPPER
+  INTERIOR
+  NONE
+}
+
+enum StudioOutputRole {
+  PRIMARY
+  FIGURE
+}
+
+enum StudioNumberSource {
+  AGENT
+  SEQUENCE
+}
+
+// M01
+model StudioTemplate {
+  id              String             @id @default(cuid())
+  slug            String             @unique // ^[a-z0-9]+(-[a-z0-9]+)*$, maks 64
+  name            String
+  kind            StudioTemplateKind
+  description     String?            @db.Text
+  isCanonical     Boolean            @default(false)
+  archived        Boolean            @default(false)
+  latestVersionNo Int                @default(0)
+  createdBy       String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  isPreset        Boolean            @default(false) // MX01 (SR-01): preset gaya, hanya ADMIN
+
+  versions  StudioTemplateVersion[]
+  documents StudioDocument[]
+
+  @@index([kind])
+  @@index([archived])
+  @@index([isPreset])
+}
+
+// M02
+model StudioTemplateVersion {
+  id             String   @id @default(cuid())
+  templateId     String
+  versionNo      Int
+  baseVersionId  String?
+  overrides      Json
+  resolvedParams Json
+  paramsSha256   String
+  roleFormats    Json
+  sectionPlan    Json
+  assets         Json
+  provenance     Json
+  changeNote     String   @db.Text
+  createdBy      String
+  createdAt      DateTime @default(now())
+  skeletonSha256 String? // MX02 (SR-01): null = versi lama, kerangka implisit
+
+  template  StudioTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  base      StudioTemplateVersion?  @relation("TemplateVersionBase", fields: [baseVersionId], references: [id], onDelete: Restrict)
+  derived   StudioTemplateVersion[] @relation("TemplateVersionBase")
+  revisions StudioRevision[]
+  artifacts StudioArtifact[]
+  slots     StudioTemplateSlot[]
+
+  @@unique([templateId, versionNo])
+  @@index([baseVersionId])
+}
+
+// M03 (diisi seed S70, 51 baris)
+model StudioSectionType {
+  key             String                @id
+  catalogId       String                @unique
+  group           StudioSectionGroup
+  register        StudioSectionRegister
+  name            String
+  elements        Json
+  paramRefs       String[]
+  ruleRefs        String[]
+  activeTiers     StudioTier[]
+  renderable      Boolean
+  sourceRef       String
+  registryVersion String
+  updatedAt       DateTime              @updatedAt
+
+  templateSlots StudioTemplateSlot[] // MX07 (SR-01)
+  docSections   StudioDocSection[]
+
+  @@index([group])
+}
+
+// M04
+model StudioDocument {
+  id                String             @id @default(cuid())
+  docNumber         String             @unique
+  numberSource      StudioNumberSource
+  title             String
+  typeCode          String
+  language          String             @default("ID")
+  classification    String
+  tier              StudioTier
+  templateId        String
+  currentRevisionNo Int                @default(1)
+  missionFolder     String?
+  agentRequestId    String?
+  hermesTaskId      String?
+  createdBy         String
+  archived          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  missionDocKey     String? // MX03 (SR-01): null untuk dokumen v1 (KD-12)
+  completeness      StudioCompleteness @default(COMPLETE) // cermin revisi terbaru
+
+  template   StudioTemplate     @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  revisions  StudioRevision[]
+  outputs    StudioOutputFile[]
+  renderJobs StudioRenderJob[]
+  identities StudioDocIdentity[]
+
+  @@unique([missionFolder, missionDocKey])
+  @@index([missionFolder])
+  @@index([agentRequestId])
+  @@index([hermesTaskId])
+  @@index([templateId])
+  @@index([createdAt])
+}
+
+// M05
+model StudioRevision {
+  id                String              @id @default(cuid())
+  documentId        String
+  revisionNo        Int
+  parentRevisionNo  Int?
+  templateVersionId String
+  snapshot          Json
+  snapshotSha256    String
+  inputSha256       String
+  docRev            String
+  changeWhat        String              @db.Text
+  changeWhy         String              @db.Text
+  changeImpact      String              @db.Text
+  changedAddresses  String[]
+  releaseStatus     StudioReleaseStatus @default(PENDING)
+  lintReport        Json?
+  createdBy         String
+  createdAt         DateTime            @default(now())
+  // MX04 (SR-01): schemaId = skema permintaan asal (KD-10); changeScope tata bahasa 03 §9.5
+  schemaId           String             @default("studio.doc/v1")
+  structureSha256    String?
+  completeness       StudioCompleteness @default(COMPLETE)
+  completenessReport Json?
+  changeScope        String?
+
+  document        StudioDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  templateVersion StudioTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  blocks          StudioBlock[]
+  outputs         StudioOutputFile[]
+  renderJobs      StudioRenderJob[]
+  docSections     StudioDocSection[]
+  docChapters     StudioDocChapter[]
+  docSubsections  StudioDocSubsection[]
+  docBlocks       StudioDocBlock[]
+
+  @@unique([documentId, revisionNo])
+  @@index([templateVersionId])
+}
+
+// M06
+model StudioBlock {
+  id            String  @id @default(cuid())
+  revisionId    String
+  blockId       String
+  address       String
+  artifactLabel String?
+  ordinal       Int
+  chapterKey    String
+  sectionNo     Int?
+  paraNo        Int?
+  type          String
+  content       Json
+  textPlain     String  @db.Text
+  contentSha256 String
+
+  revision StudioRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, address])
+  @@unique([revisionId, ordinal])
+  @@index([revisionId, blockId])
+  @@index([revisionId, artifactLabel])
+  @@index([revisionId, type])
+}
+
+// M07
+model StudioArtifact {
+  id                String              @id @default(cuid())
+  kind              StudioArtifactKind
+  schemaId          String
+  title             String
+  label             String?
+  spec              Json
+  specSha256        String
+  templateVersionId String?
+  missionFolder     String?
+  agentRequestId    String?
+  hermesTaskId      String?
+  releaseStatus     StudioReleaseStatus @default(PENDING)
+  lintReport        Json?
+  createdBy         String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  templateVersion StudioTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  outputs         StudioOutputFile[]
+  renderJobs      StudioRenderJob[]
+
+  @@index([kind])
+  @@index([missionFolder])
+  @@index([agentRequestId])
+  @@index([createdAt])
+}
+
+// M08 (invarian layanan: tepat satu dari revisionId/artifactId terisi)
+model StudioOutputFile {
+  id          String              @id @default(cuid())
+  documentId  String?
+  revisionId  String?
+  artifactId  String?
+  renderJobId String?
+  format      StudioOutputFormat
+  role        StudioOutputRole
+  figureLabel String?
+  relPath     String
+  fileName    String
+  bytes       Int
+  sha256      String
+  mime        String
+  lintVerdict StudioReleaseStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  // MX06 (SR-01): lingkup render; draft = render parsial dokumen INCOMPLETE
+  scopeKind   StudioRenderScopeKind @default(DOCUMENT)
+  scopeKey    String?
+  draft       Boolean               @default(false)
+
+  document  StudioDocument?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revision  StudioRevision?  @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  artifact  StudioArtifact?  @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  renderJob StudioRenderJob? @relation(fields: [renderJobId], references: [id], onDelete: SetNull)
+
+  @@unique([relPath])
+  @@index([documentId, revisionId])
+  @@index([artifactId])
+  @@index([sha256])
+}
+
+// M09
+model StudioRenderJob {
+  id           String                @id @default(cuid())
+  documentId   String?
+  revisionId   String?
+  artifactId   String?
+  formats      StudioOutputFormat[]
+  status       StudioRenderJobStatus @default(QUEUED)
+  errorCode    String?
+  errorMessage String?               @db.Text
+  engine       Json?
+  requestedBy  String
+  queuedAt     DateTime              @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  // MX05 (SR-01): scopeKey = kunci bab (CHAPTER), slotKey (SLOT), null (DOCUMENT)
+  scopeKind    StudioRenderScopeKind @default(DOCUMENT)
+  scopeKey     String?
+
+  document StudioDocument?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revision StudioRevision?    @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  artifact StudioArtifact?    @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  outputs  StudioOutputFile[]
+
+  @@index([status])
+  @@index([documentId])
+  @@index([artifactId])
+  @@index([queuedAt])
+}
+
+// WorkerTrace — tabel jejak worker yang sudah ada di DB (diisi proses di luar repo ini;
+// tak ada penulis di kode repo) tanpa riwayat migrasi. Model ini hasil introspeksi
+// `prisma db pull --print` atas gsp_agent_hq_v21 (INT-K, IP-19, F-003); baseline
+// migrasi 20261023150000_worker_trace_baseline ditandai applied (migrate resolve).
+// Jangan dihapus (D-21).
+model WorkerTrace {
+  id         String    @id
+  task_id    String
+  profile    String?
+  started_at DateTime? @db.Timestamp(6)
+  ended_at   DateTime? @db.Timestamp(6)
+  outcome    String?
+  source     String    @default("mirror")
+
+  @@index([task_id])
+}
+
+// ---------------------------------------------------------------------------
+// Studio struktur per section (SR-01 register, masterplan/03_structural_sections_specs.md §3;
+// migrasi 20261023200000_add_studio_structure, SR-03). Penyimpanan per revisi = salinan
+// penuh M14-M17 (R6); M18 per dokumen, tidak disalin.
+// ---------------------------------------------------------------------------
+
+// E26
+enum StudioSlotContentMode {
+  AUTO
+  INPUT
+  MIXED
+}
+
+// E27
+enum StudioRenderScopeKind {
+  DOCUMENT
+  CHAPTER
+  SLOT
+}
+
+// E28
+enum StudioCompleteness {
+  INCOMPLETE
+  COMPLETE
+}
+
+// M10 (slot kerangka versi templat)
+model StudioTemplateSlot {
+  id                String                @id @default(cuid())
+  templateVersionId String
+  slotKey           String // pola C18
+  sectionTypeKey    String
+  label             String
+  position          Int
+  required          Boolean               @default(false)
+  positionLocked    Boolean               @default(false)
+  repeatable        Boolean               @default(false)
+  minItems          Int?
+  maxItems          Int?
+  contentMode       StudioSlotContentMode
+  tiers             StudioTier[] // kosong = semua tier
+  admits            String[]
+  configSha256      String
+  createdAt         DateTime              @default(now())
+
+  templateVersion StudioTemplateVersion          @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+  sectionType     StudioSectionType              @relation(fields: [sectionTypeKey], references: [key], onDelete: Restrict)
+  params          StudioTemplateSlotParam[]
+  roleFormats     StudioTemplateSlotRoleFormat[]
+  docSections     StudioDocSection[]
+
+  @@unique([templateVersionId, slotKey])
+  @@unique([templateVersionId, position])
+  @@index([sectionTypeKey])
+}
+
+// M11 (nilai parameter per slot; kelas T ditolak layanan)
+model StudioTemplateSlotParam {
+  id         String           @id @default(cuid())
+  slotId     String
+  paramKey   String
+  value      Json
+  paramClass StudioParamClass
+  surface    String // essential | advanced (salinan saat tulis)
+
+  slot StudioTemplateSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@unique([slotId, paramKey])
+  @@index([paramKey])
+}
+
+// M12 (format peran per slot: {para?, run?})
+model StudioTemplateSlotRoleFormat {
+  id      String @id @default(cuid())
+  slotId  String
+  roleKey String // E23 RoleKey
+  format  Json
+
+  slot StudioTemplateSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@unique([slotId, roleKey])
+}
+
+// M13 (gambar unggahan, dedupe sha256)
+model StudioAsset {
+  id            String   @id @default(cuid())
+  sha256        String   @unique
+  mime          String // image/png | image/jpeg
+  bytes         Int
+  widthPx       Int
+  heightPx      Int
+  relPath       String   @unique // C33c
+  missionFolder String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  blocks StudioDocBlock[]
+
+  @@index([missionFolder])
+}
+
+// M14 (slot terisi per revisi; templateSlotId null = kerangka implisit)
+model StudioDocSection {
+  id                   String    @id @default(cuid())
+  revisionId           String
+  templateSlotId       String?
+  slotKey              String
+  sectionTypeKey       String
+  position             Int // 1..n kontigu
+  filled               Boolean
+  payload              Json?
+  payloadSha256        String
+  lastFilledBy         String?
+  lastFilledAt         DateTime?
+  lastFilledRevisionNo Int?
+
+  revision     StudioRevision      @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  templateSlot StudioTemplateSlot? @relation(fields: [templateSlotId], references: [id], onDelete: Restrict)
+  sectionType  StudioSectionType   @relation(fields: [sectionTypeKey], references: [key], onDelete: Restrict)
+  chapters     StudioDocChapter[]
+  blocks       StudioDocBlock[]
+
+  @@unique([revisionId, slotKey])
+  @@unique([revisionId, position])
+  @@index([templateSlotId])
+}
+
+// M15 (bab slot berulang per revisi; FK identitas NoAction, KD-07)
+model StudioDocChapter {
+  id                   String    @id @default(cuid())
+  revisionId           String
+  docSectionId         String
+  identityId           String
+  chapterKey           String
+  position             Int
+  partKey              String?
+  title                Json // InlineV2
+  shortTitle           String?
+  contentSha256        String
+  lastFilledBy         String?
+  lastFilledAt         DateTime?
+  lastFilledRevisionNo Int?
+
+  revision    StudioRevision        @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  docSection  StudioDocSection      @relation(fields: [docSectionId], references: [id], onDelete: Cascade)
+  identity    StudioDocIdentity     @relation(fields: [identityId], references: [id], onDelete: NoAction)
+  subsections StudioDocSubsection[]
+  blocks      StudioDocBlock[]
+
+  @@unique([revisionId, chapterKey])
+  @@unique([docSectionId, position])
+  @@index([revisionId, contentSha256])
+  @@index([identityId])
+}
+
+// M16 (subbab; sectionNo 0 = intro bab)
+model StudioDocSubsection {
+  id            String @id @default(cuid())
+  revisionId    String
+  chapterId     String
+  identityId    String
+  sectionNo     Int
+  title         Json?
+  contentSha256 String
+
+  revision StudioRevision    @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  chapter  StudioDocChapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  identity StudioDocIdentity @relation(fields: [identityId], references: [id], onDelete: NoAction)
+  blocks   StudioDocBlock[]
+
+  @@unique([chapterId, sectionNo])
+  @@index([identityId])
+}
+
+// M17 (blok v2 per revisi; content tanpa id)
+model StudioDocBlock {
+  id            String  @id @default(cuid())
+  revisionId    String
+  docSectionId  String
+  chapterId     String?
+  subsectionId  String?
+  identityId    String
+  pid           String
+  address       String?
+  artifactLabel String?
+  ordinal       Int
+  paraNo        Int?
+  type          String
+  content       Json
+  textPlain     String  @db.Text
+  contentSha256 String
+  assetId       String?
+
+  revision   StudioRevision       @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  docSection StudioDocSection     @relation(fields: [docSectionId], references: [id], onDelete: Cascade)
+  chapter    StudioDocChapter?    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  subsection StudioDocSubsection? @relation(fields: [subsectionId], references: [id], onDelete: Cascade)
+  identity   StudioDocIdentity    @relation(fields: [identityId], references: [id], onDelete: NoAction)
+  asset      StudioAsset?         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([revisionId, ordinal])
+  @@unique([revisionId, pid])
+  @@unique([revisionId, address])
+  @@index([subsectionId, paraNo])
+  @@index([identityId])
+  @@index([revisionId, artifactLabel])
+  @@index([revisionId, type])
+  @@index([assetId])
+}
+
+// M18 (identitas pid per dokumen; kind E30: CHAPTER | SUBSECTION | BLOCK)
+model StudioDocIdentity {
+  id                String   @id @default(cuid())
+  documentId        String
+  pid               String // pola C19
+  kind              String
+  createdRevisionNo Int
+  retiredRevisionNo Int?
+  createdBy         String
+  createdAt         DateTime @default(now())
+
+  document    StudioDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chapters    StudioDocChapter[]
+  subsections StudioDocSubsection[]
+  blocks      StudioDocBlock[]
+
+  @@unique([documentId, pid])
+  @@index([documentId, kind])
+}

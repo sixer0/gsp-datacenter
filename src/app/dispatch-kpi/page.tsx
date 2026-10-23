@@ -71,7 +71,7 @@ export default function DispatchKpiPage() {
           </div>
 
           <Panel>
-            <SectionHeader>24 jam terakhir</SectionHeader>
+            <SectionHeader title="24 jam terakhir" />
             <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4">
               <Stat small label="Total" value={kpi.last24h.total} />
               <Stat small label="Perlu review" value={kpi.last24h.needsReview} />
@@ -81,7 +81,7 @@ export default function DispatchKpiPage() {
           </Panel>
 
           <Panel>
-            <SectionHeader>Distribusi status (semua waktu)</SectionHeader>
+            <SectionHeader title="Distribusi status (semua waktu)" />
             <div className="flex flex-wrap gap-2 p-3">
               {Object.entries(kpi.byStatus).map(([s, n]) => (
                 <Pill key={s}>
@@ -92,7 +92,7 @@ export default function DispatchKpiPage() {
           </Panel>
 
           <Panel>
-            <SectionHeader>Delegasi & review gate</SectionHeader>
+            <SectionHeader title="Delegasi & review gate" />
             <div className="space-y-2 p-3 text-sm text-muted-foreground">
               <p>
                 Edge orkestrasi: <b className="text-foreground">{kpi.orchestration.totalEdges}</b> ·

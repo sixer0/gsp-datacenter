@@ -42,3 +42,26 @@ export interface ProfileInspection {
 }
 
 export declare function inspectProfile(name: string): ProfileInspection;
+
+/** Lean skill set per lane (INT-K; mirrors ensure-profile-complete.mjs). */
+export declare const LEAN_CONTROLLER_SKILLS: string[];
+
+export declare const LEAN_WORKER_SKILLS: string[];
+
+export interface LeanProvisionResult {
+  name: string;
+  lane: "controller" | "worker";
+  lean: true;
+  existedBefore: boolean;
+  created: boolean;
+  changed: string[];
+  skillCount: number;
+  missingSkills: string[];
+  ok: boolean;
+  error: string | null;
+}
+
+export declare function provisionLeanProfile(
+  name: string,
+  opts?: { lane?: "controller" | "worker"; force?: boolean },
+): LeanProvisionResult;

@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 4.1",
+ "title": "Anatomi halaman interior DATUM: halaman 7 spesimen dengan penanda bernomor.",
+ "source": "Proposal Teknis Spesimen UPK-70 000-GSP-PT-X-2026 RevA, halaman 7, dirender 200 dpi; penanda dari DATUM House Style Explained Gambar 3.1.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "d1aaab28ca48c94b400b1ad31933661f63c09157d8442c59bcc6abe9b1c027d2",
+  "path": "benchmark/manual000/figures/assets/image6__anatomi.png",
+  "widthPx": 1654,
+  "heightPx": 2339
+ },
+ "widthMm": 128.0,
+ "heightMm": 181.011,
+ "dpiMin": 150
+}

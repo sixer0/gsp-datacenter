@@ -1,0 +1,31 @@
+{
+ "type": "image",
+ "asset": "bm-fig-32",
+ "caption": {
+  "label": "Gambar 10.6",
+  "separator": "   ",
+  "inline": {
+   "text": "Anatomi simbol satuan: bingkai, ikon fungsi, dan penguat eselon, contoh generik."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.6."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "ilustrasi"
+    }
+   ]
+  }
+ },
+ "widthMm": 166.0,
+ "heightMm": 48.296
+}

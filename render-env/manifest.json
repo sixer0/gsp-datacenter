@@ -1,0 +1,199 @@
+{
+  "schema": "studio.render-env/v1",
+  "config": "B",
+  "createdAt": "2026-10-22T17:22:47.217Z",
+  "soffice": {
+    "path": "C:\\Program Files\\LibreOffice\\program\\soffice.com",
+    "version": "24.2.3.2"
+  },
+  "chromium": {
+    "executablePath": "C:\\Users\\TRIAL\\AppData\\Local\\ms-playwright\\chromium-1234\\chrome-win64\\chrome.exe",
+    "revision": "1234",
+    "version": "151.0.7922.34"
+  },
+  "fonts": [
+    {
+      "family": "IBM Plex Mono",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexMono-Italic.ttf",
+      "sha256": "eed67babf14f4b45de0a57017c1291f37cc96ceede2bc98cbf7873bbd0c0a784",
+      "hkcuValueName": "IBMPlexMono-Italic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Mono",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexMono-Regular.ttf",
+      "sha256": "73ac3f3d34ea63d0336449d8312fb8ae163d4bd922c2e78d16b4d7504baa0528",
+      "hkcuValueName": "IBM Plex Mono Regular (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Mono SemiBold",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexMono-SemiBold.ttf",
+      "sha256": "5801cade8aa6cc81bdb3a463e05d55819339b738db383d55863e4a24139d99fd",
+      "hkcuValueName": "IBMPlexMono-SemiBold (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Mono SemiBold",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexMono-SemiBoldItalic.ttf",
+      "sha256": "34617bc3fd8a92b16adc6608896e39449336f2c22ef5cf12a261a36a4d6cd235",
+      "hkcuValueName": "IBMPlexMono-SemiBoldItalic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSans-Italic.ttf",
+      "sha256": "c6adc2080aa80b36935d1c34fe392180d33bdda4d75945c91bf2c3ccea182498",
+      "hkcuValueName": "IBMPlexSans-Italic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSans-Regular.ttf",
+      "sha256": "975dcda37d80f038dcd143c22e33ca2d97a0cc5a929aace1c749153b0fe1afa5",
+      "hkcuValueName": "IBMPlexSans (Regular)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans SemiBold",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSans-SemiBold.ttf",
+      "sha256": "90664322004606a83b106b28009200450aafe8622110367b8d4becd1bb5dd2a0",
+      "hkcuValueName": "IBM Plex Sans SemiBold (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans SemiBold",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSans-SemiBoldItalic.ttf",
+      "sha256": "e96c3c1ac695c642591aaebd2fe4068c5326f99507acbcb6c558cc4603451a21",
+      "hkcuValueName": "IBMPlexSans-SemiBoldItalic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans Condensed",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSansCond-Italic.ttf",
+      "sha256": "be0b2f99eba64e5e27e7e2ea4610c48d8b097c8d68d9f08bad635252569db1da",
+      "hkcuValueName": "IBMPlexSansCond-Italic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans Condensed",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSansCond-Regular.ttf",
+      "sha256": "d3057856ccc7ef347ea104b9b7fb3bf42b7b1befd8b06b9b91c33e5e787a5045",
+      "hkcuValueName": "IBM Plex Sans Condensed Regular (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans Condensed SemiBold",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSansCond-SemiBold.ttf",
+      "sha256": "09d25ecc8ad8de40f73daa949cc45a5cb43fcc883b5475c0155f54d09c40a471",
+      "hkcuValueName": "IBMPlexSansCond-SemiBold (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans Condensed SemiBold",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSansCond-SemiBoldItalic.ttf",
+      "sha256": "0d9e2ff27098bffd12c0e9d634a7705f50c52a36cd78f4ef8ce54d62bea97582",
+      "hkcuValueName": "IBMPlexSansCond-SemiBoldItalic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-Italic.ttf",
+      "sha256": "b11f1048745e715a55c9d837b3f10226ca3d78867b7db7251ddad8f98dcf0f38",
+      "hkcuValueName": "IBM Plex Serif Italic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-Regular.ttf",
+      "sha256": "77cd233a2af8dc6b1022faea3bb3b01f3c75af68bcf530cb6aeb15982ff3dbb7",
+      "hkcuValueName": "IBM Plex Serif Regular (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "SemiBold",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-SemiBold.ttf",
+      "sha256": "857edeaaff0f3913f4dfaf6bc0e9c89ef73e475429cf63d6a3cb5d1022a213d5",
+      "hkcuValueName": "IBMPlexSerif (SemiBold)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "SemiBold Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-SemiBoldItalic.ttf",
+      "sha256": "c1bf6e7e5d3fd740916184e171703db25729fefd4d2423ae1b79a6afcf1a34ef",
+      "hkcuValueName": "IBMPlexSerif (SemiBoldItalic)",
+      "required": true
+    },
+    {
+      "family": "DejaVu Sans",
+      "style": "Book",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\DejaVuSans.ttf",
+      "sha256": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+      "hkcuValueName": "DejaVu Sans Book (TrueType)",
+      "required": true
+    },
+    {
+      "family": "Inter",
+      "style": "Regular",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\Inter-Regular.ttf",
+      "sha256": "1b08e7fc267a5c7e1d614100f604b83e7e8a0be241f0f288faa2b3ac93a683ba",
+      "hkcuValueName": "Inter-Regular (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Mono",
+      "style": "Bold",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexMono-Bold.ttf",
+      "sha256": "dbd2a2fb024579438d6400a84e57579bfd2dbe67c306c8fd9fde92a61e4f2eea",
+      "hkcuValueName": "IBM Plex Mono Bold (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "Bold",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-Bold.ttf",
+      "sha256": "b8d294e9b5c5a0940f167c3ced0f7ef2e3f57082ca3ff096ef30e86e26c1c159",
+      "hkcuValueName": "IBM Plex Serif Bold (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "style": "Bold Italic",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSerif-BoldItalic.ttf",
+      "sha256": "da64b75f4284f53e7b5c71fa190a35b8bf3494fe19f1804c81c3a53340bca570",
+      "hkcuValueName": "IBM Plex Serif Bold Italic (TrueType)",
+      "required": true
+    },
+    {
+      "family": "IBM Plex Sans Condensed",
+      "style": "Bold",
+      "file": "C:\\Users\\TRIAL\\AppData\\Local\\Microsoft\\Windows\\Fonts\\IBMPlexSansCondensed-Bold.ttf",
+      "sha256": "b65492d86cdd5cd9d43d2671b55d5d36fec36859fc8b08bc6aba78e441d6c849",
+      "hkcuValueName": "IBM Plex Sans Condensed Bold (TrueType)",
+      "required": true
+    }
+  ],
+  "calibration": {
+    "pages": 102,
+    "textIdenticalPages": 101,
+    "ssimMean": 0.9814985690197804,
+    "pagesSsimGe098": 88,
+    "at": "2026-10-22T17:22:46Z"
+  }
+}

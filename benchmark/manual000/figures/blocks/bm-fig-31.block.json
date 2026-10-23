@@ -1,0 +1,35 @@
+{
+ "type": "symbolSheet",
+ "dialect": "mil",
+ "cols": 6,
+ "caption": {
+  "label": "Gambar 10.5",
+  "separator": "   ",
+  "inline": {
+   "text": "Pustaka DATUM mil: bingkai identitas."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "datum_symbols.py --sheet, via Panduan Simbol Engineering GSP v1.0 Gambar 5.5."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "geometri [TERUKUR dari pustaka]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 44.82
+}

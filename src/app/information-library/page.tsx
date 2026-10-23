@@ -1617,14 +1617,14 @@ function ProposePanel({
               <label className={labelCls}>Lampiran — file atau URL</label>
               <div className="flex flex-wrap items-center gap-2">
                 <input ref={fileRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFile(e.target.files[0])} />
-                <Button variant="secondary" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                <Button variant="ghost" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
                   <Upload className="w-3.5 h-3.5" /> {uploading ? "Mengunggah…" : "Upload file"}
                 </Button>
                 <div className="flex-1 min-w-[220px] flex items-center gap-2">
                   <input value={urlInput} onChange={(e) => setUrlInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addUrl()}
                     placeholder="https://… atau path file di shared workspace" className={inputCls} />
-                  <Button variant="secondary" size="sm" onClick={addUrl}>
+                  <Button variant="ghost" size="sm" onClick={addUrl}>
                     <Link2 className="w-3.5 h-3.5" /> Tambah
                   </Button>
                 </div>
@@ -1650,7 +1650,7 @@ function ProposePanel({
 
             <div className="flex items-center gap-2.5 pt-1">
               <Button variant="primary" onClick={submit} disabled={!canSubmit}>
-                <Send className="w-3.5 h-3.5" /> {isRev ? `Kirim revisi #${prefill.revisionNo}` : "Usulkan"}
+                <Send className="w-3.5 h-3.5" /> {isRev ? `Kirim revisi #${prefill?.revisionNo}` : "Usulkan"}
               </Button>
               <span className="num text-[11px] text-[var(--text-3)]">
                 librarian & custodian memproses di latar
@@ -1776,7 +1776,7 @@ function ProposePanel({
             )}
 
             {result.verdict === "perlu_revisi" && (
-              <Button variant="secondary" size="sm" onClick={() => onRevise(result, requestId || "")}>
+              <Button variant="ghost" size="sm" onClick={() => onRevise(result, requestId || "")}>
                 <RefreshCw className="w-3.5 h-3.5" /> Revisi & kirim ulang
               </Button>
             )}
@@ -2480,7 +2480,7 @@ export default function InformationLibraryPage() {
             </p>
           </div>
           <div className="shrink-0 flex items-center gap-2.5">
-            <Button variant="secondary" onClick={() => { setAskOpen((v) => !v); }}>
+            <Button variant="ghost" onClick={() => { setAskOpen((v) => !v); }}>
               <Sparkles className="w-3.5 h-3.5" style={askOpen ? { color: "var(--accent)" } : undefined} />
               Ask Librarian
             </Button>

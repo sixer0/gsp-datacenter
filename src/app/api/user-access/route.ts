@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/require-session";
 import {
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
 
   // ── Resolve + validate the bound Hermes profile BEFORE writing anything. ──
   // Default when omitted: a per-user named profile.
-  let hermesProfile = hermesProfileInput || username;
+  const hermesProfile = hermesProfileInput || username;
 
   if (!isValidProfileName(hermesProfile)) {
     return NextResponse.json(
@@ -160,7 +161,7 @@ async function createUser(
   username: string,
   password: string,
   displayName: string | null,
-  role: string,
+  role: Role,
   hermesProfile: string,
 ) {
   const existing = await prisma.webUiUser.findFirst({

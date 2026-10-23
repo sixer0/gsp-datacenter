@@ -23,6 +23,22 @@ import {
   X,
   Activity,
 } from "lucide-react";
+import { STUDIO_NAV, studioNavFor } from "@/lib/studio/contract/ui";
+import { useViewer } from "@/components/studio/shared/use-viewer";
+
+// Studio: href, label (shortLabel), ikon, dan audiens dari kontrak STUDIO_NAV
+// (U72; FIX-4a satu sumber, S86 R14). Entri admin (Alat developer, Sistem)
+// hanya untuk ADMINISTRATOR dan didahului pemisah (UX-01 §2.3).
+function studioItems(isAdmin: boolean) {
+  return studioNavFor(isAdmin, STUDIO_NAV).map((entry, i, all) => ({
+    href: entry.href,
+    label: entry.shortLabel,
+    icon: entry.icon,
+    // Beranda /studio hanya aktif persis, agar tidak ikut menyala di setiap sub-halaman.
+    exact: entry.exact === true,
+    dividerBefore: entry.audience === "admin" && (i === 0 || all[i - 1].audience !== "admin"),
+  }));
+}
 
 const navGroups = [
   {
@@ -43,6 +59,11 @@ const navGroups = [
       { href: "/articles", label: "Articles", icon: FileText },
       { href: "/youtube", label: "YouTube", icon: Play },
     ],
+  },
+  {
+    name: "Studio",
+    // Diisi saat render sesuai peran (studioItems); bawaan = tampilan USER.
+    items: studioItems(false),
   },
   {
     name: "Data",
@@ -74,6 +95,8 @@ const mobileTabsRaw = [
 export function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const { isAdmin } = useViewer();
+  const groups = navGroups.map((g) => (g.name === "Studio" ? { ...g, items: studioItems(isAdmin) } : g));
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -168,7 +191,7 @@ export function Sidebar() {
         {/* Nav */}
         <nav className="flex-1 px-3 overflow-y-auto">
           <div className="space-y-5">
-            {navGroups.map((group) => (
+            {groups.map((group) => (
               <div key={group.name}>
                 <h3 className="eyebrow px-3 mb-1.5 !text-[10px] !text-[var(--text-4)]">
                   {group.name}
@@ -176,10 +199,15 @@ export function Sidebar() {
                 <div className="space-y-0.5">
                   {group.items.map((item) => {
                     const isActive =
-                      pathname === item.href || pathname.startsWith(item.href + "/");
+                      "exact" in item && item.exact
+                        ? pathname === item.href
+                        : pathname === item.href || pathname.startsWith(item.href + "/");
                     const Icon = item.icon;
                     return (
                       <div key={item.href}>
+                        {"dividerBefore" in item && item.dividerBefore === true && (
+                          <div role="separator" aria-label="Alat admin" className="mx-3 my-1.5 h-px bg-[var(--line)]" />
+                        )}
                         <Link
                           href={item.href}
                           className={`group relative flex items-center gap-3 px-3 py-[7px] rounded-[10px] transition-all duration-150 ${

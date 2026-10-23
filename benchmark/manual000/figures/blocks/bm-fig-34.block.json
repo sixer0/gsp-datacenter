@@ -1,0 +1,31 @@
+{
+ "type": "image",
+ "asset": "bm-fig-34",
+ "caption": {
+  "label": "Gambar 10.8",
+  "separator": "   ",
+  "inline": {
+   "text": "Elemen inti BPMN: peristiwa, tugas, gerbang, aliran, objek data, pool, dan lajur."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.8."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "bentuk konvensional"
+    }
+   ]
+  }
+ },
+ "widthMm": 166.0,
+ "heightMm": 58.997
+}

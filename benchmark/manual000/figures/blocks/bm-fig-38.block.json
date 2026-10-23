@@ -1,0 +1,110 @@
+{
+ "type": "diagram",
+ "caption": {
+  "label": "Gambar 10.12",
+  "separator": "   ",
+  "inline": {
+   "text": "Diagram satu garis catu daya pos perimeter dengan simbol IEC 60617 dan penandaan IEC 81346."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 6.1. ATS digambar sebagai kontak pindah dan fungsi kendali; UPS sebagai blok berpenandaan."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "ilustrasi tanpa rating"
+    }
+   ]
+  }
+ },
+ "widthMm": 128.0,
+ "heightMm": 100.013,
+ "spec": {
+  "$schema": "studio.diagram/v1",
+  "family": "sld",
+  "id": "10.12",
+  "title": "Diagram satu garis catu daya pos perimeter dengan simbol IEC 60617 dan penandaan IEC 81346.",
+  "classification": "TERBATAS",
+  "width_mm": 128,
+  "apparatus": "page",
+  "labels_verified": true,
+  "sources": [
+   "Panduan Simbol Engineering GSP v1.0 Gambar 6.1. ATS digambar sebagai kontak pindah dan fungsi kendali; UPS sebagai blok berpenandaan."
+  ],
+  "nodes": [
+   {
+    "id": "mdp",
+    "label": "Rel MDP",
+    "tag": "masuk -Q1 (PLN/G via -Q0 ATS)",
+    "shape": "bus",
+    "class": {}
+   },
+   {
+    "id": "f1",
+    "label": "-F1 SPD",
+    "shape": "box",
+    "class": {
+     "col": 0
+    }
+   },
+   {
+    "id": "q2",
+    "label": "-Q2 ke UPS -U1",
+    "sub": "rel hilir -Q3 -Q4 -Q5",
+    "shape": "box",
+    "class": {
+     "col": 1,
+     "accent": true
+    }
+   },
+   {
+    "id": "q6",
+    "label": "-Q6",
+    "sub": "penerangan",
+    "shape": "box",
+    "class": {
+     "col": 2
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "mdp",
+    "to": "f1",
+    "kind": "data",
+    "label": "SPD"
+   },
+   {
+    "from": "mdp",
+    "to": "q2",
+    "kind": "data",
+    "label": "UPS"
+   },
+   {
+    "from": "mdp",
+    "to": "q6",
+    "kind": "data",
+    "label": "lampu"
+   }
+  ],
+  "legend": [
+   "penghantar",
+   "rel daya"
+  ],
+  "notes": [
+   "Penandaan IEC 81346: =sistem +lokasi -komponen.",
+   "IP-42c (D-137 opsi D): lebar BM 166 mm sah menurut P1-width_mm tetapi tidak lolos build sld: rel selebar lembar di-snap ke kisi 128/12 mm = 170,667 mm > 166 -> DATUM-37-lebar BY_CONSTRUCTION_FAILED (diuji). Lebar sah terdekat 128 mm (12 kisi bus, F-041); blok widthMm ikut 128 agar figur tidak diskalakan. Satu baris cabang 128 mm memuat maks 3 simpul.",
+   "IP-02: tidak digambar sebagai simpul (acuan menggambarnya): PLN =G01+P01-T1, G =G01+P01-G1, -Q0 kontak pindah + fungsi kendali ATS, -Q1 pemutus utama (tag rel), UPS -U1 (blok fungsi) dan rel hilir -Q3 ke Kamera, -Q4 ke Radar, -Q5 ke Radio (label/sub -Q2); jalur cadangan G (putus-putus) tidak tergambar. Label aliran ASUMSI.",
+   "IP-42c: tinggi 109,537 -> 100,013 mm (BM 101,358 mm): tag -Q2 dilebur ke label/sub (label '-Q2 ke UPS -U1', sub 'rel hilir -Q3 -Q4 -Q5'), simpul tertinggi kini 4 unit (label + sub), bukan 5; teks '(blok fungsi)' tidak tertulis.",
+   "Judul dalam gambar: CONTOH 1 · DIAGRAM SATU GARIS (IEC 60617) — CATU DAYA POS PERIMETER (ILUSTRASI)."
+  ]
+ }
+}

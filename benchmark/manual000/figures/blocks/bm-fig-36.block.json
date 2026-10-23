@@ -1,0 +1,34 @@
+{
+ "type": "image",
+ "asset": "bm-fig-36",
+ "caption": {
+  "label": "Gambar 10.10",
+  "separator": "   ",
+  "inline": {
+   "text": "Usulan legenda rumah GSP untuk topologi jaringan, bukan standar dan wajib dicantumkan legendanya."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.10."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "legenda rumah [ASUMSI, usulan]"
+    }
+   ]
+  },
+  "provenance": [
+   "ASUMSI"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 53.068
+}

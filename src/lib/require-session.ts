@@ -2,6 +2,21 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { readSessionToken } from '@/lib/hq-session';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+
+/**
+ * FIX-SEC N-08 (SR-57, D-247): perbandingan rahasia waktu-konstan terhadap isi
+ * MAUPUN panjang. Kedua nilai di-HMAC-SHA256 dengan kunci acak per proses
+ * (digest berpanjang tetap 32 byte), lalu dibandingkan `timingSafeEqual`.
+ * Tidak ada jalur kembali-awal saat panjang berbeda.
+ */
+const SECRET_COMPARE_KEY = randomBytes(32);
+
+export function secretEqualsConstantTime(provided: string, expected: string): boolean {
+  const a = createHmac('sha256', SECRET_COMPARE_KEY).update(provided, 'utf8').digest();
+  const b = createHmac('sha256', SECRET_COMPARE_KEY).update(expected, 'utf8').digest();
+  return timingSafeEqual(a, b);
+}
 
 /**
  * W2.2 helper (F-SEC-004, 31-08-2026): guard level-ROUTE untuk handler mutatif
@@ -17,7 +32,8 @@ import { readSessionToken } from '@/lib/hq-session';
  *   2. Cookie sesi HQ terpadu (gsp_hq_session) — HMAC diverifikasi via hq-session
  *   3. Header secret internal (x-internal-secret == INTERNAL_API_SECRET)
  *      — untuk konsumen mesin SAH yang memang dipanggil antar-service;
- *      konstan-time compare, dan fail-closed bila env secret kosong.
+ *      konstan-time compare (HMAC + timingSafeEqual, N-08), dan fail-closed
+ *      bila env secret kosong.
  *
  * Pemakaian di handler:
  *   export async function POST(req: NextRequest) {
@@ -58,15 +74,8 @@ export async function requireSession(
   // 3) Internal shared-secret (machine callers) — fail-closed tanpa env
   const internalSecret = req.headers.get('x-internal-secret');
   const expectedSecret = process.env.INTERNAL_API_SECRET;
-  if (internalSecret && expectedSecret) {
-    const enc = new TextEncoder();
-    const a = enc.encode(internalSecret);
-    const b = enc.encode(expectedSecret);
-    if (a.length === b.length) {
-      let diff = 0;
-      for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-      if (diff === 0) return null;
-    }
+  if (internalSecret && expectedSecret && secretEqualsConstantTime(internalSecret, expectedSecret)) {
+    return null;
   }
 
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

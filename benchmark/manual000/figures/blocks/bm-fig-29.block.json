@@ -1,0 +1,35 @@
+{
+ "type": "symbolSheet",
+ "dialect": "isa",
+ "cols": 6,
+ "caption": {
+  "label": "Gambar 10.3",
+  "separator": "   ",
+  "inline": {
+   "text": "Pustaka DATUM isa: dua belas simbol instrumentasi."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "datum_symbols.py --sheet, via Panduan Simbol Engineering GSP v1.0 Gambar 5.3."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "geometri [TERUKUR dari pustaka]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 69.941
+}

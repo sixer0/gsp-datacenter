@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.11",
+ "title": "Lima jenis garis ISO 128-2:2022 yang dipakai di gambar GSP.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.11 · references/09 §7.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "d0967bd8fb38d77605f3493a2626faa2b0bf974d82a7d627aaa813b976a5f190",
+  "path": "benchmark/manual000/figures/assets/image25__simbol11.png",
+  "widthPx": 1117,
+  "heightPx": 334
+ },
+ "widthMm": 166.0,
+ "heightMm": 49.637,
+ "dpiMin": 150
+}

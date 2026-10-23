@@ -64,3 +64,18 @@ hermes-bridge/node_modules/
 
 # tahanan gerbang NAT-R3 (data runtime, jangan commit)
 /hermes-bridge/gate-hold/
+
+# Doc Artifact Studio: artefak run yang dapat dibuat ulang dan sandbox STUDIO_WORKSPACE_ROOT (KT-03).
+# Hanya data/studio-workspace/ (bukan data/) karena data/.gitkeep terlacak.
+/tests/parity/out/
+/benchmark/out/
+# Studio test outputs (screenshots, perf runs, logs; D-304)
+/tests/perf/out/
+/tests/e2e/studio/out/
+/tests/integration/studio/out/
+/render-env/out/
+# Keluaran eksperimen S99 (~9,4 MB): hasil kalibrasi dan set fon yang dibangun ulang oleh
+# render-env/semibold-bundle/build_bundle.py (review M9). Berkas tetap di disk.
+/render-env/semibold-bundle/out/
+/render-env/semibold-bundle/fonts/
+/data/studio-workspace/

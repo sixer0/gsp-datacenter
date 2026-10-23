@@ -1,0 +1,230 @@
+{
+ "$schema": "studio.diagram/v1",
+ "family": "topology",
+ "id": "9.1",
+ "title": "Topologi jaringan pengawasan bertingkat dengan ikon generik GSP dan label kapasitas di setiap tautan.",
+ "classification": "TERBATAS",
+ "width_mm": 166,
+ "apparatus": "page",
+ "labels_verified": true,
+ "sources": [
+  "Panduan Simbol Engineering GSP v1.0 Gambar 6.3."
+ ],
+ "nodes": [
+  {
+   "id": "videowall",
+   "label": "Video wall",
+   "shape": "box",
+   "class": {
+    "tier": 0,
+    "lane": "INTERNET / WAN"
+   }
+  },
+  {
+   "id": "wan",
+   "label": "Jaringan instansi",
+   "shape": "shadowed",
+   "class": {
+    "tier": 0,
+    "lane": "INTERNET / WAN",
+    "external": true
+   },
+   "external": true
+  },
+  {
+   "id": "fw",
+   "label": "Firewall (HA)",
+   "shape": "box",
+   "class": {
+    "tier": 0,
+    "lane": "INTERNET / WAN"
+   }
+  },
+  {
+   "id": "nvr",
+   "label": "NVR",
+   "shape": "box",
+   "class": {
+    "tier": 1,
+    "lane": "INTI"
+   },
+   "sub": "Perekam video",
+   "tag": "NVR"
+  },
+  {
+   "id": "l3",
+   "label": "L3",
+   "shape": "box",
+   "class": {
+    "tier": 1,
+    "lane": "INTI",
+    "accent": true
+   },
+   "sub": "Switch inti",
+   "tag": "L3"
+  },
+  {
+   "id": "vms",
+   "label": "Server VMS",
+   "shape": "box",
+   "class": {
+    "tier": 1,
+    "lane": "INTI"
+   }
+  },
+  {
+   "id": "storage",
+   "label": "Penyimpanan",
+   "shape": "cylinder",
+   "class": {
+    "tier": 1,
+    "lane": "INTI"
+   }
+  },
+  {
+   "id": "swa",
+   "label": "Switch akses A (PoE)",
+   "shape": "box",
+   "class": {
+    "tier": 2,
+    "lane": "AGREGASI"
+   }
+  },
+  {
+   "id": "swb",
+   "label": "Switch akses B (PoE)",
+   "shape": "box",
+   "class": {
+    "tier": 2,
+    "lane": "AGREGASI"
+   }
+  },
+  {
+   "id": "cama",
+   "label": "Kamera B01–B12",
+   "shape": "box",
+   "class": {
+    "tier": 3,
+    "lane": "LAPANGAN"
+   }
+  },
+  {
+   "id": "camb",
+   "label": "Kamera B13–B24",
+   "shape": "box",
+   "class": {
+    "tier": 3,
+    "lane": "LAPANGAN"
+   }
+  },
+  {
+   "id": "ap",
+   "label": "Titik akses patroli",
+   "shape": "box",
+   "class": {
+    "tier": 3,
+    "lane": "LAPANGAN"
+   }
+  },
+  {
+   "id": "radio",
+   "label": "Radio ke pos jauh",
+   "shape": "box",
+   "class": {
+    "tier": 3,
+    "lane": "LAPANGAN"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "wan",
+   "to": "fw",
+   "kind": "control",
+   "label": "VPN IPsec"
+  },
+  {
+   "from": "fw",
+   "to": "l3",
+   "kind": "control",
+   "label": "10G"
+  },
+  {
+   "from": "videowall",
+   "to": "nvr",
+   "kind": "control",
+   "label": "HDMI"
+  },
+  {
+   "from": "nvr",
+   "to": "l3",
+   "kind": "data",
+   "label": "10G"
+  },
+  {
+   "from": "l3",
+   "to": "vms",
+   "kind": "data",
+   "label": "10G"
+  },
+  {
+   "from": "vms",
+   "to": "storage",
+   "kind": "control",
+   "label": "iSCSI"
+  },
+  {
+   "from": "l3",
+   "to": "swa",
+   "kind": "data",
+   "label": "10G fiber"
+  },
+  {
+   "from": "l3",
+   "to": "swb",
+   "kind": "data",
+   "label": "10G fiber"
+  },
+  {
+   "from": "swa",
+   "to": "cama",
+   "kind": "data",
+   "label": "1G"
+  },
+  {
+   "from": "swa",
+   "to": "camb",
+   "kind": "data",
+   "label": "1G"
+  },
+  {
+   "from": "swb",
+   "to": "ap",
+   "kind": "data",
+   "label": "1G"
+  },
+  {
+   "from": "swb",
+   "to": "radio",
+   "kind": "data",
+   "label": "1G"
+  }
+ ],
+ "legend": [
+  "WAN",
+  "Firewall",
+  "Switch inti",
+  "Switch akses",
+  "Server",
+  "Penyimpanan",
+  "Perekam",
+  "Kamera",
+  "Titik akses",
+  "Radio PtP"
+ ],
+ "notes": [
+  "Setiap tautan diberi label kapasitas/protokol. Ikon generik dipakai agar tidak bergantung pada ikon bermerek.",
+  "Judul dalam gambar: CONTOH 3 · TOPOLOGI JARINGAN PENGAWASAN (ILUSTRASI, LEGENDA RUMAH).",
+  "IP-02: 4 tingkat (acuan 4 pita; Video wall/Firewall sejajar Jaringan instansi); Firewall kotak (acuan ikon dinding api) agar satu dialek simbol (DATUM-35) dan tinggi <= 247 mm (DATUM-33)."
+ ]
+}

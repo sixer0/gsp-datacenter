@@ -1,0 +1,198 @@
+{
+ "type": "diagram",
+ "caption": {
+  "label": "Gambar 9.2",
+  "separator": "   ",
+  "inline": {
+   "text": "Penanganan alarm perimeter dalam BPMN 2.0.2: satu pool, tiga lajur, gerbang eksklusif, dan peristiwa timer eskalasi."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 6.4."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "ilustrasi [TERUKUR dari sumber]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 78.951,
+ "spec": {
+  "$schema": "studio.diagram/v1",
+  "family": "swimlane",
+  "id": "9.2",
+  "title": "Penanganan alarm perimeter dalam BPMN 2.0.2: satu pool, tiga lajur, gerbang eksklusif, dan peristiwa timer eskalasi.",
+  "classification": "TERBATAS",
+  "width_mm": 166,
+  "apparatus": "page",
+  "labels_verified": true,
+  "sources": [
+   "Panduan Simbol Engineering GSP v1.0 Gambar 6.4."
+  ],
+  "nodes": [
+   {
+    "id": "mulai",
+    "label": "Sensor terpicu",
+    "shape": "circle",
+    "class": {
+     "lane": "Sistem"
+    }
+   },
+   {
+    "id": "tiket",
+    "label": "Buat tiket",
+    "shape": "box",
+    "class": {
+     "lane": "Sistem"
+    },
+    "sub": "alarm otomatis"
+   },
+   {
+    "id": "akhir1",
+    "label": "Selesai",
+    "shape": "circle",
+    "class": {
+     "lane": "Sistem"
+    }
+   },
+   {
+    "id": "verif",
+    "label": "Verifikasi",
+    "shape": "box",
+    "class": {
+     "lane": "Operator"
+    },
+    "sub": "visual kamera"
+   },
+   {
+    "id": "gerbang",
+    "label": "Ancaman nyata?",
+    "shape": "diamond",
+    "class": {
+     "lane": "Operator",
+     "accent": true
+    }
+   },
+   {
+    "id": "tutup",
+    "label": "Tutup tiket",
+    "shape": "box",
+    "class": {
+     "lane": "Operator"
+    },
+    "sub": "alarm palsu"
+   },
+   {
+    "id": "kirim",
+    "label": "Kirim tim ke lokasi",
+    "shape": "box",
+    "class": {
+     "lane": "Tim reaksi"
+    },
+    "tag": "timer 15 mnt"
+   },
+   {
+    "id": "lapor",
+    "label": "Laporan penanganan",
+    "shape": "box",
+    "class": {
+     "lane": "Tim reaksi"
+    }
+   },
+   {
+    "id": "akhir2",
+    "label": "Selesai",
+    "shape": "circle",
+    "class": {
+     "lane": "Tim reaksi"
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "mulai",
+    "to": "tiket",
+    "kind": "data",
+    "label": "alarm"
+   },
+   {
+    "from": "tiket",
+    "to": "verif",
+    "kind": "data",
+    "label": "tiket"
+   },
+   {
+    "from": "verif",
+    "to": "gerbang",
+    "kind": "data",
+    "label": "hasil"
+   },
+   {
+    "from": "gerbang",
+    "to": "tutup",
+    "kind": "data",
+    "label": "tidak"
+   },
+   {
+    "from": "tutup",
+    "to": "akhir1",
+    "kind": "data",
+    "label": "tutup"
+   },
+   {
+    "from": "gerbang",
+    "to": "kirim",
+    "kind": "data",
+    "label": "ya"
+   },
+   {
+    "from": "kirim",
+    "to": "lapor",
+    "kind": "data",
+    "label": "tiba"
+   },
+   {
+    "from": "lapor",
+    "to": "akhir2",
+    "kind": "data",
+    "label": "arsip"
+   }
+  ],
+  "zones": [
+   {
+    "id": "pool",
+    "label": "Pusat Kendali Pengamanan",
+    "members": [
+     "mulai",
+     "tiket",
+     "akhir1",
+     "verif",
+     "gerbang",
+     "tutup",
+     "kirim",
+     "lapor",
+     "akhir2"
+    ]
+   }
+  ],
+  "notes": [
+   "Peristiwa timer batas pada Kirim tim: batas waktu 15 mnt: eskalasi.",
+   "Label simpul akhir 'Selesai' ASUMSI (peristiwa akhir BPMN tanpa label).",
+   "Judul dalam gambar: CONTOH 4 · BPMN — PENANGANAN ALARM PERIMETER (ILUSTRASI).",
+   "IP-02: label aliran alarm/tiket/hasil/tutup/tiba/arsip ASUMSI (DATUM-24); akhir alarm palsu di lajur Sistem (acuan: lajur Operator) karena lajur 166 mm memuat maks 3 simpul (DATUM-37)."
+  ]
+ }
+}

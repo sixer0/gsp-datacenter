@@ -1,0 +1,31 @@
+{
+ "type": "image",
+ "asset": "bm-fig-33",
+ "caption": {
+  "label": "Gambar 10.7",
+  "separator": "   ",
+  "inline": {
+   "text": "Delapan simbol ISO 5807 yang paling sering dipakai."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.7."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "bentuk konvensional"
+    }
+   ]
+  }
+ },
+ "widthMm": 166.0,
+ "heightMm": 40.922
+}

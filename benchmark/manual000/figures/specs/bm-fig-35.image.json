@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.9",
+ "title": "Simbol DFD, UML, dan contoh tingkat Kontainer pada model C4.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.9.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "e7a57a9d52dfded2ec878114c6157ed132e95b239a1b20632d2fa5981d05d21e",
+  "path": "benchmark/manual000/figures/assets/image23__simbol9.png",
+  "widthPx": 1148,
+  "heightPx": 422
+ },
+ "widthMm": 166.0,
+ "heightMm": 61.021,
+ "dpiMin": 150
+}

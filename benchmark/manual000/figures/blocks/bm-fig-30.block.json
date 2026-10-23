@@ -1,0 +1,35 @@
+{
+ "type": "symbolSheet",
+ "dialect": "sec",
+ "cols": 6,
+ "caption": {
+  "label": "Gambar 10.4",
+  "separator": "   ",
+  "inline": {
+   "text": "Pustaka DATUM sec: legenda rumah GSP, bukan standar."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "datum_symbols.py --sheet, via Panduan Simbol Engineering GSP v1.0 Gambar 5.4."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "geometri [TERUKUR dari pustaka]"
+    }
+   ]
+  },
+  "provenance": [
+   "TERUKUR"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 69.941
+}

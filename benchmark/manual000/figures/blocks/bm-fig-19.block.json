@@ -1,0 +1,627 @@
+{
+ "type": "chart",
+ "caption": {
+  "label": "Gambar 8.3",
+  "separator": "   ",
+  "inline": {
+   "text": "Komposisi dan aliran: stacked bar default, pie hanya bila maks. lima bagian dengan satu yang dominan."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "pustakachart.py, data ilustrasi · katalog Panduan Jenis Chart v1.1 Bab 5."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "bentuk [DITURUNKAN] · data ilustrasi"
+    }
+   ]
+  },
+  "provenance": [
+   "DITURUNKAN"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 175.994,
+ "spec": {
+  "$schema": "studio.chart/v1",
+  "kind": "composite",
+  "id": "Gambar 8.3",
+  "title": "Komposisi dan aliran: stacked bar default, pie hanya bila maks. lima bagian dengan satu yang dominan.",
+  "source": "pustakachart.py, data ilustrasi · katalog Panduan Jenis Chart v1.1 Bab 5.",
+  "widthMm": 166,
+  "heightMm": 175.994,
+  "apparatus": "page",
+  "inDocument": true,
+  "style": "gallery",
+  "note": "Data panel ditranskripsi dari PNG media/image9.png (F-005), bukan pustakachart_data.py; asal nilai per panel di index.json transcription (label/pixel/sintetis).",
+  "composite": {
+   "columns": 3,
+   "gapMm": 4.3,
+   "panels": [
+    {
+     "name": "Stacked bar",
+     "code": "K-01",
+     "spec": {
+      "kind": "K-01",
+      "id": "K-01",
+      "style": "gallery",
+      "data": {
+       "shape": "series",
+       "categories": [
+        "Jawa",
+        "Sumatra",
+        "Kalimantan",
+        "Sulawesi"
+       ],
+       "series": [
+        {
+         "name": "Segmen 1",
+         "values": [
+          30,
+          22,
+          14,
+          11
+         ],
+         "accent": true
+        },
+        {
+         "name": "Segmen 2",
+         "values": [
+          12,
+          9,
+          8,
+          6
+         ]
+        },
+        {
+         "name": "Segmen 3",
+         "values": [
+          6,
+          5,
+          3,
+          4
+         ]
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-01.totalLabels": true,
+       "chart.kind.K-01.totalsFromLabel": {
+        "Jawa": 48,
+        "Sumatra": 36,
+        "Kalimantan": 25,
+        "Sulawesi": 21
+       }
+      },
+      "x": {
+       "seriesNames": "ASUMSI"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "100 % stacked bar",
+     "code": "K-02",
+     "spec": {
+      "kind": "K-02",
+      "id": "K-02",
+      "style": "gallery",
+      "data": {
+       "shape": "series",
+       "categories": [
+        "Barat",
+        "Tengah",
+        "Timur"
+       ],
+       "series": [
+        {
+         "name": "Segmen 1",
+         "values": [
+          55,
+          42,
+          30
+         ],
+         "accent": true
+        },
+        {
+         "name": "Segmen 2",
+         "values": [
+          30,
+          38,
+          40
+         ]
+        },
+        {
+         "name": "Segmen 3",
+         "values": [
+          15,
+          20,
+          30
+         ]
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-02.segmentValueLabels": true,
+       "chart.kind.K-02.keySegmentLeft": true
+      },
+      "unit": "%",
+      "dec": 0,
+      "x": {
+       "seriesNames": "ASUMSI"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Diverging bar",
+     "code": "K-03",
+     "spec": {
+      "kind": "K-03",
+      "id": "K-03",
+      "style": "gallery",
+      "data": {
+       "shape": "series",
+       "categories": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5"
+       ],
+       "series": [
+        {
+         "name": "setuju",
+         "values": [
+          40,
+          28,
+          52,
+          20,
+          35
+         ],
+         "accent": true
+        },
+        {
+         "name": "tidak setuju",
+         "values": [
+          12,
+          25,
+          8,
+          30,
+          18
+         ]
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-03.meaningfulMidpoint": true,
+       "chart.kind.K-03.sideLabels": [
+        "tidak setuju",
+        "setuju"
+       ]
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Population pyramid",
+     "code": "K-04",
+     "spec": {
+      "kind": "K-04",
+      "id": "K-04",
+      "style": "gallery",
+      "data": {
+       "shape": "series",
+       "categories": [
+        "60+",
+        "50-59",
+        "40-49",
+        "30-39",
+        "20-29",
+        "10-19",
+        "0-9"
+       ],
+       "series": [
+        {
+         "name": "pria",
+         "values": [
+          3.0,
+          5.0,
+          7.0,
+          9.0,
+          10.0,
+          9.0,
+          8.0
+         ]
+        },
+        {
+         "name": "wanita",
+         "values": [
+          3.6,
+          5.4,
+          7.2,
+          9.1,
+          9.8,
+          8.7,
+          7.6
+         ],
+         "accent": true
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-04.groups": [
+        "pria",
+        "wanita"
+       ]
+      },
+      "x": {
+       "categoryOrder": "atas ke bawah seperti tercetak"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Donut",
+     "code": "K-05",
+     "spec": {
+      "kind": "K-05",
+      "id": "K-05",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "pemerintah",
+         "value": 68,
+         "accent": true
+        },
+        {
+         "label": "swasta",
+         "value": 22
+        },
+        {
+         "label": "lainnya",
+         "value": 10
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-05.centerLabel": "68 % pemerintah",
+       "chart.kind.K-05.startAngle": 0,
+       "chart.kind.K-05.clockwise": true
+      },
+      "unit": "%",
+      "dec": 0,
+      "x": {
+       "labelNote": "hanya 68 % pemerintah tercetak; 22/10 dari sudut irisan, nama ASUMSI"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Pie, maks. 5 bagian",
+     "code": "K-06",
+     "spec": {
+      "kind": "K-06",
+      "id": "K-06",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "Bagian A",
+         "value": 58,
+         "accent": true
+        },
+        {
+         "label": "Bagian B",
+         "value": 20
+        },
+        {
+         "label": "Bagian C",
+         "value": 12
+        },
+        {
+         "label": "Bagian D",
+         "value": 10
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-06.oneDominant": true,
+       "chart.kind.K-06.sliceLabel": "58 %"
+      },
+      "unit": "%",
+      "dec": 0,
+      "x": {
+       "labelNote": "hanya 58 % tercetak; sisanya dari sudut, nama ASUMSI"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Waffle",
+     "code": "K-07",
+     "spec": {
+      "kind": "K-07",
+      "id": "K-07",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "tercapai",
+         "value": 37,
+         "accent": true
+        },
+        {
+         "label": "sisa",
+         "value": 63
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-07.grid": "10x10",
+       "chart.kind.K-07.valueLabel": "37 %"
+      },
+      "unit": "%",
+      "dec": 0,
+      "x": {
+       "fillOrder": "baris dari atas"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Icon array",
+     "code": "K-08",
+     "spec": {
+      "kind": "K-08",
+      "id": "K-08",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "petugas tersorot",
+         "value": 3,
+         "accent": true
+        },
+        {
+         "label": "petugas lain",
+         "value": 7
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-08.grid": [
+        2,
+        5
+       ],
+       "chart.kind.K-08.icon": "orang",
+       "chart.kind.K-08.caption": "3 dari 10 petugas"
+      },
+      "dec": 0,
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Treemap",
+     "code": "K-09",
+     "spec": {
+      "kind": "K-09",
+      "id": "K-09",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "Perimeter",
+         "value": 38,
+         "sub": "Grup 1",
+         "accent": true
+        },
+        {
+         "label": "Forensik",
+         "value": 18,
+         "sub": "Grup 2"
+        },
+        {
+         "label": "OSINT",
+         "value": 24,
+         "sub": "Grup 2"
+        },
+        {
+         "label": "Lain",
+         "value": 8,
+         "sub": "Grup 3"
+        },
+        {
+         "label": "GovTech",
+         "value": 12,
+         "sub": "Grup 3"
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-09.labelsInside": true
+      },
+      "dec": 0,
+      "x": {
+       "groupNote": "pengelompokan kolom dari warna (ASUMSI)"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Funnel",
+     "code": "K-10",
+     "spec": {
+      "kind": "K-10",
+      "id": "K-10",
+      "style": "gallery",
+      "data": {
+       "shape": "categorical",
+       "points": [
+        {
+         "label": "Prospek",
+         "value": 120
+        },
+        {
+         "label": "Kualifikasi",
+         "value": 64
+        },
+        {
+         "label": "Proposal",
+         "value": 30,
+         "accent": true
+        },
+        {
+         "label": "Negosiasi",
+         "value": 14
+        },
+        {
+         "label": "Kontrak",
+         "value": 9
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-10.stageValues": true,
+       "chart.kind.K-10.conversionPercent": false
+      },
+      "dec": 0,
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Sankey",
+     "code": "K-11",
+     "spec": {
+      "kind": "K-11",
+      "id": "K-11",
+      "style": "gallery",
+      "data": {
+       "shape": "graph",
+       "nodes": [
+        {
+         "id": "rab",
+         "label": "RAB",
+         "value": 100
+        },
+        {
+         "id": "jasa",
+         "label": "Jasa",
+         "value": 16
+        },
+        {
+         "id": "sipil",
+         "label": "Sipil",
+         "value": 30
+        },
+        {
+         "id": "perangkat",
+         "label": "Perangkat",
+         "value": 50
+        }
+       ],
+       "links": [
+        {
+         "from": "rab",
+         "to": "jasa",
+         "value": 16
+        },
+        {
+         "from": "rab",
+         "to": "sipil",
+         "value": 30
+        },
+        {
+         "from": "rab",
+         "to": "perangkat",
+         "value": 50
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-11.accentLink": [
+        "rab",
+        "perangkat"
+       ]
+      },
+      "dec": 0,
+      "x": {
+       "labelNote": "RAB 100 tercetak; jumlah cabang tercetak 96 (selisih 4 apa adanya)"
+      },
+      "heightMm": 44.0
+     }
+    },
+    {
+     "name": "Marimekko",
+     "code": "K-12",
+     "spec": {
+      "kind": "K-12",
+      "id": "K-12",
+      "style": "gallery",
+      "data": {
+       "shape": "series",
+       "categories": [
+        "Barat",
+        "Tengah",
+        "Timur"
+       ],
+       "series": [
+        {
+         "name": "Segmen 1",
+         "values": [
+          60,
+          35,
+          20
+         ],
+         "accent": true
+        },
+        {
+         "name": "Segmen 2",
+         "values": [
+          25,
+          45,
+          30
+         ]
+        },
+        {
+         "name": "Segmen 3",
+         "values": [
+          15,
+          20,
+          50
+         ]
+        }
+       ]
+      },
+      "params": {
+       "chart.kind.K-12.widths": [
+        40,
+        35,
+        25
+       ]
+      },
+      "unit": "%",
+      "x": {
+       "seriesNames": "ASUMSI"
+      },
+      "heightMm": 44.0
+     }
+    }
+   ]
+  }
+ }
+}

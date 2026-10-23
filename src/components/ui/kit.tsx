@@ -141,7 +141,10 @@ export function Delta({
   );
 }
 
-/* ── Button ── */
+/* ── Button ──
+   ariaDisabled: tombol "nonaktif yang menjelaskan dirinya" (WCAG; Studio UX-01
+   P5) — tetap dapat difokus dan diklik (pemanggil menampilkan alasannya),
+   bukan atribut `disabled`. ariaDescribedBy menautkan teks alasan/bantuan. */
 export function Button({
   children,
   variant = "ghost",
@@ -150,6 +153,8 @@ export function Button({
   href,
   type = "button",
   disabled,
+  ariaDisabled,
+  ariaDescribedBy,
   className = "",
 }: {
   children: React.ReactNode;
@@ -159,15 +164,21 @@ export function Button({
   href?: string;
   type?: "button" | "submit";
   disabled?: boolean;
+  ariaDisabled?: boolean;
+  ariaDescribedBy?: string;
   className?: string;
 }) {
   const pad = size === "sm" ? "px-3 py-1.5 text-[12px]" : "px-4 py-2 text-[13px]";
   const cls = `inline-flex items-center justify-center gap-1.5 font-medium ${pad} ${
     variant === "primary" ? "btn-primary" : "btn-ghost"
-  } ${disabled ? "opacity-40 pointer-events-none" : ""} ${className}`;
-  if (href) return <a href={href} className={cls}>{children}</a>;
+  } ${disabled ? "opacity-40 pointer-events-none" : ""} ${ariaDisabled && !disabled ? "opacity-50 cursor-not-allowed" : ""} ${className}`;
+  const aria = {
+    "aria-disabled": ariaDisabled ? true : undefined,
+    "aria-describedby": ariaDescribedBy || undefined,
+  } as const;
+  if (href) return <a href={href} className={cls} {...aria}>{children}</a>;
   return (
-    <button type={type} onClick={onClick} disabled={disabled} className={cls}>
+    <button type={type} onClick={onClick} disabled={disabled} className={cls} {...aria}>
       {children}
     </button>
   );

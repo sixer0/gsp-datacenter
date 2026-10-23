@@ -1,0 +1,958 @@
+{
+ "$schema": "studio.chart/v1",
+ "kind": "composite",
+ "id": "Gambar 8.1",
+ "title": "Perbandingan: bar urut tetap default, dan threshold P-11 adalah satu-satunya bentuk yang menggambar batasnya sendiri.",
+ "source": "pustakachart.py, data ilustrasi · katalog Panduan Jenis Chart v1.1 Bab 5.",
+ "widthMm": 166,
+ "heightMm": 220.035,
+ "apparatus": "page",
+ "inDocument": true,
+ "style": "gallery",
+ "note": "Data panel ditranskripsi dari PNG media/image7.png (F-005), bukan pustakachart_data.py; asal nilai per panel di index.json transcription (label/pixel/sintetis).",
+ "composite": {
+  "columns": 3,
+  "gapMm": 4.3,
+  "panels": [
+   {
+    "name": "Bar urut",
+    "code": "P-01",
+    "spec": {
+     "kind": "P-01",
+     "id": "P-01",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "Polri",
+        "value": 42,
+        "accent": true
+       },
+       {
+        "label": "TNI AL",
+        "value": 31
+       },
+       {
+        "label": "Kemhan",
+        "value": 24
+       },
+       {
+        "label": "BNPT",
+        "value": 15
+       },
+       {
+        "label": "Kominfo",
+        "value": 11
+       },
+       {
+        "label": "BIN",
+        "value": 7
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-01.sort": "valueDesc",
+      "chart.kind.P-01.valueLabel": "barEnd"
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Column",
+    "code": "P-02",
+    "spec": {
+     "kind": "P-02",
+     "id": "P-02",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "SD",
+        "value": 4
+       },
+       {
+        "label": "SMP",
+        "value": 9
+       },
+       {
+        "label": "SMA",
+        "value": 22
+       },
+       {
+        "label": "D3",
+        "value": 14
+       },
+       {
+        "label": "S1",
+        "value": 31,
+        "accent": true
+       },
+       {
+        "label": "S2",
+        "value": 8
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-02.valueLabel": true
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Grouped column",
+    "code": "P-03",
+    "spec": {
+     "kind": "P-03",
+     "id": "P-03",
+     "style": "gallery",
+     "data": {
+      "shape": "series",
+      "categories": [
+       "K1",
+       "K2",
+       "K3",
+       "K4"
+      ],
+      "series": [
+       {
+        "name": "target",
+        "values": [
+         50,
+         70,
+         80,
+         100
+        ]
+       },
+       {
+        "name": "real",
+        "values": [
+         45,
+         75,
+         60,
+         90
+        ]
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-03.seriesLabelsInPlot": true
+     },
+     "accent": {
+      "point": "K3",
+      "series": "real"
+     },
+     "x": {
+      "scaleNote": "tanpa sumbu: skala dinormalkan K4 target = 100 (ASUMSI)"
+     },
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Lollipop",
+    "code": "P-04",
+    "spec": {
+     "kind": "P-04",
+     "id": "P-04",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "V1",
+        "value": 92,
+        "accent": true
+       },
+       {
+        "label": "V2",
+        "value": 90
+       },
+       {
+        "label": "V3",
+        "value": 88
+       },
+       {
+        "label": "V4",
+        "value": 86
+       },
+       {
+        "label": "V5",
+        "value": 82
+       },
+       {
+        "label": "V6",
+        "value": 80
+       },
+       {
+        "label": "V7",
+        "value": 78
+       },
+       {
+        "label": "V8",
+        "value": 67
+       },
+       {
+        "label": "V9",
+        "value": 64
+       },
+       {
+        "label": "V10",
+        "value": 57
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-04.sort": "valueDesc",
+      "chart.kind.P-04.axis": [
+       0,
+       100
+      ]
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Dot plot",
+    "code": "P-05",
+    "spec": {
+     "kind": "P-05",
+     "id": "P-05",
+     "style": "gallery",
+     "data": {
+      "shape": "distribution",
+      "groups": [
+       {
+        "name": "E",
+        "values": [
+         66,
+         70
+        ]
+       },
+       {
+        "name": "D",
+        "values": [
+         81,
+         84
+        ]
+       },
+       {
+        "name": "C",
+        "values": [
+         55,
+         63
+        ]
+       },
+       {
+        "name": "B",
+        "values": [
+         70,
+         74
+        ]
+       },
+       {
+        "name": "A",
+        "values": [
+         62,
+         68
+        ]
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-05.axis": [
+       50,
+       90
+      ],
+      "chart.kind.P-05.gridlines": true,
+      "chart.kind.P-05.pointRoles": [
+       "sebelum",
+       "sesudah"
+      ]
+     },
+     "x": {
+      "groupOrder": "atas ke bawah E..A"
+     },
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Dumbbell",
+    "code": "P-06",
+    "spec": {
+     "kind": "P-06",
+     "id": "P-06",
+     "style": "gallery",
+     "data": {
+      "shape": "series",
+      "categories": [
+       "Integritas",
+       "Cakupan",
+       "Ketersediaan",
+       "Akurasi",
+       "Waktu respons"
+      ],
+      "series": [
+       {
+        "name": "awal",
+        "values": [
+         70,
+         48,
+         61,
+         55,
+         42
+        ]
+       },
+       {
+        "name": "akhir",
+        "values": [
+         92,
+         64,
+         88,
+         71,
+         78
+        ],
+        "accent": true
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-06.axis": [
+       30,
+       100
+      ],
+      "chart.kind.P-06.sort": "natural"
+     },
+     "x": {
+      "seriesNames": "ASUMSI"
+     },
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Range plot",
+    "code": "P-07",
+    "spec": {
+     "kind": "P-07",
+     "id": "P-07",
+     "style": "gallery",
+     "data": {
+      "shape": "distribution",
+      "groups": [
+       {
+        "name": "Jyp",
+        "values": [
+         20.0,
+         29.4
+        ]
+       },
+       {
+        "name": "Mks",
+        "values": [
+         22.1,
+         32.5
+        ]
+       },
+       {
+        "name": "Mdn",
+        "values": [
+         19.0,
+         31.5
+        ]
+       },
+       {
+        "name": "Sby",
+        "values": [
+         23.1,
+         33.6
+        ]
+       },
+       {
+        "name": "Jkt",
+        "values": [
+         21.1,
+         34.6
+        ]
+       }
+      ]
+     },
+     "unit": "°C",
+     "dec": 1,
+     "accent": {
+      "group": "Sby"
+     },
+     "x": {
+      "groupValues": "[min, max]"
+     },
+     "heightMm": 44.01
+    },
+    "axisNote": "x °C"
+   },
+   {
+    "name": "Slope",
+    "code": "P-08",
+    "spec": {
+     "kind": "P-08",
+     "id": "P-08",
+     "style": "gallery",
+     "data": {
+      "shape": "series",
+      "categories": [
+       "2025",
+       "2026"
+      ],
+      "series": [
+       {
+        "name": "Div C",
+        "values": [
+         71,
+         66
+        ]
+       },
+       {
+        "name": "Div A",
+        "values": [
+         62,
+         76
+        ]
+       },
+       {
+        "name": "Div D",
+        "values": [
+         55,
+         69
+        ]
+       },
+       {
+        "name": "Div B",
+        "values": [
+         48,
+         44
+        ]
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-08.labelsBothSides": true,
+      "chart.kind.P-08.upColour": "verd",
+      "chart.kind.P-08.downColour": "alert"
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Bullet",
+    "code": "P-09",
+    "spec": {
+     "kind": "P-09",
+     "id": "P-09",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "Patroli",
+        "value": 88
+       },
+       {
+        "label": "Tiket",
+        "value": 61
+       },
+       {
+        "label": "Respons",
+        "value": 78
+       },
+       {
+        "label": "Uptime",
+        "value": 92
+       }
+      ]
+     },
+     "params": {
+      "targets": [
+       85,
+       80,
+       70,
+       95
+      ],
+      "chart.kind.P-09.bandLevels": [
+       60,
+       85,
+       100
+      ],
+      "max": 100,
+      "belowTargetColour": "alert"
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Waterfall",
+    "code": "P-10",
+    "spec": {
+     "kind": "P-10",
+     "id": "P-10",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "Awal",
+        "value": 50,
+        "sub": "total"
+       },
+       {
+        "label": "Masuk",
+        "value": 18,
+        "sub": "delta"
+       },
+       {
+        "label": "Gaji",
+        "value": -16,
+        "sub": "delta"
+       },
+       {
+        "label": "Vendor",
+        "value": -15,
+        "sub": "delta"
+       },
+       {
+        "label": "Pajak",
+        "value": -7,
+        "sub": "delta"
+       },
+       {
+        "label": "Akhir",
+        "value": 30,
+        "sub": "total"
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-10.endsGroundedAtZero": true,
+      "chart.kind.P-10.signedDeltaLabels": true
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Threshold (mesin DATUM)",
+    "code": "P-11",
+    "spec": {
+     "kind": "P-11",
+     "id": "P-11",
+     "style": "gallery",
+     "data": {
+      "shape": "categorical",
+      "points": [
+       {
+        "label": "Tahap 2",
+        "value": 57.5,
+        "accent": true
+       },
+       {
+        "label": "Tahap 1",
+        "value": 53.0
+       },
+       {
+        "label": "Mode 2",
+        "value": 51.5
+       },
+       {
+        "label": "Mode 1",
+        "value": 48.0
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-11.axis": [
+       40,
+       62
+      ],
+      "chart.zeroBaseline": false
+     },
+     "unit": "dB(A)",
+     "dec": 1,
+     "limit": 55.0,
+     "limitLabel": "batas 55,0 dB(A)",
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Small multiples",
+    "code": "P-12",
+    "spec": {
+     "kind": "P-12",
+     "id": "P-12",
+     "style": "gallery",
+     "data": {
+      "shape": "series",
+      "categories": [
+       "1",
+       "2",
+       "3",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9",
+       "10",
+       "11",
+       "12"
+      ],
+      "series": [
+       {
+        "name": "Polda D",
+        "values": [
+         47.6,
+         40.6,
+         35.4,
+         28.0,
+         28.0,
+         23.6,
+         26.8,
+         29.1,
+         29.5,
+         18.9,
+         18.1,
+         19.7
+        ]
+       },
+       {
+        "name": "Polda E",
+        "values": [
+         50.8,
+         46.5,
+         48.0,
+         56.3,
+         51.2,
+         56.7,
+         59.4,
+         58.7,
+         70.5,
+         75.6,
+         71.7,
+         74.0
+        ]
+       },
+       {
+        "name": "Polda F",
+        "values": [
+         49.2,
+         55.1,
+         62.6,
+         58.3,
+         55.9,
+         60.6,
+         52.8,
+         52.4,
+         54.3,
+         62.2,
+         67.3,
+         67.3
+        ]
+       },
+       {
+        "name": "Polda A",
+        "values": [
+         46.5,
+         48.4,
+         56.7,
+         56.7,
+         55.1,
+         59.1,
+         63.4,
+         65.4,
+         63.0,
+         64.6,
+         69.3,
+         65.0
+        ]
+       },
+       {
+        "name": "Polda B",
+        "values": [
+         52.4,
+         46.5,
+         45.7,
+         42.5,
+         40.2,
+         46.9,
+         44.9,
+         47.2,
+         52.8,
+         52.0,
+         53.5,
+         55.5
+        ]
+       },
+       {
+        "name": "Polda C",
+        "values": [
+         54.3,
+         55.1,
+         60.6,
+         62.2,
+         66.9,
+         76.4,
+         75.2,
+         78.0,
+         77.6,
+         79.1,
+         75.6,
+         74.4
+        ],
+        "accent": true
+       }
+      ]
+     },
+     "params": {
+      "chart.kind.P-12.sharedScale": true,
+      "grid": [
+       2,
+       3
+      ]
+     },
+     "x": {
+      "panelOrder": "baris demi baris seperti tercetak",
+      "scaleNote": "tanpa sumbu bernilai: 0-100 = dasar-puncak kotak panel (ASUMSI)"
+     },
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Quadrant",
+    "code": "P-13",
+    "spec": {
+     "kind": "P-13",
+     "id": "P-13",
+     "style": "gallery",
+     "data": {
+      "shape": "xy",
+      "points": [
+       {
+        "x": 1.3,
+        "y": 8.0
+       },
+       {
+        "x": 5.5,
+        "y": 8.7,
+        "accent": true
+       },
+       {
+        "x": 8.4,
+        "y": 7.0,
+        "accent": true
+       },
+       {
+        "x": 4.0,
+        "y": 6.3
+       },
+       {
+        "x": 2.2,
+        "y": 5.4
+       },
+       {
+        "x": 2.9,
+        "y": 5.2
+       },
+       {
+        "x": 5.5,
+        "y": 4.8
+       },
+       {
+        "x": 4.3,
+        "y": 4.4
+       },
+       {
+        "x": 2.4,
+        "y": 4.0
+       },
+       {
+        "x": 2.5,
+        "y": 3.6
+       },
+       {
+        "x": 8.0,
+        "y": 3.8
+       },
+       {
+        "x": 6.1,
+        "y": 2.0
+       },
+       {
+        "x": 5.4,
+        "y": 1.2
+       },
+       {
+        "x": 8.1,
+        "y": 1.2
+       }
+      ]
+     },
+     "params": {
+      "axis": {
+       "x": [
+        0,
+        10
+       ],
+       "y": [
+        0,
+        10
+       ]
+      },
+      "divider": {
+       "x": 5,
+       "y": 5
+      },
+      "chart.kind.P-13.quadrantNames": {
+       "kiriAtas": "rencanakan",
+       "kananAtas": "kejar",
+       "kiriBawah": "tunda",
+       "kananBawah": "cepat"
+      }
+     },
+     "x": {
+      "scaleNote": "tanpa angka sumbu: 0-10 = kotak plot (ASUMSI); dua titik aksen pada kuadran kejar"
+     },
+     "heightMm": 44.01
+    },
+    "axisNote": "y nilai · x kemudahan"
+   },
+   {
+    "name": "Arrow chart",
+    "code": "P-14",
+    "spec": {
+     "kind": "P-14",
+     "id": "P-14",
+     "style": "gallery",
+     "data": {
+      "shape": "series",
+      "categories": [
+       "Cakupan",
+       "Alarm palsu",
+       "Insiden",
+       "MTTR"
+      ],
+      "series": [
+       {
+        "name": "awal",
+        "values": [
+         71.2,
+         53.8,
+         38.9,
+         60.7
+        ]
+       },
+       {
+        "name": "akhir",
+        "values": [
+         82.3,
+         23.8,
+         33.0,
+         39.7
+        ]
+       }
+      ]
+     },
+     "params": {
+      "axis": [
+       15,
+       95
+      ],
+      "accentCategory": "MTTR"
+     },
+     "x": {
+      "seriesNames": "ASUMSI"
+     },
+     "heightMm": 44.01
+    }
+   },
+   {
+    "name": "Table chart",
+    "code": "P-15",
+    "spec": {
+     "kind": "P-15",
+     "id": "P-15",
+     "style": "gallery",
+     "data": {
+      "shape": "matrix",
+      "rows": [
+       "R1",
+       "R2",
+       "R3",
+       "R4",
+       "R5"
+      ],
+      "cols": [
+       "Q1",
+       "Q2",
+       "Q3",
+       "Q4"
+      ],
+      "values": [
+       [
+        43,
+        75,
+        56,
+        81
+       ],
+       [
+        91,
+        61,
+        94,
+        71
+       ],
+       [
+        71,
+        85,
+        87,
+        94
+       ],
+       [
+        99,
+        49,
+        64,
+        96
+       ],
+       [
+        58,
+        40,
+        74,
+        85
+       ]
+      ]
+     },
+     "params": {
+      "colourRule": [
+       {
+        "min": 90,
+        "fill": "signal"
+       },
+       {
+        "min": 70,
+        "max": 89,
+        "fill": "ink400"
+       },
+       {
+        "max": 69,
+        "fill": "paper"
+       }
+      ],
+      "chart.kind.P-15.colourRuleLegend": false
+     },
+     "dec": 0,
+     "heightMm": 44.01
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.13",
+ "title": "Denah perimeter dengan legenda rumah: kamera berkerucut pandang, PTZ, PIR, pembaca akses, palang, dan tiang.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 6.2. Kerucut pandang harus dihitung dari lensa nyata.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "71cc747dd71618a38963c915e52ce5f461d3baeff835c063fa94ef16367a6c1c",
+  "path": "benchmark/manual000/figures/assets/image27__simbol13.png",
+  "widthPx": 1121,
+  "heightPx": 710
+ },
+ "widthMm": 166.0,
+ "heightMm": 105.138,
+ "dpiMin": 150
+}

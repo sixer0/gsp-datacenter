@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeNext } from "./safe-next";
 
 /**
  * GSP Swarm HQ — unified sign-in (30-08-2026).
@@ -31,7 +32,10 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
-      router.replace("/");
+      // Honour ?next= (validated; relative internal paths only). Read at submit
+      // time so the page needs no useSearchParams/Suspense boundary.
+      const next = safeNext(new URLSearchParams(window.location.search).get("next"));
+      router.replace(next);
       router.refresh();
     } catch {
       setError("Network error — HQ unreachable.");

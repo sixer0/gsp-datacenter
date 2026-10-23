@@ -1,0 +1,30 @@
+# IP-02 coder-execution: spec figur benchmark (F-025, F-041, D-63, D-77, D-87, D-106)
+
+- Status: complete (2026-10-23). Skill: dry-run-verify-fix (1 siklus, 0 perbaikan). Area: `benchmark/manual000/figures/**`. Klaim: 6 baris IP-02 di `file_claims.md`.
+- Cara: generator diubah (`tools/diagrams.py`, `tools/gallery.py` fungsi `normalize_panel`/`build`, `tools/build_figures.py`), lalu dibangkitkan ulang dari BM.docx/BM.pdf (VENV). Generator lama terbukti deterministik (keluaran awal byte-identik dengan repo). Berubah: `index.json`, 10 spec (08, 17-21, 23, 24, 25, 38), 10 blok yang sama, `tools/validate_figures.ts`. Aset PNG tidak berubah.
+- (a) Diagram, dibandingkan dengan PNG acuan (topologi dan label); penyimpangan dicatat di `notes` spec:
+  - 08 (3.1): gerbang hexagon jadi box beraksen (DATUM-35: hexagon "ISO 5807, BPMN" = dialek kedua); legenda jadi "bingkai amber gerbang".
+  - 23 (9.1): 5 tingkat jadi 4 (= 4 pita acuan); Video wall, Jaringan instansi, Firewall satu tingkat (di acuan Firewall di bawah WAN); Firewall doubled jadi box (DATUM-35). Tinggi 242,9 mm (sebelumnya 300).
+  - 24 (9.2): 6 label aliran ASUMSI (alarm, tiket, hasil, tutup, tiba, arsip) untuk DATUM-24; teks dua baris dipecah label/sub; akhir alarm palsu dipindah ke lajur Sistem (acuan: Operator) karena lajur 166 mm memuat maks 3 simpul (4 simpul >= 202 mm, DATUM-37).
+  - 25 (9.3): blok kosong U7-U11 digambar 4U (acuan 5U) karena 24U = 247,65 mm > 247 (DATUM-33); semua penanda U tetap.
+  - 38 (10.12), opsi F-041: lebar 128 = 12 kisi bus (pada 166 rel di-snap ke 170,667, selalu DATUM-37). Baris cabang 128 mm memuat maks 3 simpul, jadi spec = Rel MDP + 3 cabang acuan (-F1 SPD, -Q2 ke UPS beraksen, -Q6 penerangan).
+  - 38, selisih vs acuan: rantai masuk PLN/G/-Q0 ATS/-Q1 menjadi tag rel; UPS -U1 dan rel hilir -Q3..-Q5 menjadi sub/tag -Q2; jalur cadangan, simbol pemutus, dan arde hilang; label aliran ASUMSI; 12 simpul jadi 4.
+- (b) 58 panel memakai kunci penuh: 66 alias jadi `chart.kind.<KODE>.<nama>` (registri INT-N). Nilai yang diterjemahkan:
+  - P-01/P-04 sort "desc" jadi valueDesc; P-01 valueLabel true jadi barEnd; K-03 meaningfulMidpoint 0 jadi true; K-04 groups [pria, wanita] jadi 2; K-07 grid [10,10] jadi "10x10".
+  - S-05 periodOrder teks jadi true; G-04 standardShapes true jadi "ISO 5807"; W-07 todayLine 9 jadi todayAt 9; milestones true jadi ["BAST"].
+  - G-02/G-03/W-07 diberi medan `accent` (permintaan S43, S40). Petunjuk aksen dan `CHART_DATA_HINT_KEYS` tetap di params. Kunci non-registri dipindah ke index.json `transcription` + `panelParamsMoved`; permintaan di `file_requests.md`.
+- (c) P-06 `chart.kind.P-06.sort: "natural"`; P-11 `chart.zeroBaseline: false` (sumbu 40..60).
+- (d) `validate_figures.ts` kini juga menegakkan 0 PARAM_ALIAS/IGNORED per panel (`resolveChartParams`) dan build engine tanpa FAIL (`--no-build` untuk melewati).
+  - Hasil: spec 20/20, blok 52/52, params penuh 58/58, build 11/11, sha256 52/52 (aset = indeks = media docx = doc.json), LOLOS exit 0.
+  - Uji negatif: spec lama 17 + 38 dipasang sementara lalu dipulihkan: params 43/58, build 10/11, GAGAL 23, exit 1.
+- (d) Asap per figur (engine saat ini, INT-N sudah mendarat), semua LULUS: diagram release 06, 08, 23, 24, 25, 38; komposit 17-21 (0 FAIL); 58 panel tunggal 0 FAIL, 0 ALIAS, 0 IGNORED.
+  - Garis dasar sebelum perubahan: diagram 08/23/24/25/38 GAGAL (DATUM-35, 35, 24, 33, 24); panel 33 ALIAS, 58 IGNORED.
+  - SVG panel sebelum vs sesudah: 53/58 byte-identik; 5 yang berbeda hanya perubahan disengaja (P-06, P-11, W-07, G-02, G-03), dicek visual. Komposit 18/19 identik. Tidak ada kegagalan dari engine.
+- (e) Benchmark DOCX tidak terdampak:
+  - `doc.json` hanya memakai blok `image`/`device` (24 + 17) ke aset raster indeks S94; tidak ada blok chart/diagram/spec inline.
+  - `render_cli --asset-index`/`loadAssetIndex` memilih sumber berdasarkan sha256; `path` spec (JSON) tidak pernah cocok sha PNG.
+  - `asset`/`sha256`/`media`/`path` index tidak berubah 52/52, PNG tidak disentuh; raster benchmark tidak diregenerasi.
+  - Catatan S98: blok bm-fig-38 `widthMm` 166 (penempatan docx) vs spec `width_mm` 128; relevan hanya bila figur dirender dari spec.
+- Penjaga: tsc grep `benchmark/manual000/figures` kosong (repo 0 galat TS); `npx eslint benchmark/manual000/figures` exit 0; py_compile 4 berkas ok; `build_figures.py --help` exit 0. DB, HKCU, port 9011 tidak disentuh; skill DATUM dan BM hanya dibaca.
+- Permintaan (file_requests, tidak memblokir): (1) INT-N: ParamDef/petunjuk `axis` dan petunjuk tergambar lain di `panelParamsMoved`; (2) S03: medan metadata panel tak-tergambar.
+- Temuan: sld Garis A menaruh semua simpul non-rel dalam satu baris di bawah rel (maks 3 pada 128 mm), jadi SLD berantai acuan butuh multiBus kontrak (INT-J) atau rantai di atas rel. Rak 24U tidak muat pada 1U = 2 baseline. Keduanya warisan Python.

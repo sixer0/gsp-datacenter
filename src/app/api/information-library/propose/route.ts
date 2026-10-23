@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   const revisiNote = (b.revisiNote || "").toString().trim() || undefined;
   const feedback = (b.feedback || "").toString().trim() || undefined;
 
-  const attachments = Array.isArray(b.attachments)
+  const attachments: { name: string; kind: string; value: string }[] = Array.isArray(b.attachments)
     ? b.attachments
         .filter((a: unknown) => a && typeof a === "object")
         .map((a: unknown) => ({

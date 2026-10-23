@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.8",
+ "title": "Elemen inti BPMN: peristiwa, tugas, gerbang, aliran, objek data, pool, dan lajur.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.8.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "86de00e9483a041e7955b773dd47e0ed2c311dbf6cd488b7279e6e939658e583",
+  "path": "benchmark/manual000/figures/assets/image22__simbol8.png",
+  "widthPx": 1148,
+  "heightPx": 408
+ },
+ "widthMm": 166.0,
+ "heightMm": 58.997,
+ "dpiMin": 150
+}

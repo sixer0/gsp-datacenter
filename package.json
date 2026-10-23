@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:push": "prisma db push",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "npx tsx prisma/seed.ts",
     "test": "vitest run",
@@ -19,6 +19,8 @@
     "@auth/prisma-adapter": "^1.6.0",
     "@prisma/client": "^6.19.2",
     "@types/formidable": "^3.4.6",
+    "ajv": "8.20.0",
+    "fflate": "0.8.3",
     "formidable": "^3.5.4",
     "googleapis": "^171.4.0",
     "grammy": "^1.44.0",
@@ -27,6 +29,7 @@
     "next": "16.1.6",
     "next-auth": "^4.24.13",
     "pg": "^8.19.0",
+    "playwright-core": "1.62.1",
     "prisma": "^6.19.2",
     "react": "19.2.3",
     "react-dnd": "^16.0.1",
@@ -47,5 +50,8 @@
     "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "fast-uri": "3.1.8"
   }
 }

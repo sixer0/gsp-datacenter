@@ -1,0 +1,34 @@
+{
+ "type": "image",
+ "asset": "bm-fig-28",
+ "caption": {
+  "label": "Gambar 10.2",
+  "separator": "   ",
+  "inline": {
+   "text": "Bentuk konvensional tambahan untuk proyek komunikasi, belum ada di DATUM."
+  }
+ },
+ "source": {
+  "inline": {
+   "runs": [
+    {
+     "t": "SUMBER  "
+    },
+    {
+     "t": "Panduan Simbol Engineering GSP v1.0 Gambar 5.2."
+    },
+    {
+     "t": "   PROVENANS "
+    },
+    {
+     "t": "bentuk konvensional [ASUMSI, cocokkan ke IEC 60617]"
+    }
+   ]
+  },
+  "provenance": [
+   "ASUMSI"
+  ]
+ },
+ "widthMm": 166.0,
+ "heightMm": 38.125
+}

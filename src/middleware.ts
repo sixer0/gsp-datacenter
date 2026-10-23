@@ -32,6 +32,41 @@ function bytesToB64url(bytes: Uint8Array): string {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+// FIX-SEC N-08 (SR-57, D-247): perbandingan rahasia waktu-konstan yang aman
+// untuk runtime edge (Web Crypto, tanpa node:crypto). Kedua nilai di-HMAC-SHA256
+// dengan kunci acak per isolat sehingga yang dibandingkan selalu 32 byte; XOR
+// diakumulasi atas seluruh byte tanpa kembali-awal (panjang dan isi rahasia
+// tidak bocor lewat waktu).
+let compareKey: Promise<CryptoKey> | null = null;
+function secretCompareKey(): Promise<CryptoKey> {
+  if (!compareKey) {
+    compareKey = crypto.subtle.importKey(
+      'raw',
+      crypto.getRandomValues(new Uint8Array(32)),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    compareKey.catch(() => {
+      compareKey = null;
+    });
+  }
+  return compareKey;
+}
+async function secretEqualsEdge(provided: string, expected: string): Promise<boolean> {
+  const key = await secretCompareKey();
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, enc.encode(provided)),
+    crypto.subtle.sign('HMAC', key, enc.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
 async function verifyHqSession(raw: string | undefined): Promise<boolean> {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret || !raw) return false;
@@ -49,10 +84,7 @@ async function verifyHqSession(raw: string | undefined): Promise<boolean> {
     );
     const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
     const expected = bytesToB64url(new Uint8Array(mac));
-    if (sig.length !== expected.length) return false;
-    let diff = 0;
-    for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
-    if (diff !== 0) return false;
+    if (!(await secretEqualsEdge(sig, expected))) return false;
     const data = JSON.parse(atob(b64urlToB64(payload))) as { exp?: number };
     return typeof data.exp === 'number' && data.exp * 1000 >= Date.now();
   } catch {
@@ -90,17 +122,11 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow internal agent calls with shared secret
-  // SEC-006 fix (30-08): perbandingan constant-time (konsisten webui-rbac).
+  // SEC-006 fix (30-08) + FIX-SEC N-08: constant-time terhadap isi dan panjang.
   const internalSecret = request.headers.get('x-internal-secret');
   const expectedSecret = process.env.INTERNAL_API_SECRET;
-  if (internalSecret && expectedSecret) {
-    const enc = new TextEncoder();
-    const a = enc.encode(internalSecret); const b = enc.encode(expectedSecret);
-    if (a.length === b.length) {
-      let diff = 0;
-      for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-      if (diff === 0) return NextResponse.next();
-    }
+  if (internalSecret && expectedSecret && (await secretEqualsEdge(internalSecret, expectedSecret))) {
+    return NextResponse.next();
   }
 
   // Unified HQ session cookie (Swarm/Brahma accounts)
@@ -115,7 +141,14 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith('/api/')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return NextResponse.redirect(new URL('/login', request.url));
+  // IP-49 (D-192): bawa jalur asal sebagai ?next= (relatif saja, tanpa host) agar
+  // halaman login bisa kembali ke sana. Login memvalidasi ulang via safeNext().
+  const loginUrl = new URL('/login', request.url);
+  const next = pathname + request.nextUrl.search;
+  if (pathname !== '/' && !pathname.startsWith('//') && next.length <= 2048) {
+    loginUrl.searchParams.set('next', next);
+  }
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {

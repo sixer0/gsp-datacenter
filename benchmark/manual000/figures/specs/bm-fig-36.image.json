@@ -1,0 +1,17 @@
+{
+ "$schema": "studio.image/v1",
+ "id": "Gambar 10.10",
+ "title": "Usulan legenda rumah GSP untuk topologi jaringan, bukan standar dan wajib dicantumkan legendanya.",
+ "source": "Panduan Simbol Engineering GSP v1.0 Gambar 5.10.",
+ "asset": {
+  "kind": "raster",
+  "mime": "image/png",
+  "sha256": "a71c2a15e72b65e92ae51658379987146424d04162e304a6f89b1babe3a5611c",
+  "path": "benchmark/manual000/figures/assets/image24__simbol10.png",
+  "widthPx": 1148,
+  "heightPx": 367
+ },
+ "widthMm": 166.0,
+ "heightMm": 53.068,
+ "dpiMin": 150
+}

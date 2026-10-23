@@ -1,0 +1,506 @@
+/**
+ * Kepala dan kaki halaman per seksi (S14): mode `empty`, `runningHead`
+ * (BM header5.xml), `registerBlock` (BM footer5.xml, field PAGE/NUMPAGES),
+ * `custom`. Satu pasang bagian header/footer per unit (BM: 29 + 29 bagian,
+ * semua referensi `default`, research/07 §6.2).
+ *
+ * Format langsung per paragraf/run (bukan gaya bernama selain pStyle
+ * Header/Footer yang dirujuk BM). Nilai bawaan = ukuran BM; teks bawaan =
+ * P4A-01 (runningHead.fields) dan P4S-11 (device.registerBlock.cells).
+ */
+import type {
+  Borders,
+  Cell,
+  HeaderFooterSpec,
+  Inline,
+  NormUnit,
+  ParaFormat,
+  RenderContext,
+  Run,
+  RunProps,
+  TableBlock,
+} from "../../../contract";
+import { StudioEngineError } from "../../../contract/errors";
+import { REL, type Relationship } from "./parts";
+import { mmToTw, resolveUnitSetup, sectPrXml, textWidthTw, type ResolvedSectionSetup } from "./section";
+import {
+  escapeXml,
+  facesInXml,
+  HDR_FTR_NS,
+  hfRunsXml,
+  inlinePlain,
+  inlineRuns,
+  paramString,
+  pPrXml,
+  rPrXml,
+  simpleTableXml,
+  type SimpleCell,
+  XML_DECL,
+} from "./xml";
+
+// ── Nilai bawaan terukur BM (research/07 §6.2) ──────────────────────────
+
+const INK900 = "101418";
+const INK400 = "6B7783";
+const INK200 = "C3CBD1";
+
+/** header1.xml/footer1.xml: satu paragraf kosong line 40 exact. */
+export const EMPTY_HF_FORMAT: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, lineTw: 40, lineRule: "exact" };
+
+/** header5.xml: run kiri (abu, tidak tebal) dan kanan (tinta, tebal), Cond 6,5 pt kapital renggang 0,6 pt. */
+export const RUNNING_HEAD_LEFT_RUN: RunProps = { faceRole: "condensed", b: false, i: false, caps: true, color: INK400, szHalfPt: 13, spacingTw: 12 };
+export const RUNNING_HEAD_RIGHT_RUN: RunProps = { ...RUNNING_HEAD_LEFT_RUN, b: true, color: INK900 };
+
+/** footer5.xml: label abu Mono 6 pt, nilai tebal tinta. */
+export const REGISTER_LABEL_RUN: RunProps = { faceRole: "mono", b: false, i: false, color: INK400, szHalfPt: 12 };
+export const REGISTER_VALUE_RUN: RunProps = { ...REGISTER_LABEL_RUN, b: true, color: INK900 };
+/** Lebar sel blok register pada blok teks 9411 tw (166 mm). */
+export const REGISTER_COLS_TW = [2948, 2381, 2381, 1701] as const;
+const REGISTER_PARA: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, lineTw: 168, lineRule: "exact" };
+/** Paragraf penutup footer setelah tabel register (line 20 exact). */
+const FOOTER_TAIL_FORMAT: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, lineTw: 20, lineRule: "exact" };
+
+function runningHeadFormat(textW: number): ParaFormat {
+  return {
+    spacingBeforeTw: 0,
+    spacingAfterTw: 0,
+    lineTw: 180,
+    lineRule: "exact",
+    tabs: [{ posTw: textW, val: "right" }],
+    borders: { bottom: { val: "single", sz: 5, space: 1, color: INK200 } },
+  };
+}
+
+// ── Utilitas teks ───────────────────────────────────────────────────────
+
+const ROMAN_MONTHS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+
+/** Tanggal DATUM `DD-<bulan Romawi>-YYYY` (BM: 2026-10-08 -> "08-X-2026"). */
+export function datumDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const mo = Number(m[2]);
+  return mo >= 1 && mo <= 12 ? `${m[3]}-${ROMAN_MONTHS[mo - 1]}-${m[1]}` : iso;
+}
+
+function chapterTitleFor(ctx: RenderContext, unit: NormUnit): { label: string; title: string } | undefined {
+  const doc = ctx.snapshot.doc;
+  const en = doc.meta.language === "EN";
+  if (unit.kind === "chapter" || unit.kind === "appendix") {
+    const list = unit.kind === "chapter" ? doc.chapters : (doc.appendices ?? []);
+    const idx = list.findIndex((c, i) => (c.key ?? (unit.kind === "chapter" ? String(i + 1) : String.fromCharCode(65 + i))) === unit.key);
+    const ch = idx >= 0 ? list[idx] : undefined;
+    const word = unit.kind === "chapter" ? (en ? "Chapter" : "Bab") : en ? "Appendix" : "Lampiran";
+    return { label: `${word} ${unit.key}`, title: ch ? (ch.runningHeadTitle ?? inlinePlain(ch.title)) : "" };
+  }
+  if (unit.kind === "part") {
+    const part = (doc.parts ?? []).find((p) => p.id === unit.key);
+    return part ? { label: inlinePlain(part.label), title: inlinePlain(part.title) } : undefined;
+  }
+  return undefined;
+}
+
+/** Teks kiri bawaan P4A-01: [entitas, jenis dokumen, BAB n, judul bab] dipisah " · ". */
+export function defaultRunningHeadLeft(ctx: RenderContext, unit: NormUnit): string {
+  const p = ctx.tpl.params;
+  const meta = ctx.snapshot.doc.meta;
+  const entity = paramString(p, "org.entityName") ?? "PT Gemilang Satria Perkasa";
+  const docLabel = paramString(p, "runningHead.docLabel") ?? meta.subject ?? meta.title;
+  const ch = chapterTitleFor(ctx, unit);
+  return [entity, docLabel, ch?.label, ch?.title].filter((s): s is string => !!s && s.length > 0).join(" · ");
+}
+
+// ── Mode ────────────────────────────────────────────────────────────────
+
+function emptyBody(spec: { format?: ParaFormat }, pStyle: string): string {
+  return `<w:p>${pPrXml({ ...EMPTY_HF_FORMAT, ...(spec.format ?? {}) }, pStyle)}</w:p>`;
+}
+
+function runningHeadBody(
+  spec: { left?: Inline; right?: Inline; format?: ParaFormat },
+  ctx: RenderContext,
+  unit: NormUnit,
+  setup: ResolvedSectionSetup,
+  pStyle: string,
+): string {
+  const p = ctx.tpl.params;
+  const fmt = { ...runningHeadFormat(textWidthTw(setup)), ...(spec.format ?? {}) };
+  const leftRuns: Run[] = spec.left ? inlineRuns(spec.left) : [{ t: defaultRunningHeadLeft(ctx, unit) }];
+  const right: Inline = spec.right ?? { text: ctx.snapshot.doc.meta.classification };
+  let rightXml: string;
+  if ("text" in right) {
+    // Pola BM: tab dan teks kanan dalam satu run.
+    const t = inlinePlain(right);
+    rightXml = `<w:r>${rPrXml(RUNNING_HEAD_RIGHT_RUN, p)}<w:tab/><w:t>${escapeXml(t)}</w:t></w:r>`;
+  } else {
+    rightXml = hfRunsXml([{ tab: true }, ...right.runs], RUNNING_HEAD_RIGHT_RUN, p);
+  }
+  return `<w:p>${pPrXml(fmt, pStyle)}${hfRunsXml(leftRuns, RUNNING_HEAD_LEFT_RUN, p)}${rightXml}</w:p>`;
+}
+
+/** Bagi lebar total proporsional terhadap pola BM; sisa pembulatan ke kolom pertama. */
+export function scaleCols(pattern: readonly number[], total: number): number[] {
+  const sum = pattern.reduce((a, b) => a + b, 0);
+  const out = pattern.map((w) => Math.floor((w * total) / sum));
+  out[0] += total - out.reduce((a, b) => a + b, 0);
+  return out;
+}
+
+/** Cadangan P4S-11 bila param `device.registerBlock.cells` kosong/tidak sah (sama dengan registri dan engine/html). */
+export const REGISTER_CELLS_FALLBACK: readonly string[] = ["GSP · {nomor}", "REV · {tanggal}", "LEMBAR {n} DARI {N}", "{kelas}"];
+/**
+ * Sel pertama bawaan registri P4S-11 memuat literal "GSP"; selama registri
+ * belum memakai `{org}`, pola persis ini dibaca sebagai "{org} · {nomor}" agar
+ * `org.shortName` (render.ts r27) tetap berlaku.
+ */
+const REGISTER_ORG_CELL_LEGACY = "GSP · {nomor}";
+/** Cadangan P4S-12: spasi tak-putus U+00A0 (BM footer5.xml). */
+const REGISTER_SEPARATOR_FALLBACK = "\u00A0";
+/** Kata label Indonesia pada pola sel yang dilokalkan untuk dokumen EN (perilaku lama "SHEET n OF N"). */
+const REGISTER_WORDS_EN: Readonly<Record<string, string>> = { LEMBAR: "SHEET", DARI: "OF" };
+
+type RegisterField = "org" | "nomor" | "rev" | "tanggal" | "n" | "N" | "kelas";
+type RegisterSegment = { text: string; bold: boolean } | { field: "PAGE" | "NUMPAGES"; bold: boolean };
+
+const REGISTER_PLACEHOLDER = /\{(org|nomor|rev|tanggal|n|N|kelas)\}/g;
+
+/**
+ * Nama medan P4S-13 (`device.registerBlock.boldFields`, enum SR-05 KT-6) dan
+ * alias pendek (paritas engine/html `FIELD_ALIASES`) -> medan pola register.
+ */
+const REGISTER_BOLD_ALIASES: Readonly<Record<string, RegisterField>> = {
+  "nomor dokumen": "nomor",
+  nomor: "nomor",
+  revisi: "rev",
+  rev: "rev",
+  tanggal: "tanggal",
+  "nomor lembar": "n",
+  lembar: "n",
+  "jumlah lembar": "N",
+  klasifikasi: "kelas",
+  kelas: "kelas",
+  organisasi: "org",
+  org: "org",
+};
+
+/**
+ * Medan bertinta tebal blok register dari P4S-13 (IP-44, D-151): nilai BM
+ * (nomor dokumen, revisi, nomor lembar, jumlah lembar, klasifikasi) disematkan
+ * preset, bukan di mesin. Entri tak dikenal diabaikan; param absen/tidak sah =
+ * tanpa medan tebal (registri selalu mengisi bawaan).
+ */
+export function registerBoldFields(p: RenderContext["tpl"]["params"]): ReadonlySet<RegisterField> {
+  const raw = p["device.registerBlock.boldFields"];
+  const out = new Set<RegisterField>();
+  if (!Array.isArray(raw)) return out;
+  for (const v of raw) {
+    if (typeof v !== "string") continue;
+    const f = REGISTER_BOLD_ALIASES[v.trim().toLowerCase()];
+    if (f) out.add(f);
+  }
+  return out;
+}
+
+/** Pola sel dari `device.registerBlock.cells` (P4S-11); entri non-string/kosong diabaikan. */
+export function registerCellPatterns(p: RenderContext["tpl"]["params"]): string[] {
+  const raw = p["device.registerBlock.cells"];
+  const cells = Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string" && c.length > 0) : [];
+  return (cells.length > 0 ? cells : [...REGISTER_CELLS_FALLBACK]).map((c) =>
+    c === REGISTER_ORG_CELL_LEGACY ? "{org} · {nomor}" : c,
+  );
+}
+
+/**
+ * Sel blok register bawaan dari pola templat (RQ-6, permintaan RT-01):
+ * - pola `device.registerBlock.cells` (P4S-11) dengan medan `{org}` (org.shortName),
+ *   `{nomor}`, `{rev}`, `{tanggal}`, `{n}` (PAGE), `{N}` (NUMPAGES), `{kelas}`;
+ * - setiap spasi ASCII pada teks literal diganti `device.registerBlock.separator`
+ *   (P4S-12, bawaan NBSP) sehingga "GSP · ", "REV ", "LEMBAR ", " DARI " = BM;
+ * - sel berawalan "REV" tanpa `{rev}` mendapat huruf revisi setelah "REV"
+ *   (aturan sama dengan engine/html registerCellParts; BM "REV A · 08-X-2026");
+ * - medan yang tercantum di `device.registerBlock.boldFields` (P4S-13, IP-44)
+ *   bertinta tebal (REGISTER_VALUE_RUN, termasuk medan PAGE `{n}` / NUMPAGES
+ *   `{N}`), medan lain ikut run label abu; dengan nilai BM tersemat preset
+ *   hasilnya = BM footer5.xml. Teks bersebelahan dengan format sama digabung
+ *   menjadi satu run, sehingga struktur run identik BM.
+ * Nilai medan tidak diubah (spasi di nomor dokumen/klasifikasi tetap).
+ */
+function registerDefaultCells(ctx: RenderContext): Run[][] {
+  const p = ctx.tpl.params;
+  const meta = ctx.snapshot.doc.meta;
+  const en = meta.language === "EN";
+  const sep = paramString(p, "device.registerBlock.separator") ?? REGISTER_SEPARATOR_FALLBACK;
+  const org = paramString(p, "org.shortName") ?? "GSP";
+  const bold = registerBoldFields(p);
+  const literal = (s: string): string =>
+    (en ? s.replace(/\b[A-Z]+\b/g, (w) => REGISTER_WORDS_EN[w] ?? w) : s).replace(/ /g, sep);
+  const value = (f: Exclude<RegisterField, "n" | "N">): string => {
+    switch (f) {
+      case "org":
+        return org;
+      case "nomor":
+        return meta.docNumber ?? "";
+      case "rev":
+        return meta.rev;
+      case "tanggal":
+        return datumDate(meta.issueDate);
+      case "kelas":
+        return meta.classification;
+    }
+  };
+  return registerCellPatterns(p).map((c0) => {
+    const c = /^REV\b/.test(c0) && !c0.includes("{rev}") ? c0.replace(/^REV\b/, "REV {rev}") : c0;
+    const segs: RegisterSegment[] = [];
+    const pushText = (text: string, bold: boolean): void => {
+      if (text.length === 0) return;
+      const prev = segs[segs.length - 1];
+      if (prev && "text" in prev && prev.bold === bold) prev.text += text;
+      else segs.push({ text, bold });
+    };
+    let last = 0;
+    for (const m of c.matchAll(REGISTER_PLACEHOLDER)) {
+      pushText(literal(c.slice(last, m.index)), false);
+      const f = m[1] as RegisterField;
+      if (f === "n") segs.push({ field: "PAGE", bold: bold.has("n") });
+      else if (f === "N") segs.push({ field: "NUMPAGES", bold: bold.has("N") });
+      else pushText(value(f), bold.has(f));
+      last = m.index + m[0].length;
+    }
+    pushText(literal(c.slice(last)), false);
+    return segs.map((s): Run =>
+      "field" in s
+        ? { field: s.field, ...(s.bold ? REGISTER_VALUE_RUN : REGISTER_LABEL_RUN) }
+        : { t: s.text, ...(s.bold ? REGISTER_VALUE_RUN : REGISTER_LABEL_RUN) },
+    );
+  });
+}
+
+function registerBody(spec: { cells?: Inline[] }, ctx: RenderContext, setup: ResolvedSectionSetup, pStyle: string): string {
+  const p = ctx.tpl.params;
+  const cellRuns: Run[][] =
+    spec.cells && spec.cells.length > 0 ? spec.cells.map((c) => inlineRuns(c)) : registerDefaultCells(ctx);
+  const n = cellRuns.length;
+  const textW = textWidthTw(setup);
+  const grid = n === REGISTER_COLS_TW.length ? scaleCols(REGISTER_COLS_TW, textW) : scaleCols(new Array<number>(n).fill(1), textW);
+  const cells: SimpleCell[] = cellRuns.map((runs, i) => {
+    const last = i === n - 1;
+    const borders: Omit<Borders, "insideH" | "insideV"> = {
+      top: { val: "single", sz: 8, space: 0, color: INK900 },
+      bottom: { val: "single", sz: 5, space: 0, color: INK200 },
+      ...(last ? {} : { right: { val: "single", sz: 5, space: 0, color: INK200 } }),
+    };
+    const para = `<w:p>${pPrXml({ ...REGISTER_PARA, jc: last ? "right" : "left" })}${hfRunsXml(runs, REGISTER_LABEL_RUN, p)}</w:p>`;
+    return { widthTw: grid[i], paragraphsXml: para, borders, marginsTw: { top: 90, left: i === 0 ? 0 : 141, bottom: 79, right: 141 } };
+  });
+  return simpleTableXml(grid, [cells]) + `<w:p>${pPrXml(FOOTER_TAIL_FORMAT, pStyle)}</w:p>`;
+}
+
+function cellParagraphs(c: Cell, ctx: RenderContext): string {
+  const p = ctx.tpl.params;
+  if (c.paragraphs) {
+    return c.paragraphs
+      .map((cp) => `<w:p>${pPrXml(cp.format)}${hfRunsXml(inlineRuns(cp), {}, p)}</w:p>`)
+      .join("");
+  }
+  const runs: Run[] = c.runs ?? (c.text !== undefined ? [{ t: c.text }] : []);
+  return `<w:p>${hfRunsXml(runs, {}, p)}</w:p>`;
+}
+
+/**
+ * Tabel header/footer kustom: satu tingkat, lebar kolom `widthTw`/`widthMm`
+ * atau bagi rata blok teks. Tabel bersarang dan caption/source tidak
+ * didukung di kepala/kaki halaman (dicatat ke log, diabaikan).
+ */
+function customTableXml(t: TableBlock, ctx: RenderContext, unit: NormUnit, setup: ResolvedSectionSetup): string {
+  const textW = t.layout?.widthTw ?? textWidthTw(setup);
+  const known = t.columns.map((c) => c.widthTw ?? (c.widthMm !== undefined ? mmToTw(c.widthMm) : undefined));
+  const fixed = known.reduce<number>((a, w) => a + (w ?? 0), 0);
+  const nUnknown = known.filter((w) => w === undefined).length;
+  const share = nUnknown > 0 ? Math.max(0, Math.floor((textW - fixed) / nUnknown)) : 0;
+  const grid = known.map((w) => w ?? share);
+  if (t.caption || t.source) {
+    ctx.log({ level: "warn", message: "caption/source tabel kepala/kaki halaman diabaikan", address: unit.key });
+  }
+  const rows = t.rows.map((r) => {
+    let col = 0;
+    return r.cells.map((c) => {
+      const span = c.gridSpan ?? 1;
+      const width = c.widthTw ?? grid.slice(col, col + span).reduce((a, b) => a + b, 0);
+      col += span;
+      if (c.nested) ctx.log({ level: "warn", message: "tabel bersarang di kepala/kaki halaman diabaikan", address: unit.key });
+      return {
+        widthTw: width,
+        paragraphsXml: cellParagraphs(c, ctx),
+        borders: c.borders,
+        marginsTw: c.marginsTw,
+        shading: c.shading,
+        gridSpan: span,
+        vAlign: c.vAlign,
+      } satisfies SimpleCell;
+    });
+  });
+  return simpleTableXml(grid, rows, t.layout?.indentTw ?? 0);
+}
+
+function customBody(
+  spec: Extract<HeaderFooterSpec, { mode: "custom" }>,
+  ctx: RenderContext,
+  unit: NormUnit,
+  setup: ResolvedSectionSetup,
+  pStyle: string,
+): string {
+  const p = ctx.tpl.params;
+  let xml = (spec.paragraphs ?? []).map((para) => `<w:p>${pPrXml(para.format, pStyle)}${hfRunsXml(para.runs, {}, p)}</w:p>`).join("");
+  if (spec.table) {
+    xml += customTableXml(spec.table, ctx, unit, setup) + `<w:p>${pPrXml(FOOTER_TAIL_FORMAT, pStyle)}</w:p>`;
+  }
+  return xml || emptyBody({}, pStyle);
+}
+
+/**
+ * Bagian `word/headerN.xml` / `word/footerN.xml` lengkap (deklarasi XML +
+ * akar `w:hdr`/`w:ftr`). `inherit` diselesaikan dari param templat
+ * `render.section.wrapper|interior` sesuai jenis unit.
+ */
+export function headerFooterXml(
+  spec: HeaderFooterSpec,
+  ctx: RenderContext,
+  unit: NormUnit,
+  kind: "hdr" | "ftr",
+  trailingXml = "",
+): string {
+  const setup = resolveUnitSetup(unit, ctx.tpl);
+  const eff = spec.mode === "inherit" ? (kind === "hdr" ? setup.header : setup.footer) : spec;
+  const pStyle = kind === "hdr" ? "Header" : "Footer";
+  let body: string;
+  switch (eff.mode) {
+    case "empty":
+      body = emptyBody(eff, pStyle);
+      break;
+    case "runningHead":
+      body = runningHeadBody(eff, ctx, unit, setup, pStyle);
+      break;
+    case "registerBlock":
+      body = registerBody(eff, ctx, setup, pStyle);
+      break;
+    case "custom":
+      body = customBody(eff, ctx, unit, setup, pStyle);
+      break;
+    default: {
+      const never: never = eff;
+      throw new StudioEngineError("BY_CONSTRUCTION_FAILED", `mode header/footer tidak dikenal: ${JSON.stringify(never)}`);
+    }
+  }
+  const root = kind === "hdr" ? "w:hdr" : "w:ftr";
+  return `${XML_DECL}<${root} ${HDR_FTR_NS}>${body}${trailingXml}</${root}>`;
+}
+
+// ── Penanda draf (SR-16, R-39 `render.draft.marker`) ────────────────────
+
+/** Penanda draf efektif: `{text, placement}` dari R-39; `undefined` bila param tidak sah/teks kosong. */
+export function draftMarkerOf(p: RenderContext["tpl"]["params"]): { text: string; placement: "header" | "footer" } | undefined {
+  const v = p["render.draft.marker"];
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const text = typeof o.text === "string" ? o.text.trim() : "";
+  if (text.length === 0) return undefined;
+  return { text, placement: o.placement === "footer" ? "footer" : "header" };
+}
+
+/**
+ * Paragraf penanda draf di kepala/kaki halaman: rata kanan, tebal, kapital,
+ * tinta peran kepala berjalan kanan (tanpa spasi sebelum/sesudah).
+ */
+export function draftMarkerParagraphXml(text: string, ctx: RenderContext, kind: "hdr" | "ftr"): string {
+  const fmt: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, jc: "right" };
+  const run: RunProps = { ...RUNNING_HEAD_RIGHT_RUN };
+  return `<w:p>${pPrXml(fmt, kind === "hdr" ? "Header" : "Footer")}<w:r>${rPrXml(run, ctx.tpl.params)}<w:t>${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+
+// ── Rakitan seksi (antarmuka untuk S20) ─────────────────────────────────
+
+export interface SectionPackagePart {
+  unitKey: string;
+  unitKind: NormUnit["kind"];
+  setup: ResolvedSectionSetup;
+  headerRId: string;
+  footerRId: string;
+  headerPath: string;
+  footerPath: string;
+  /** `w:sectPr` unit ini; S20 menaruhnya di paragraf pemegang (K-12) atau akhir body. */
+  sectPr: string;
+}
+
+export interface SectionPackage {
+  sections: SectionPackagePart[];
+  /** Bagian header/footer untuk `DocxPackageInput.parts`. */
+  parts: Array<{ path: string; data: string; contentType: string }>;
+  /** Relasi untuk `DocxPackageInput.relationships`. */
+  relationships: Relationship[];
+  /** Wajah fon yang dipakai header/footer (masukan planEmbeddedFonts S15). */
+  facesUsed: string[];
+}
+
+/**
+ * Satu seksi per unit ternormalisasi (KS-06, R-11): pasangan header/footer
+ * `word/header{n}.xml`/`word/footer{n}.xml` (n = 1..jumlah unit), relasi
+ * `rId{first+2(n-1)}` dan `rId{first+2(n-1)+1}`, plus sectPr. BM = 29 unit.
+ */
+export interface BuildSectionPackageOptions {
+  firstRelId?: number;
+  /** Unit terencana (perakit sadar slot SR-16); bawaan `ctx.snapshot.units` (jalur v1). */
+  units?: readonly NormUnit[];
+  /** RenderContext per unit (nilai efektif slot); bawaan `ctx` untuk semua unit. */
+  contextFor?: (unit: NormUnit, index: number) => RenderContext;
+  /** Penanda draf (R-39) yang ditambahkan ke kepala atau kaki setiap seksi. */
+  draftMarker?: { text: string; placement: "header" | "footer" };
+}
+
+export function buildSectionPackage(ctx: RenderContext, opts: BuildSectionPackageOptions = {}): SectionPackage {
+  const first = opts.firstRelId ?? 9;
+  if (!Number.isInteger(first) || first < 1) {
+    throw new StudioEngineError("BY_CONSTRUCTION_FAILED", `firstRelId tidak sah: ${first}`);
+  }
+  const units = opts.units ?? ctx.snapshot.units;
+  if (units.length === 0) {
+    throw new StudioEngineError("BY_CONSTRUCTION_FAILED", "snapshot tanpa unit: minimal satu seksi");
+  }
+  const sections: SectionPackagePart[] = [];
+  const parts: SectionPackage["parts"] = [];
+  const relationships: Relationship[] = [];
+  const faces = new Set<string>();
+  const marker = opts.draftMarker;
+  units.forEach((unit, i) => {
+    const n = i + 1;
+    const uctx = opts.contextFor ? opts.contextFor(unit, i) : ctx;
+    const setup = resolveUnitSetup(unit, uctx.tpl);
+    const headerRId = `rId${first + 2 * i}`;
+    const footerRId = `rId${first + 2 * i + 1}`;
+    const headerPath = `word/header${n}.xml`;
+    const footerPath = `word/footer${n}.xml`;
+    const hdrTail = marker?.placement === "header" ? draftMarkerParagraphXml(marker.text, uctx, "hdr") : "";
+    const ftrTail = marker?.placement === "footer" ? draftMarkerParagraphXml(marker.text, uctx, "ftr") : "";
+    const hdr = headerFooterXml(setup.header, uctx, unit, "hdr", hdrTail);
+    const ftr = headerFooterXml(setup.footer, uctx, unit, "ftr", ftrTail);
+    for (const f of [...facesInXml(hdr), ...facesInXml(ftr)]) faces.add(f);
+    parts.push(
+      { path: headerPath, data: hdr, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" },
+      { path: footerPath, data: ftr, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" },
+    );
+    relationships.push(
+      { id: headerRId, type: REL.header, target: `header${n}.xml` },
+      { id: footerRId, type: REL.footer, target: `footer${n}.xml` },
+    );
+    sections.push({
+      unitKey: unit.key,
+      unitKind: unit.kind,
+      setup,
+      headerRId,
+      footerRId,
+      headerPath,
+      footerPath,
+      sectPr: sectPrXml(setup, { headerRId, footerRId }),
+    });
+  });
+  return { sections, parts, relationships, facesUsed: [...faces].sort() };
+}

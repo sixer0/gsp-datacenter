@@ -1,0 +1,20 @@
+/**
+ * Seam ke layanan render lingkup SR-15 (I51, register §15):
+ * `renderScope(caller, documentId, req): Promise<RenderScopeResult>`.
+ *
+ * SR-15 berjalan paralel dengan SR-24; ekspor `renderScope` di
+ * `@/lib/studio/services/render` mungkin belum ada saat route ini mendarat.
+ * Seam membaca ekspor secara dinamis agar tsc tetap hijau; bila belum ada,
+ * route menjawab 500 `MODULE_NOT_IMPLEMENTED` (lewat `StudioNotImplemented`,
+ * tercatat di log JSONL). Setelah SR-15 mendarat, seam otomatis memakai
+ * implementasi nyata; ganti dengan impor langsung bila tipe SR-15 sudah final.
+ *
+ * Berkas khusus server (menarik Prisma lewat services/render).
+ */
+import * as renderService from "@/lib/studio/services/render";
+import type { RenderScopeFn } from "./handler";
+
+export function resolveRenderScope(): RenderScopeFn | null {
+  const fn = (renderService as unknown as Record<string, unknown>).renderScope;
+  return typeof fn === "function" ? (fn as RenderScopeFn) : null;
+}

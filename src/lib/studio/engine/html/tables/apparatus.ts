@@ -1,0 +1,103 @@
+/**
+ * Aparatus tabel/figur HTML (S23): caption di atas, baris SUMBER + PROVENANS
+ * di bawah, baris KUNCI figur. Padanan DOCX S17/S19 (DT-15, P5-17..P5-24,
+ * P4A-06/07): caption = label (peran `caption.labelRun`) + pemisah
+ * (`render.caption.separator`) + teks; SUMBER = label kapital (`labelRun`
+ * peran `table.source`/`figure.source`) + isi + `PROVENANS` glif bertanda.
+ */
+import type { Caption, NormBlock, ProvenanceMark, RenderContext, RoleKey, RunProps, SourceLine } from "../../../contract";
+import { escText } from "./escape";
+import { inlineHtml, inlinePlain, paraHtml } from "./inline";
+import { color, css, fontFamily, hexCss, labels, markColor, markGlyph, pBool, pNum, pStr, role, ruleCss, runCss } from "./style";
+
+/** Label artefak: caption.label > label penomoran blok > numbering snapshot. */
+export function artifactLabel(block: NormBlock, ctx: RenderContext, caption?: Caption): string {
+  if (caption?.label) return caption.label;
+  if (block.artifactLabel) return block.artifactLabel;
+  return ctx.snapshot?.numbering?.[block.blockId] ?? "";
+}
+
+/** Paragraf caption (di atas objek). */
+export function captionHtml(caption: Caption | undefined, label: string, ctx: RenderContext, extra?: string): string {
+  if (!caption) return "";
+  const p = ctx.tpl.params;
+  const rf = role(ctx, "caption");
+  const labelRun: RunProps = { ...(rf.labelRun ?? rf.run ?? {}), ...(caption.labelProps ?? {}) };
+  const sep = caption.separator ?? pStr(p, "render.caption.separator", " ");
+  let inner = "";
+  if (label) inner += `<span class="st-caption-label" style="${escText(runCss(labelRun, p))}">${escText(label)}</span>`;
+  if (label && sep) inner += sep === "\t" ? `<span style="display:inline-block;min-width:3mm">&#9;</span>` : escText(sep);
+  inner += inlineHtml(caption.inline, rf.run ?? {}, p, "caption");
+  return paraHtml(inner, caption.format ?? rf.para, css("break-after:avoid", extra), "st-caption");
+}
+
+const LABEL_LEAD_RE = /^\s*(sumber|source|kunci|key)\b/i;
+
+/** Daftar tanda provenans ber-glif: `■ TERUKUR · ◈ DITURUNKAN`. */
+export function provenanceHtml(marks: readonly ProvenanceMark[], ctx: RenderContext, textRun: RunProps): string {
+  const p = ctx.tpl.params;
+  const rail = role(ctx, "rail.mark");
+  const parts: string[] = [];
+  for (const m of marks) {
+    const glyphRun: RunProps = { faceRole: "symbolGlyph", ...(rail.glyphRun?.[m] ?? {}) };
+    const glyphStyle = css(
+      `font-family:${fontFamily(glyphRun, p) ?? "sans-serif"}`,
+      `color:${hexCss(glyphRun.color) ?? markColor(ctx.tpl, m)}`,
+      "font-style:normal",
+    );
+    parts.push(
+      `<span class="st-mark" data-mark="${escText(m)}"><span style="${escText(glyphStyle)}">${escText(markGlyph(p, m))}</span>` +
+        `&#160;<span style="${escText(runCss(textRun, p))}">${escText(m)}</span></span>`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * Isi baris SUMBER (tanpa elemen pembungkus). Label `SUMBER` ditambahkan bila
+ * teks sumber belum diawali kata itu (benchmark kadang menulisnya literal).
+ */
+export function sourceInner(src: SourceLine, ctx: RenderContext, roleKey: RoleKey): string {
+  const p = ctx.tpl.params;
+  const rf = role(ctx, roleKey);
+  const L = labels(ctx);
+  const textRun = rf.run ?? {};
+  const labelRun: RunProps = { ...(rf.labelRun ?? textRun), caps: true, b: rf.labelRun?.b ?? true };
+  let inner = "";
+  if (!LABEL_LEAD_RE.test(inlinePlain(src.inline))) {
+    inner += `<span class="st-source-label" style="${escText(runCss(labelRun, p))}">${escText(L.source)}</span>&#160;&#160;`;
+  }
+  inner += inlineHtml(src.inline, textRun, p, roleKey);
+  const marks = src.provenance ?? [];
+  if (marks.length > 0 && pBool(p, "source.glyphKey.include", true)) {
+    inner +=
+      `<span style="display:inline-block;min-width:4mm"></span>` +
+      `<span class="st-source-label" style="${escText(runCss(labelRun, p))}">${escText(L.provenance)}</span>&#160;&#160;` +
+      provenanceHtml(marks, ctx, textRun);
+  }
+  return inner;
+}
+
+/** Paragraf SUMBER di bawah objek (garis rambut di atas, pola RL `.src`). */
+export function sourceParagraphHtml(src: SourceLine | undefined, ctx: RenderContext, roleKey: RoleKey, ruleAbove: boolean): string {
+  if (!src) return "";
+  const p = ctx.tpl.params;
+  const rf = role(ctx, roleKey);
+  const hair = ruleAbove ? `border-top:${ruleCss(pNum(p, "rules.hairMm", 0.2), color(ctx.tpl, "rules.hair.colour", "ink200"))};padding-top:1.6mm` : "";
+  return paraHtml(sourceInner(src, ctx, roleKey), src.format ?? rf.para, css("margin-top:2.2mm", hair, "break-before:avoid"), "st-source");
+}
+
+/** Baris KUNCI figur (peran `figure.keyRow`). */
+export function keyRowHtml(keyRow: Parameters<typeof inlineHtml>[0], ctx: RenderContext): string {
+  if (!keyRow) return "";
+  const p = ctx.tpl.params;
+  const rf = role(ctx, "figure.keyRow");
+  const textRun = rf.run ?? {};
+  const labelRun: RunProps = { ...(rf.labelRun ?? textRun), caps: true, b: rf.labelRun?.b ?? true };
+  let inner = "";
+  if (!LABEL_LEAD_RE.test(inlinePlain(keyRow))) {
+    inner += `<span class="st-key-label" style="${escText(runCss(labelRun, p))}">${escText(labels(ctx).key)}</span>&#160;&#160;`;
+  }
+  inner += inlineHtml(keyRow, textRun, p, "figure.keyRow");
+  return paraHtml(inner, rf.para, "margin-top:1.6mm", "st-key");
+}
