@@ -10,10 +10,14 @@
  *
  * Bawaan 60 permintaan per 60 detik per pemanggil (satu bab per detik; 10 bab Hermes jauh di
  * bawahnya); env `STUDIO_IMPORT_RATE_LIMIT` / `STUDIO_IMPORT_RATE_WINDOW_MS` (dibaca sekali).
+ *
+ * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `import`,
+ * `@/lib/studio/http/quota`); 429 membawa header kuota, respons lain dipasang route.
  */
 import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
 import { createFixedWindowLimiter, reject, renderRateIdentity, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
+import { applyQuotaHeaders, recordQuotaCharge } from "@/lib/studio/http/quota";
 
 export const IMPORT_RATE_LIMIT_DEFAULT = 60;
 export const IMPORT_RATE_WINDOW_MS_DEFAULT = 60_000;
@@ -47,10 +51,14 @@ export function resetImportRateLimiter(): void {
 export function checkImportRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
   const key = createHash("sha256").update(`import\u0000${renderRateIdentity(caller)}`).digest("hex").slice(0, 32);
   const rl = importLimiter().hit(key);
+  recordQuotaCharge(ctx, "import", rl);
   if (rl.allowed) return null;
-  return reject(ctx, "RATE_LIMITED", "Too many markdown import requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-    callerKind: caller.kind,
-    retryAfterSec: rl.retryAfterSec,
-    limiter: "import",
-  });
+  return applyQuotaHeaders(
+    reject(ctx, "RATE_LIMITED", "Too many markdown import requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
+      callerKind: caller.kind,
+      retryAfterSec: rl.retryAfterSec,
+      limiter: "import",
+    }),
+    ctx,
+  );
 }

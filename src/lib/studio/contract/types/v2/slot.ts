@@ -6,6 +6,7 @@
  */
 import type { RegisterEntry } from "../doc";
 import type { AssetInputV2, ChangeV2, DocMetaV2, DocTargetV2, InlineV2, OutlineEntryV2, PartV2 } from "./common";
+import type { ContractRecordPayloadV2 } from "./contract";
 import type { ChapterV2, TableV2 } from "./doc";
 
 /** T2-33 — medan absen dibangkitkan dari `meta` + parameter (KD-18, mode MIXED). */
@@ -96,14 +97,15 @@ export interface RuleIndexPayloadV2 {
   type: "ruleIndex";
 }
 
-/** T2-44 — slot tak-berulang. */
+/** T2-44 — slot tak-berulang (+ T2-61 `contractRecord`, AM-02 DC-05). */
 export type SlotPayloadV2 =
   | CoverPayloadV2
   | ControlSheetPayloadV2
   | SignaturePayloadV2
   | TocPayloadV2
   | SourceRegisterPayloadV2
-  | RuleIndexPayloadV2;
+  | RuleIndexPayloadV2
+  | ContractRecordPayloadV2;
 
 /** T2-45 — isi `StudioDocSection.payload` slot berulang (KD-09). */
 export interface RepeatableSlotMetaV2 {

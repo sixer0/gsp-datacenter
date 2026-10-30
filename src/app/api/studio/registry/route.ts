@@ -22,6 +22,10 @@
  *   schema      -> dokumen JSON Schema `schemaId=` salah satu STUDIO_SCHEMA_IDS (v1 + SID01-SID05)
  *                  atau `common/v1` | `common/v2` (agar `$ref` skema v2 dapat diselesaikan klien, D-172)
  *                  (`application/schema+json`; `download=1` -> lampiran berkas)
+ *   contracts   -> jenis kontrak aktif C58 (`ContractKindDefV2`, register 05 §9.4, AM-07; tahap 1 =
+ *                  agentWorkReport): kerangka, outline wajib, set status, vonis, status butir, rel
+ *                  rujukan, jenis bukti, pola, batas, label, alias, format bawaan. Tanpa parameter
+ *                  lain (400 SCHEMA_INVALID `/query/<nama>`); jenis dicadangkan tidak dicantumkan
  * Respons: 200 `{ kind, count, items, meta? }` (essentials menambah `global`, `bySectionType`);
  * galat 400 REGISTRY_KIND_UNKNOWN (kind/filter tidak dikenal).
  */
@@ -70,14 +74,15 @@ import {
   type EssentialKnobSpec,
 } from "@/lib/studio/registry";
 import { templateRestriction } from "@/lib/studio/services/templates/access";
-import { apiLog, failure, json, reject, reqCtx, withCorrelation, type ReqCtx } from "@/lib/studio/http";
+import { CONTRACT_KIND_DEFS } from "@/lib/studio/registry/contracts";
+import { apiLog, failure, issue, json, reject, reqCtx, schemaInvalid, withCorrelation, type ReqCtx } from "@/lib/studio/http";
 
 export const dynamic = "force-dynamic";
 
 const ROUTE = "/api/studio/registry";
 const SOURCE = "studio.api.registry";
 const KINDS: readonly RegistryKind[] = REGISTRY_KINDS;
-type ListKind = Exclude<RegistryKind, "params" | "schema" | "presets" | "essentials" | "slots" | "paramScopes">;
+type ListKind = Exclude<RegistryKind, "params" | "schema" | "presets" | "essentials" | "slots" | "paramScopes" | "contracts">;
 
 const SCHEMA_DOCS: Readonly<Record<string, unknown>> = {
   ...STUDIO_JSON_SCHEMAS,
@@ -264,6 +269,35 @@ function paramScopesPayload(sp: URLSearchParams, ctx: ReqCtx): Response {
   );
 }
 
+/**
+ * R03 `kind=contracts` (register 05 §9.4, AM-07): jenis kontrak berstatus `active` apa adanya
+ * dari C58, agar agen membaca enum dan kerangka tanpa menebak. Parameter selain `kind` ditolak.
+ */
+function contractsPayload(sp: URLSearchParams, ctx: ReqCtx): Response {
+  const extra = [...new Set(sp.keys())].filter((name) => name !== "kind");
+  if (extra.length > 0) {
+    return schemaInvalid(
+      extra.map((name) => issue(`/query/${name}`, "additionalProperties", "kind=contracts accepts no other query parameters")),
+      ctx,
+    );
+  }
+  const items = CONTRACT_KIND_DEFS.filter((d) => d.stage === "active");
+  return json(
+    {
+      kind: "contracts",
+      count: items.length,
+      items,
+      meta: {
+        kinds: items.map((d) => d.kind),
+        templateSlugs: Object.fromEntries(items.map((d) => [d.kind, d.templateSlug])),
+      },
+    },
+    200,
+    ctx,
+    CACHE,
+  );
+}
+
 /** Templat `isPreset` aktif + status terbatas D-98 dari versi terbaru (dua kueri, tanpa N+1). */
 async function presetsPayload(ctx: ReqCtx): Promise<Response> {
   // Impor malas: kind registri statis lain tidak memuat klien Prisma.
@@ -408,6 +442,8 @@ export async function GET(req: NextRequest) {
         return slotsPayload(ctx);
       case "paramScopes":
         return paramScopesPayload(sp, ctx);
+      case "contracts":
+        return contractsPayload(sp, ctx);
       default:
         return listPayload(k, ctx);
     }

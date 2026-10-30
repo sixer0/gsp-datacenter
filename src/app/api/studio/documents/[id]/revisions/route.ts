@@ -26,7 +26,7 @@ import {
   renderStatusHeaders,
   withRetryAfterHeader,
 } from "@/lib/studio/services/render";
-import { apiLog, checkRenderRate, failure, isPlausibleId, json, parsePosInt, readJsonObject, reject, reqCtx } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, failure, isPlausibleId, json, parsePosInt, readJsonObject, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { API_LOG_SOURCE } from "../blocks/_lib/http";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +85,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE, API_LOG_SOURCE);
   const { id } = await params;
+  // DC-19 (QH-03): header kuota pada respons apa pun sesudah tagihan bucket; tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => postRevision(req, id, ctx));
+}
+
+async function postRevision(req: NextRequest, id: string, ctx: ReqCtx): Promise<Response> {
   if (!isPlausibleId(id)) return reject(ctx, "DOCUMENT_NOT_FOUND", "Document not found");
 
   const body = await readJsonObject(req, ctx);

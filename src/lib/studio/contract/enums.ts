@@ -340,6 +340,12 @@ export const STUDIO_ERROR_CODES = [
   // Delta FIX-HR2 (aditif; D-332 C9, SR-56d): path `/api/studio/*` yang tidak cocok
   // route mana pun (catch-all `[[...notfound]]`, FIX-H6). 404.
   "ROUTE_NOT_FOUND",
+  // Delta DC-05 (aditif; register 05_document_contract_specs.md §13.1, EC25-EC28, D-363):
+  // rujukan kontrak (dokumen/revisi, pid), kunci butir ganda, dan bentuk chart.custom.
+  "CONTRACT_REF_NOT_FOUND",
+  "CONTRACT_REF_PID_NOT_FOUND",
+  "CONTRACT_ITEM_KEY_DUPLICATE",
+  "CHART_CUSTOM_FORM_UNSUPPORTED",
 ] as const;
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number];
 
@@ -436,6 +442,13 @@ export const SCHEMA_V2_CHECK_IDS = [
   "SKELETON_REPEATABLE",
   "SKELETON_CONTENT_MODE",
   "SKELETON_ADMITS",
+  // Delta DC-05 (AM-04; register 05 §5.4, CH-01..CH-06): payload contractRecord, chart.custom, kerangka.
+  "CONTRACT_ENUM",
+  "CONTRACT_PATTERN",
+  "CONTRACT_DATE",
+  "CONTRACT_REF_TARGET",
+  "CHART_CUSTOM_FORM",
+  "SKELETON_CONTRACT_RECORD",
 ] as const;
 export type SchemaV2CheckId = (typeof SCHEMA_V2_CHECK_IDS)[number];
 
@@ -446,3 +459,76 @@ export type ChapterExpectedSource = (typeof CHAPTER_EXPECTED_SOURCES)[number];
 /** E43 */
 export const MARGIN_DENSITIES = ["compact", "standard", "wide"] as const;
 export type MarginDensity = (typeof MARGIN_DENSITIES)[number];
+
+// ── Delta DC-05 (aditif; register 05_document_contract_specs.md §4, §11.2, §13.2, §14.2, E44-E57) ──
+// Kolom jenis/status di DB bertipe TEXT (KD-29); himpunan tertutup ditegakkan di sini dan di skema.
+
+/** E44 — jenis kontrak aktif tahap 1 (CK-01; CK-02..CK-05 dicadangkan, tidak masuk enum, §1.2). */
+export const CONTRACT_KINDS = ["agentWorkReport"] as const;
+export type ContractKind = (typeof CONTRACT_KINDS)[number];
+
+/** E45 — status laporan `agentWorkReport` (CS-01..CS-05, §4.1). */
+export const AGENT_WORK_REPORT_STATUSES = ["draft", "complete", "partial", "blocked", "needs-review"] as const;
+export type AgentWorkReportStatus = (typeof AGENT_WORK_REPORT_STATUSES)[number];
+
+/** E46 — status butir `items[].status` (CI-01..CI-07, §4.2). */
+export const CONTRACT_ITEM_STATUSES = ["todo", "ready", "running", "review", "done", "blocked", "cancelled"] as const;
+export type ContractItemStatus = (typeof CONTRACT_ITEM_STATUSES)[number];
+
+/** E47 — vonis (CD-01..CD-04, §4.3); huruf besar = bentuk korpus. */
+export const CONTRACT_VERDICTS = ["PASS", "CAUTION", "FAIL", "NEEDS_REVIEW"] as const;
+export type ContractVerdict = (typeof CONTRACT_VERDICTS)[number];
+
+/** E48 — hubungan rujukan `refs[].rel`. */
+export const CONTRACT_REF_RELS = ["basis", "evidence", "output", "supersedes"] as const;
+export type ContractRefRel = (typeof CONTRACT_REF_RELS)[number];
+
+/** E49 — jenis bukti `evidence[].kind`. */
+export const CONTRACT_EVIDENCE_KINDS = ["file", "command", "commit", "correlation"] as const;
+export type ContractEvidenceKind = (typeof CONTRACT_EVIDENCE_KINDS)[number];
+
+/** E50 — kunci outline bab wajib (CO-01..CO-05 = chapterKey 1..5, §4.4). */
+export const CONTRACT_OUTLINE_KEYS = ["ringkasan", "rincian", "bukti", "isu", "lanjut"] as const;
+export type ContractOutlineKey = (typeof CONTRACT_OUTLINE_KEYS)[number];
+
+/** E51 — `chart.custom` `form.mark` (§12). */
+export const CHART_CUSTOM_MARKS = ["bar", "line", "point", "area"] as const;
+export type ChartCustomMark = (typeof CHART_CUSTOM_MARKS)[number];
+
+/** E52 — `chart.custom` `form.orientation` (bawaan `vertical`). */
+export const CHART_CUSTOM_ORIENTATIONS = ["vertical", "horizontal"] as const;
+export type ChartCustomOrientation = (typeof CHART_CUSTOM_ORIENTATIONS)[number];
+
+/** E53 — bucket kuota; urutan = urutan seri QH-04 (KD-38). */
+export const QUOTA_BUCKETS = ["render", "validate", "import", "query"] as const;
+export type QuotaBucket = (typeof QUOTA_BUCKETS)[number];
+
+/** E54 — kode peringatan kontrak non-penahan (CW-01..CW-04, §13.2; bukan kode galat HTTP). */
+export const CONTRACT_WARNING_CODES = [
+  "CONTRACT_REF_PID_RETIRED",
+  "CONTRACT_STATUS_UNMAPPED",
+  "CONTRACT_HEADING_UNMAPPED",
+  "CONTRACT_FIELD_UNMAPPED",
+] as const;
+export type ContractWarningCode = (typeof CONTRACT_WARNING_CODES)[number];
+
+/** E55 — kode isu ekstraktor draf (DR-01..DR-08, §11.2). */
+export const DRAFT_ISSUE_CODES = [
+  "DRAFT_NO_JSON_BLOCK",
+  "DRAFT_FENCE_UNCLOSED",
+  "DRAFT_JSON_MALFORMED",
+  "DRAFT_BLOCK_NOT_OBJECT",
+  "DRAFT_SCHEMA_UNKNOWN",
+  "DRAFT_HEADER_INCOMPLETE",
+  "DRAFT_BASIS_INVALID",
+  "DRAFT_BASIS_STALE",
+] as const;
+export type DraftIssueCode = (typeof DRAFT_ISSUE_CODES)[number];
+
+/** E56 — `details.reason` 413 R23 (DR-09, DR-10). */
+export const DRAFT_LIMIT_REASONS = ["DRAFT_TOO_LONG", "DRAFT_TOO_MANY_BLOCKS"] as const;
+export type DraftLimitReason = (typeof DRAFT_LIMIT_REASONS)[number];
+
+/** E57 — R10 `?name=` (bawaan: final bila dokumen ber-contractKind, selain itu DATUM; U-2). */
+export const FINAL_NAME_MODES = ["final", "datum"] as const;
+export type FinalNameMode = (typeof FINAL_NAME_MODES)[number];

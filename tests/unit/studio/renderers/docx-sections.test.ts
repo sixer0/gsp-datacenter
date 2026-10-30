@@ -27,6 +27,7 @@ import {
   type FixtureName,
   type XNode,
 } from './_kit';
+import { contractReportSnapshot } from './dc12-contract-fixture';
 
 const EMU_PER_MM = 36000;
 const TW_PER_MM = 1440 / 25.4;
@@ -42,6 +43,9 @@ interface Rendered {
 
 let tpl: ResolvedTemplate;
 const rendered = new Map<FixtureName, Rendered>();
+/** DC-13: fixture laporan kerja agen register 05 §5.8 (snapshot norm/v2) = satu-satunya pemuat `contractRecord` (S30). */
+const CONTRACT_FIXTURE = 'contract_report_5_8';
+let contract: Rendered;
 
 beforeAll(async () => {
   tpl = await canonicalTemplate();
@@ -51,21 +55,34 @@ beforeAll(async () => {
     const detail = await assembleDocxDetailed(ctx);
     rendered.set(f, { snap, detail, parts: unzip(detail.bytes), errors: logs.filter((l) => l.level === 'error').map((l) => l.message) });
   }
+  {
+    const snap = contractReportSnapshot();
+    const { ctx, logs } = makeCtx(snap, tpl);
+    const detail = await assembleDocxDetailed(ctx);
+    contract = { snap, detail, parts: unzip(detail.bytes), errors: logs.filter((l) => l.level === 'error').map((l) => l.message) };
+  }
 }, 120_000);
 
 const DOC_SECTION_KEYS = SECTION_REGISTRY.filter((s) => s.group === 'DOCUMENT').map((s) => s.key);
 
 describe('cakupan registri dan dispatcher', () => {
   it('registri memuat 29 section DOCUMENT dan dispatcher tidak punya renderer kosong', () => {
-    expect(DOC_SECTION_KEYS).toHaveLength(29);
+    expect(DOC_SECTION_KEYS).toHaveLength(30);
     expect(dispatchCoverage()).toEqual({ docx: [], html: [], charts: [] });
     for (const k of DOC_SECTION_KEYS) expect(typeof DOCX_RENDERERS[k], k).toBe('function');
   });
 
-  it('4 fixture bersama-sama memuat ke-29 jenis section DOCUMENT', () => {
+  it('4 fixture + fixture kontrak §5.8 bersama-sama memuat ke-30 jenis section DOCUMENT', () => {
     const seen = new Set<string>();
-    for (const r of rendered.values()) for (const b of r.snap.blocks) seen.add(b.type);
+    for (const r of [...rendered.values(), contract]) for (const b of r.snap.blocks) seen.add(b.type);
     expect(DOC_SECTION_KEYS.filter((k) => !seen.has(k))).toEqual([]);
+  });
+
+  it('fixture kontrak §5.8 dirakit tanpa log error dan setiap bagian XML well-formed', () => {
+    expect(contract.errors).toEqual([]);
+    const xmlParts = Object.keys(contract.parts).filter((p) => p.endsWith('.xml') || p.endsWith('.rels'));
+    expect(xmlParts).toContain('word/document.xml');
+    for (const p of xmlParts) expect(parseXml(partText(contract.parts, p)).errors, p).toEqual([]);
   });
 });
 
@@ -133,7 +150,7 @@ describe.each(FIXTURES)('paket DOCX %s', (f) => {
 
 // ── Struktur per jenis section (fragmen renderer per blok) ───────────────
 interface Sample {
-  fixture: FixtureName;
+  fixture: FixtureName | typeof CONTRACT_FIXTURE;
   block: NormBlock;
   frag: XNode;
   errors: string[];
@@ -141,7 +158,8 @@ interface Sample {
 
 function samplesByType(): Map<string, Sample[]> {
   const out = new Map<string, Sample[]>();
-  for (const [fixture, r] of rendered) {
+  const all: Array<[FixtureName | typeof CONTRACT_FIXTURE, Rendered]> = [...rendered, [CONTRACT_FIXTURE, contract]];
+  for (const [fixture, r] of all) {
     const { ctx } = makeCtx(r.snap, tpl, { snapshot: { ...r.snap, numbering: r.detail.numbering } });
     for (const block of r.snap.blocks) {
       const render = DOCX_RENDERERS[block.type];
@@ -216,6 +234,8 @@ const REQUIRED: Record<string, string[]> = {
   diagram: ['w:drawing', 'wp:inline', 'a:blip', 'w:t'],
   symbolSheet: ['w:drawing', 'wp:inline', 'a:blip', 'w:t'],
   image: ['w:drawing', 'wp:inline', 'a:blip', 'w:t'],
+  // DC-13: tabel fakta/butir/bukti/rujukan lewat keluarga tabel DATUM.
+  contractRecord: ['w:tbl', 'w:tblGrid', 'w:tr', 'w:tc', 'w:t'],
 };
 for (const t of TABLE_FAMILY) REQUIRED[t] = ['w:tbl', 'w:tblGrid', 'w:tr', 'w:tc', 'w:t'];
 
@@ -237,7 +257,7 @@ describe('fragmen DOCX per jenis section', () => {
 
   it('tabel keluarga: tiap baris mengisi tepat kolom tblGrid (gridSpan dihitung) dan lebar grid <= bentang penuh', () => {
     const fullSpanMm = Number(tpl.params['grid.fullSpanMm'] ?? 166);
-    for (const type of TABLE_FAMILY) {
+    for (const type of [...TABLE_FAMILY, 'contractRecord']) {
       for (const s of samples.get(type) ?? []) {
         const at = `${s.fixture} ${type} ${s.block.address}`;
         for (const tbl of findAll(s.frag, 'w:tbl')) {

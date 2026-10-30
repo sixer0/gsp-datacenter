@@ -13,6 +13,7 @@ import type {
 } from "../../../contract";
 import { BindDefect, Register, auditRetired, auditText, checkResult } from "../../bind";
 import { CHART_BY_CODE } from "../../../registry/charts";
+import { isCustomChart, resolveCustomChart, type StudioChartInput } from "../../chart/core/custom";
 import { ESSENTIAL_KNOBS } from "../../../registry/essentials";
 import { isSlotSectionType } from "../../../registry/slots";
 import { PARAMS_BY_KEY } from "../../../params";
@@ -89,12 +90,27 @@ function derivations(ctx: StructCtx): WalkItem[] {
   return ctx.walk.items.filter((i) => i.block.type === "derivation");
 }
 
+/**
+ * Spec chart inline. `kind = "custom"` (DC-27) dinilai sebagai kode keluarga hasil dispatch
+ * I68 (D12-D15 memakai aturan kode itu); bentuk di luar CU-01..CU-09 dibiarkan apa adanya
+ * (tanpa kode registri -> tidak dinilai di sini; render menolaknya dengan 422 EC28).
+ */
 function charts(ctx: StructCtx): Array<{ it: WalkItem; c: StudioChartV1 }> {
   const out: Array<{ it: WalkItem; c: StudioChartV1 }> = [];
   for (const it of ctx.walk.items) {
     if (it.block.type !== "chart") continue;
     const spec = it.block.spec as { $schema?: string } | undefined;
-    if (spec?.$schema === "studio.chart/v1") out.push({ it, c: spec as unknown as StudioChartV1 });
+    if (spec?.$schema !== "studio.chart/v1") continue;
+    const raw = spec as unknown as StudioChartInput;
+    let c = raw as StudioChartV1;
+    if (isCustomChart(raw)) {
+      try {
+        c = resolveCustomChart(raw);
+      } catch {
+        c = raw as unknown as StudioChartV1;
+      }
+    }
+    out.push({ it, c });
   }
   return out;
 }

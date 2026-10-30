@@ -12,11 +12,15 @@
  * Batas bawaan 30 render per 60 detik per pemanggil; dapat diubah lewat env
  * `STUDIO_RENDER_RATE_LIMIT` / `STUDIO_RENDER_RATE_WINDOW_MS` (dibaca sekali).
  * Antrean render berbatas (503 `RENDER_QUEUE_FULL`) ada di services/render.
+ *
+ * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `render`, `./quota`);
+ * 429 membawa header kuota, respons lain dipasang route lewat `applyQuotaHeaders`.
  */
 import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
 import type { ReqCtx } from "./context";
 import { reject } from "./errors";
+import { applyQuotaHeaders, quotaRateIdentity, recordQuotaCharge } from "./quota";
 import { createFixedWindowLimiter, type FixedWindowLimiter } from "./rate-limit";
 
 export const RENDER_RATE_LIMIT_DEFAULT = 30;
@@ -46,16 +50,8 @@ export function resetRenderRateLimiter(): void {
 
 /** Identitas laju pemanggil (tanpa medan yang dikirim klien bebas). */
 export function renderRateIdentity(caller: Pick<StudioCaller, "kind" | "username" | "email">): string {
-  switch (caller.kind) {
-    case "ADMIN_SESSION":
-    case "USER_SESSION":
-      return `${caller.kind}:${caller.username ?? "?"}`;
-    case "GOOGLE_SESSION":
-      return `${caller.kind}:${caller.email ?? "?"}`;
-    default:
-      // Pemegang x-internal-secret: satu ember (agentId hanya label, dapat dipalsukan).
-      return `${caller.kind}:shared`;
-  }
+  // DC-19: satu sumber identitas untuk semua bucket (`quotaRateIdentity`).
+  return quotaRateIdentity(caller);
 }
 
 function rateKey(identity: string): string {
@@ -69,9 +65,13 @@ function rateKey(identity: string): string {
  */
 export function checkRenderRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
   const rl = renderLimiter().hit(rateKey(renderRateIdentity(caller)));
+  recordQuotaCharge(ctx, "render", rl);
   if (rl.allowed) return null;
-  return reject(ctx, "RATE_LIMITED", "Too many render requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-    callerKind: caller.kind,
-    retryAfterSec: rl.retryAfterSec,
-  });
+  return applyQuotaHeaders(
+    reject(ctx, "RATE_LIMITED", "Too many render requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
+      callerKind: caller.kind,
+      retryAfterSec: rl.retryAfterSec,
+    }),
+    ctx,
+  );
 }

@@ -26,7 +26,10 @@ import {
   type StudioDocV2Resolved,
 } from "../../contract";
 import { StudioEngineError } from "../../contract/errors";
+import type { ContractRecordPayloadV2 } from "../../contract/types/v2/contract";
+import { CONTRACT_RECORD_SECTION_TYPE } from "../../registry/contracts";
 import { isSlotPayloadFilled } from "../completeness";
+import { contractItemTextPlain, contractRecordTextPlain } from "../contracts/text";
 import { plainText } from "../ingest/util";
 import { sha256Hex, stableStringify } from "../revisions/canonical";
 import { chapterPidBase, isValidPid } from "./pid";
@@ -186,6 +189,66 @@ function assetShaOf(block: Record<string, unknown>, source: StudioDocV2Resolved)
   });
 }
 
+// ---------------------------------------------------------------------------
+// Slot contractRecord (DC-09; register 05 §5.7, KD-34)
+// ---------------------------------------------------------------------------
+
+const CONTRACT_RECORD_TYPE: string = CONTRACT_RECORD_SECTION_TYPE;
+/** `type` baris M17 butir kontrak `F:<slot>/<n>` (register 05 §5.7). */
+export const CONTRACT_ITEM_ROW_TYPE = "contractItem";
+const CONTRACT_ITEM_TYPE = CONTRACT_ITEM_ROW_TYPE;
+
+/**
+ * Teks polos baris kontrak = I57/I58. Payload yang belum lolos I54 (mis. `reportedAt`
+ * tak sah pada jalur yang memanggil sebelum validasi) jatuh ke `plainText` agar
+ * pemetaan baris tetap total; gerbang validasi yang menolak payload itu.
+ */
+function contractTextPlain(project: () => string, raw: unknown): string {
+  try {
+    return project();
+  } catch {
+    return plainText(raw);
+  }
+}
+
+/**
+ * Pid butir yang diwarisi per `key` dari baris `contractItem` revisi sebelumnya pada
+ * slot yang sama (KD-34). `null` = butir baru. `key` ganda (ditolak I54/EC27) hanya
+ * mewarisi sekali, pada kemunculan pertama.
+ */
+export function inheritItemPids(
+  items: ReadonlyArray<{ key?: unknown } | null | undefined>,
+  prev: StructureRows | undefined,
+  slotKey: string,
+): Array<string | null> {
+  const byKey = new Map<string, string>();
+  for (const b of prev?.blocks ?? []) {
+    if (b.chapterKey !== null || b.slotKey !== slotKey || b.type !== CONTRACT_ITEM_TYPE) continue;
+    const key = isObj(b.content) ? b.content.key : undefined;
+    if (typeof key === "string" && !byKey.has(key)) byKey.set(key, b.pid);
+  }
+  return items.map((it) => {
+    const key = it?.key;
+    if (typeof key !== "string") return null;
+    const pid = byKey.get(key);
+    if (pid === undefined) return null;
+    byKey.delete(key);
+    return pid;
+  });
+}
+
+/**
+ * Pid butir baru dari allocator (petunjuk = alamat). Pembangkit deterministik
+ * berbasis alamat (`slot-<slot>-<n>`, compose tanpa allocator DB) dapat memberi pid
+ * yang sudah dipakai butir warisan; saat itu dicoba petunjuk kosong (pid berbenih).
+ */
+function freshItemPid(allocator: PidAllocator, address: string, taken: ReadonlySet<string>): string {
+  let pid = allocator.next("BLOCK", address);
+  for (let attempt = 0; taken.has(pid) && attempt < 8; attempt++) pid = allocator.next("BLOCK", "");
+  if (taken.has(pid)) throw new StructureRowsInvalidError([`pid allocator returned taken pid ${pid} at ${address}`]);
+  return pid;
+}
+
 /**
  * Baris M14-M17 untuk satu revisi dari sumber tergabung berpid. Cap pengisi
  * diisi null; pakai `carryFillStamps` untuk mewarisi/menetapkannya.
@@ -312,10 +375,10 @@ export function rowsFromSource(input: RowsFromSourceInput): StructureRows {
       payloadSha256: canonicalSha(payload),
     });
     if (!filled) continue;
-    const pushSlotRow = (address: string, type: string, content: unknown) => {
-      const pid = slotRowPid(address);
+    const pushSlotRow = (address: string, type: string, content: unknown, pidOverride?: string): StructureBlockRow => {
+      const pid = pidOverride ?? slotRowPid(address);
       const inn = internal.get(pid);
-      out.blocks.push({
+      const row: StructureBlockRow = {
         slotKey: slot.slotKey,
         chapterKey: null,
         sectionNo: null,
@@ -330,11 +393,29 @@ export function rowsFromSource(input: RowsFromSourceInput): StructureRows {
         contentSha256: canonicalSha(content),
         assetSha256: null,
         ...(inn ? { internal: inn } : {}),
-      });
+      };
+      out.blocks.push(row);
+      return row;
     };
     const entries = (payload as { entries?: unknown }).entries;
     if (slot.sectionTypeKey === "sourceRegister" && Array.isArray(entries)) {
       entries.forEach((e, i) => pushSlotRow(`F:${slot.slotKey}/${i + 1}`, "sourceRegisterEntry", e));
+    } else if (slot.sectionTypeKey === CONTRACT_RECORD_TYPE) {
+      // DC-09 (register 05 §5.7, KD-34): `F:<slot>` contractRecord + satu baris contractItem per butir.
+      // Pid butir mengikuti `key` lintas revisi, bukan posisi; butir yang hilang dipensiunkan repositori.
+      const p = payload as ContractRecordPayloadV2;
+      const rec = pushSlotRow(`F:${slot.slotKey}`, CONTRACT_RECORD_TYPE, payload);
+      rec.textPlain = contractTextPlain(() => contractRecordTextPlain(p), payload);
+      const items = Array.isArray(p.items) ? p.items : [];
+      const inherited = inheritItemPids(items, prev, slot.slotKey);
+      const taken = new Set<string>([...inherited.filter((x): x is string => x !== null), ...out.blocks.map((b) => b.pid)]);
+      items.forEach((it, i) => {
+        const address = `F:${slot.slotKey}/${i + 1}`;
+        const pid = inherited[i] ?? freshItemPid(allocator, address, taken);
+        taken.add(pid);
+        const row = pushSlotRow(address, CONTRACT_ITEM_TYPE, jsonClone(it), pid);
+        row.textPlain = contractTextPlain(() => contractItemTextPlain(it), it);
+      });
     } else {
       pushSlotRow(`F:${slot.slotKey}`, slot.sectionTypeKey, payload);
     }

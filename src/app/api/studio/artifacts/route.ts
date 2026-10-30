@@ -28,7 +28,7 @@ import type { ValidationIssue } from "@/lib/studio/contract/types/api";
 import { assertRenderCapacity, renderArtifact, renderOutcomeMarker, renderStatusHeaders } from "@/lib/studio/services/render";
 import { assertMissionRefs } from "@/lib/studio/services/storage";
 import { toArtifactListItem, toArtifactSummary } from "./_lib/dto";
-import { apiLog, checkRenderRate, failure, issue, json, NO_STORE, reqCtx, schemaInvalid } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, failure, issue, json, NO_STORE, reqCtx, schemaInvalid, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { prepareArtifact } from "./_lib/prepare";
 import { readArtifactRequest } from "./_lib/request";
 
@@ -94,6 +94,11 @@ export async function POST(req: NextRequest) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE, SOURCE);
+  // DC-19 (QH-03): header kuota pada respons apa pun sesudah tagihan bucket; tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => postArtifact(req, ctx));
+}
+
+async function postArtifact(req: NextRequest, ctx: ReqCtx): Promise<Response> {
   let logContext: Record<string, unknown> | undefined;
   let artifactId: string | undefined;
   try {

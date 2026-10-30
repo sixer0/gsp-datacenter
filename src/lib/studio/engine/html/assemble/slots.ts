@@ -209,8 +209,9 @@ function addrAttr(b: NormBlock): string {
  * ada di dispatch kontrak `HTML_RENDERERS`, blueprint §2.9 "renderer lain tidak
  * berubah"): `slotPlaceholder` (unit placeholder draf), `sourceRegisterEntry`
  * (satu entri register sumber per alamat `F:<slotKey>/<n>`), `ruleIndex`
- * (penanda unit indeks aturan otomatis). URL entri ditulis sebagai teks, bukan
- * tautan (artefak mandiri KT-11).
+ * (penanda unit indeks aturan otomatis), `contractItem` (DC-12: proyeksi butir,
+ * dirender sebagai baris tabel butir blok `contractRecord`). URL entri ditulis
+ * sebagai teks, bukan tautan (artefak mandiri KT-11).
  */
 export const SLOT_BLOCK_RENDERERS: Readonly<Record<string, (b: NormBlock, ctx: RenderContext) => string>> = {
   slotPlaceholder: (b) => {
@@ -229,7 +230,13 @@ export const SLOT_BLOCK_RENDERERS: Readonly<Record<string, (b: NormBlock, ctx: R
     ctx.log({ level: "warn", message: `engine/html/assemble: ruleIndex (${b.address ?? b.blockId}) rendered as marker only; automatic rule index not built in HTML` });
     return `<div class="${A.ruleIndex}" data-block-type="ruleIndex"${addrAttr(b)}></div>`;
   },
+  // DC-12 (register 05 §5.7): butir `F:<slotKey>/<n>` = proyeksi alamat/pid. Baris ke-n
+  // tabel butir blok `contractRecord` sudah membawa alamat + pid, jadi tidak ada markup di sini.
+  contractItem: () => "",
 };
+
+/** Blok proyeksi: dirender oleh blok induknya; keluaran kosong tidak dibungkus `data-address`. */
+export const PROJECTION_BLOCK_TYPES: ReadonlySet<string> = new Set(["contractItem"]);
 
 /** Label draf per unit (layar). */
 export function draftMarkHtml(m: DraftMarker): string {

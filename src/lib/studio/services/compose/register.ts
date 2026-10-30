@@ -42,6 +42,7 @@ export function composeRecomposer(opts: RecomposerOptions = {}): SnapshotRecompo
       params: ctx.params,
       ...(ctx.slotParams ? { slotParams: ctx.slotParams } : {}),
       ...(ctx.assets ? { assets: ctx.assets } : {}),
+      ...(ctx.contractKind !== undefined ? { contractKind: ctx.contractKind } : {}),
       // Pid baris slot `F:` dan intro diwarisi dari baris tersimpan (sama dengan saat tulis).
       prevRows: input.rows,
     }).snapshot;

@@ -6,6 +6,7 @@
  */
 import type { InlineV2 } from "./common";
 import type { CompletenessReportV2 } from "./completeness";
+import type { SubmitWarningV2 } from "./contract";
 import type { InlineFormatPolicy, StudioSlotState, StudioTier } from "../../enums";
 
 /** R18 — tanpa path berkas. */
@@ -44,6 +45,8 @@ export interface SubmitResultV2 {
   };
   slot?: { slotKey: string; pid?: string; sha256: string; address: string };
   completeness: CompletenessReportV2;
+  /** AM-08 (DC-05; register 05 KD-46): peringatan non-penahan; hanya bila tidak kosong (isi DC-08). */
+  warnings?: SubmitWarningV2[];
   /** D-247: tanpa `job`/`outputs`/`renderRefused`; build hanya lewat endpoint render (R17). */
 }
 

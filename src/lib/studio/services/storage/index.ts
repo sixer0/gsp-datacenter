@@ -30,8 +30,19 @@ export {
   toRelPath,
   DATUM_NAME_MAX,
 } from "./paths";
-export { mimeBase, OUTPUT_MIME_BASE, readOutputFile, readStoredFile, sha256Hex, storageRootPath, toOutputFileDto, writeOutput } from "./files";
-export type { StoredFile } from "./files";
+export {
+  finalFileNameOfRow,
+  mimeBase,
+  OUTPUT_FILE_OWNER_INCLUDE,
+  OUTPUT_MIME_BASE,
+  readOutputFile,
+  readStoredFile,
+  sha256Hex,
+  storageRootPath,
+  toOutputFileDto,
+  writeOutput,
+} from "./files";
+export type { OutputFileRow, StoredFile } from "./files";
 export { assertMissionRefs } from "./mission";
 export {
   createLayoutLogSink,

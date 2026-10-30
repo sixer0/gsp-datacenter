@@ -36,8 +36,23 @@
  * figur `studio.doc/v1` terhadap grid TURUNAN templat terpatok saat ingest, sebelum
  * adaptor SR-09 membuang medan ukuran (lebar v2 milik templat), sehingga lebar di luar
  * himpunan turunan ditolak dini dengan kode yang sama (422 `BY_CONSTRUCTION_FAILED`).
+ *
+ * Kontrak dokumen (DC-08; register 05 §5.6, §13.1): HANYA dokumen bertemplat ber-contractKind
+ * (MX08 / konteks compose, selain itu entri C58 per slug templat) dengan slot aktif bertipe
+ * `contractRecord` (slot `record`) yang terisi. Dokumen lain: nol target, nol isu, perilaku sama.
+ *  - langkah 6b, murni (`evaluateByConstruction` -> `contract`): I54 `checkContractRecord`;
+ *    isu CH-01..CH-04 -> 400 `SCHEMA_INVALID` (checkId register, `keyword` = checkId), bila
+ *    kosong `items[].key` ganda -> 422 EC27 `CONTRACT_ITEM_KEY_DUPLICATE` (details register);
+ *  - langkah 9a (`assertByConstructionAsync` dengan `contractRefs`): I55 `resolveContractRefs`
+ *    lewat reader BACA SAJA milik pemanggil (klien transaksi / R08 READ ONLY) -> 422 EC25/EC26,
+ *    pid pensiun = peringatan CW-01 di `contract.warnings`;
+ *  - langkah 9: penahan by-construction yang ada (422 `BY_CONSTRUCTION_FAILED`).
+ * `assertByConstruction` (sinkron) menegakkan 6b lalu 9; I55 butuh I/O sehingga hanya lewat
+ * varian async. EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` dilempar compose (D-374) SEBELUM gerbang;
+ * `withChartCustomPointer` melengkapi `details.pointer` dari sumber kiriman (pemanggil compose).
  */
 import type {
+  ChartDataShape,
   DocMeta,
   LintIssue,
   LintReport,
@@ -48,8 +63,13 @@ import type {
   StudioTier,
   ValidationIssue,
 } from "../../contract";
+import type { ContractKind } from "../../contract/enums";
 import { StudioEngineError } from "../../contract/errors";
+import type { ChartCustomFormV2, ContractRecordPayloadV2, SubmitWarningV2 } from "../../contract/types/v2/contract";
 import { allowedWidthsText, figureLimits, isAllowedWidth, type FigureLimits } from "../../engine/chart/core/guards";
+import { CHART_CUSTOM_FORM_IDS, resolveChartCustom } from "../../registry/charts";
+import { CONTRACT_KIND_DEFS, CONTRACT_RECORD_SECTION_TYPE, isContractKind } from "../../registry/contracts";
+import { checkContractRecord, resolveContractRefs, type ContractRefReader, type ResolvedContractRef } from "../contracts";
 import { bindRegister, renderFeasibilityBlockers, tableChecks } from "./checks";
 import { resolveIngestEnforcement, runGate, type IngestEnforcement } from "./gate";
 import { isObject, joinPointer } from "./util";
@@ -76,7 +96,39 @@ export interface ByConstructionInput {
   notices?: readonly LintIssue[];
   /** Prefiks pointer register (bawaan `/register`). */
   registerPointer?: string;
+  /**
+   * DC-08: jenis kontrak templat (MX08 `StudioTemplate.contractKind`) bila pemanggil
+   * mengetahuinya; absen = konteks compose snapshot, lalu entri C58 per slug templat.
+   */
+  contractKind?: string | null;
+  /**
+   * DC-08: pointer payload slot `contractRecord` di badan kiriman (mis. kiriman slot:
+   * `/payload`); bawaan `/sections/<slotKey>` (bentuk `studio.doc/v2`).
+   */
+  contractPointer?: (slotKey: string) => string;
   correlationId: string;
+}
+
+/** Payload `contractRecord` yang dinilai gerbang (satu per slot aktif terisi). */
+export interface ContractRecordTarget {
+  slotKey: string;
+  kind: ContractKind;
+  payload: ContractRecordPayloadV2;
+  /** Pointer payload di badan kiriman (prefiks isu I54/I55). */
+  pointer: string;
+}
+
+/** Hasil langkah kontrak gerbang (§5.6). Dokumen non-kontrak: `targets` kosong, sisanya kosong. */
+export interface ContractGateResult {
+  targets: ContractRecordTarget[];
+  /** I54 CH-01..CH-04 -> 400 `SCHEMA_INVALID` (didahulukan). */
+  issues: ValidationIssue[];
+  /** I54 EC27 (hanya bila `issues` kosong). */
+  error?: StudioEngineError;
+  /** I55 per slot (hanya varian async dengan reader). */
+  refs: Array<{ slotKey: string; resolved: ResolvedContractRef[] }>;
+  /** CW-01 `CONTRACT_REF_PID_RETIRED` (KD-46; non-penahan). */
+  warnings: SubmitWarningV2[];
 }
 
 export interface ByConstructionResult {
@@ -88,6 +140,8 @@ export interface ByConstructionResult {
   /** Penahan bergantung kelengkapan yang ditunda selama INCOMPLETE (D-131). */
   deferred: LintIssue[];
   enforcement: IngestEnforcement;
+  /** DC-08: langkah kontrak (6b; 9a pada varian async). */
+  contract: ContractGateResult;
 }
 
 /** Jalankan gerbang by-construction atas snapshot hasil gabung (tanpa I/O, tanpa lempar). */
@@ -119,7 +173,164 @@ export function evaluateByConstruction(i: ByConstructionInput): ByConstructionRe
     }
   }
   const feasibility = renderFeasibilityBlockers(view, new Map(), i.snapshot.doc);
-  return { lint: gate.lint, blocking: [...blocking, ...feasibility], downgraded: gate.downgraded, deferred, enforcement };
+  const contract = checkContractTargets(contractRecordTargets(i.snapshot, { contractKind: i.contractKind, contractPointer: i.contractPointer }));
+  return { lint: gate.lint, blocking: [...blocking, ...feasibility], downgraded: gate.downgraded, deferred, enforcement, contract };
+}
+
+// ── Kontrak dokumen (DC-08) ─────────────────────────────────────────────
+
+/**
+ * Jenis kontrak snapshot: `explicit` (MX08 pemanggil), konteks compose tersimpan
+ * (`compose.contractKind`, DC-10), lalu entri C58 yang `templateSlug`-nya = slug templat.
+ * `null` = bukan dokumen kontrak, atau jenis tak terdaftar (compose sudah menolaknya
+ * 422 `CONTRACT_KIND`, sehingga gerbang tidak menebak).
+ */
+export function contractKindOfSnapshot(snapshot: NormDocSnapshotV2, explicit?: string | null): ContractKind | null {
+  const stored = (snapshot.compose as { contractKind?: unknown } | undefined)?.contractKind;
+  return contractKindFor(snapshot.source?.template?.slug, explicit ?? (typeof stored === "string" ? stored : undefined));
+}
+
+/** Jenis kontrak dari nama eksplisit (harus terdaftar C58) atau entri C58 per slug templat. */
+function contractKindFor(slug: string | undefined, named: string | null | undefined): ContractKind | null {
+  if (named !== undefined && named !== null) return isContractKind(named) ? named : null;
+  const def = CONTRACT_KIND_DEFS.find((d) => d.templateSlug === slug);
+  return def && isContractKind(def.kind) ? def.kind : null;
+}
+
+/** Opsi penentuan target kontrak (jenis MX08 pemanggil, pointer badan kiriman). */
+export interface ContractTargetOptions {
+  contractKind?: string | null;
+  contractPointer?: (slotKey: string) => string;
+}
+
+/**
+ * Target dari dokumen v2 SUMBER (kiriman atau tergabung) + slot kerangka bertipe
+ * `contractRecord` yang terisi payload `type: "contractRecord"`. Tanpa slot seperti itu
+ * -> [] TANPA menyelesaikan jenis (dokumen non-kontrak tak tersentuh).
+ */
+function targetsOf(
+  source: unknown,
+  slots: ReadonlyArray<{ slotKey: string; sectionType: string }>,
+  kindOf: () => ContractKind | null,
+  opts: ContractTargetOptions,
+): ContractRecordTarget[] {
+  const recordSlots = slots.filter((s) => s.sectionType === CONTRACT_RECORD_SECTION_TYPE);
+  if (recordSlots.length === 0) return [];
+  const sections = isObject(source) && isObject(source.sections) ? source.sections : {};
+  const payloadOf = (k: string): Record<string, unknown> | undefined => {
+    const p = sections[k];
+    return isObject(p) && p.type === CONTRACT_RECORD_SECTION_TYPE ? p : undefined;
+  };
+  const filled = recordSlots.filter((s) => payloadOf(s.slotKey) !== undefined);
+  if (filled.length === 0) return [];
+  const kind = kindOf();
+  if (kind === null) return [];
+  const pointerOf = opts.contractPointer ?? ((k: string) => joinPointer("/sections", k));
+  return filled.map((s) => ({ slotKey: s.slotKey, kind, payload: payloadOf(s.slotKey) as unknown as ContractRecordPayloadV2, pointer: pointerOf(s.slotKey) }));
+}
+
+/** Target gerbang atas snapshot hasil gabung: slot kerangka aktif (tidak OMITTED). */
+export function contractRecordTargets(snapshot: NormDocSnapshotV2, opts: ContractTargetOptions = {}): ContractRecordTarget[] {
+  const slots = (snapshot.skeleton?.slots ?? []).filter((s) => s.active && !s.omitted);
+  return targetsOf(snapshot.source, slots, () => contractKindOfSnapshot(snapshot, opts.contractKind), opts);
+}
+
+/**
+ * Langkah 6b SEBELUM compose (§5.6 "struktur, murni, sebelum kunci"): compose kontrak
+ * (DC-10) mengandaikan payload sudah lolos I54 (tanggal tak sah = galat compose tanpa
+ * pointer). Pemanggil compose menjalankan ini atas dokumen v2 kiriman/tergabung + slot
+ * kerangka templat terpatok; hasil sama bentuknya dengan `evaluateByConstruction().contract`
+ * (galat via `contractCheckError`). Dokumen non-kontrak: hasil kosong, tanpa efek.
+ */
+export function checkContractSource(
+  source: { template?: { slug?: string }; sections?: unknown } | null | undefined,
+  slots: ReadonlyArray<{ slotKey: string; sectionType: string }>,
+  opts: ContractTargetOptions = {},
+): ContractGateResult {
+  return checkContractTargets(targetsOf(source, slots, () => contractKindFor(source?.template?.slug, opts.contractKind), opts));
+}
+
+/** I54 atas target (urutan slot, lalu urutan medan). EC27 hanya bila tidak ada isu CH. */
+export function checkContractTargets(targets: readonly ContractRecordTarget[]): ContractGateResult {
+  const out: ContractGateResult = { targets: [...targets], issues: [], refs: [], warnings: [] };
+  for (const t of targets) {
+    const r = checkContractRecord(t.payload, t.kind, { pointer: t.pointer });
+    for (const x of r.issues) out.issues.push({ pointer: x.pointer, keyword: x.checkId, message: x.message, checkId: x.checkId });
+    if (r.error && !out.error) {
+      const { key, positions } = r.error.details;
+      out.error = new StudioEngineError(r.error.code, `Kunci butir "${key}" ganda pada posisi ${positions.join(", ")}`, { ...r.error.details });
+    }
+  }
+  if (out.issues.length > 0) delete out.error;
+  return out;
+}
+
+/** Galat langkah 6b: 400 `SCHEMA_INVALID` (details = isu ber-checkId) lalu 422 EC27; null bila lolos. */
+export function contractCheckError(c: ContractGateResult): StudioEngineError | null {
+  if (c.issues.length > 0) return new StudioEngineError("SCHEMA_INVALID", `${c.issues.length} pelanggaran catatan kontrak`, [...c.issues]);
+  return c.error ?? null;
+}
+
+/**
+ * I55 per target lewat reader BACA SAJA pemanggil (§5.6 langkah 9a). Melempar EC25/EC26
+ * (`StudioEngineError`, details register); CW-01 dikumpulkan. Target tanpa `refs` tidak kueri.
+ */
+export async function resolveContractTargetRefs(
+  targets: readonly ContractRecordTarget[],
+  reader: ContractRefReader,
+): Promise<Pick<ContractGateResult, "refs" | "warnings">> {
+  const refs: ContractGateResult["refs"] = [];
+  const warnings: SubmitWarningV2[] = [];
+  for (const t of targets) {
+    const list = Array.isArray(t.payload.refs) ? t.payload.refs : [];
+    if (list.length === 0) continue;
+    const r = await resolveContractRefs(list, reader, { pointer: joinPointer(t.pointer, "refs") });
+    refs.push({ slotKey: t.slotKey, resolved: r.resolved });
+    warnings.push(...r.warnings);
+  }
+  return { refs, warnings };
+}
+
+/**
+ * EC28 (D-374): compose melempar `CHART_CUSTOM_FORM_UNSUPPORTED` tanpa pointer karena blok
+ * sudah lepas dari sumbernya. Lengkapi `details.pointer` dengan blok chart `code = "custom"`
+ * di `source` (dokumen v2 kiriman/tergabung) yang kombinasinya tidak terselesaikan I68 dan
+ * cocok dengan `details` (form, dataShape), selain itu blok tak terselesaikan pertama.
+ * Galat lain (atau pointer sudah ada / blok tidak ditemukan) dikembalikan apa adanya.
+ * `sectionsPointer` = pointer `sections` di badan kiriman (bawaan `/sections`).
+ */
+export function withChartCustomPointer(err: unknown, source: unknown, sectionsPointer = "/sections"): unknown {
+  if (!(err instanceof StudioEngineError) || err.code !== "CHART_CUSTOM_FORM_UNSUPPORTED") return err;
+  const d = isObject(err.details) ? err.details : {};
+  if (typeof d.pointer === "string") return err;
+  const sections = isObject(source) && isObject(source.sections) ? source.sections : undefined;
+  if (!sections) return err;
+  const wantForm = JSON.stringify(d.form ?? null);
+  let first: string | undefined;
+  let exact: string | undefined;
+  const visit = (node: unknown, p: string): void => {
+    if (exact !== undefined) return;
+    if (Array.isArray(node)) {
+      node.forEach((x, i) => visit(x, joinPointer(p, i)));
+      return;
+    }
+    if (!isObject(node)) return;
+    if (node.type === "chart" && node.code === "custom") {
+      const shape = isObject(node.data) && typeof node.data.shape === "string" ? (node.data.shape as ChartDataShape) : null;
+      const resolved = isObject(node.form) && shape !== null && resolveChartCustom(node.form as unknown as ChartCustomFormV2, shape) !== null;
+      if (!resolved) {
+        first ??= p;
+        if (JSON.stringify(node.form ?? null) === wantForm && shape === (d.dataShape ?? null)) exact = p;
+      }
+      return;
+    }
+    for (const [k, v] of Object.entries(node)) visit(v, joinPointer(p, k));
+  };
+  for (const [k, v] of Object.entries(sections)) visit(v, joinPointer(sectionsPointer, k));
+  const pointer = exact ?? first;
+  if (pointer === undefined) return err;
+  const supported = Array.isArray(d.supported) ? d.supported : [...CHART_CUSTOM_FORM_IDS];
+  return new StudioEngineError(err.code, err.message, { pointer, ...d, supported });
 }
 
 /**
@@ -217,6 +428,33 @@ export function assertByConstruction(
   onDowngrade?: (r: ByConstructionResult) => void,
 ): ByConstructionResult {
   const r = evaluateByConstruction(i);
+  // DC-08 §5.6: langkah 6b (400 / EC27) mendahului penahan langkah 9.
+  const contractErr = contractCheckError(r.contract);
+  if (contractErr) throw contractErr;
+  if (r.blocking.length > 0) throw byConstructionError(r.blocking);
+  if (r.downgraded.length > 0) onDowngrade?.(r);
+  return r;
+}
+
+/**
+ * Varian async gerbang tunggal (DC-08): urutan §5.6 = 6b (I54: 400 / EC27) -> 9a (I55 lewat
+ * `contractRefs`, BACA SAJA: EC25/EC26; CW-01 ke `contract.warnings`) -> 9 (422
+ * `BY_CONSTRUCTION_FAILED`). Tanpa `contractRefs` setara `assertByConstruction`. Dokumen
+ * non-kontrak: tanpa kueri, hasil sama dengan varian sinkron. Pemanggil di dalam transaksi
+ * memberi reader berklien transaksi (`createPrismaContractRefReader({ db: tx })`).
+ */
+export async function assertByConstructionAsync(
+  i: ByConstructionInput & { contractRefs?: ContractRefReader },
+  onDowngrade?: (r: ByConstructionResult) => void,
+): Promise<ByConstructionResult> {
+  const r = evaluateByConstruction(i);
+  const contractErr = contractCheckError(r.contract);
+  if (contractErr) throw contractErr;
+  if (i.contractRefs && r.contract.targets.length > 0) {
+    const refs = await resolveContractTargetRefs(r.contract.targets, i.contractRefs);
+    r.contract.refs = refs.refs;
+    r.contract.warnings = refs.warnings;
+  }
   if (r.blocking.length > 0) throw byConstructionError(r.blocking);
   if (r.downgraded.length > 0) onDowngrade?.(r);
   return r;

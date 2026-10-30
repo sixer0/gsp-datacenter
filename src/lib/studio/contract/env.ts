@@ -52,7 +52,7 @@ export const STUDIO_MAX_RUN_CHARS = 20000;
 /** C15 — cek render-env di-cache 5 menit. */
 export const STUDIO_READINESS_CACHE_MS = 300000;
 
-/** C16 — satu sumber path route R01-R11 (§6.2) untuk UI/S68. */
+/** C16 — satu sumber path route R01-R11 (§6.2) untuk UI/S68 (+R12-R20 SR-04, +R21-R23 DC-05). */
 export const STUDIO_ROUTES = {
   R01: "/api/studio/templates",
   R02: "/api/studio/templates/[id]",
@@ -75,6 +75,10 @@ export const STUDIO_ROUTES = {
   R18: "/api/studio/assets",
   R19: "/api/studio/templates/[id]/skeleton",
   R20: "/api/studio/documents/[id]/content",
+  // Delta DC-05 (AM-06; register 05 §9): retrieval kontrak, teks penuh, cek draf.
+  R21: "/api/studio/contracts",
+  R22: "/api/studio/search",
+  R23: "/api/studio/drafts/check",
 } as const;
 export type StudioRouteId = keyof typeof STUDIO_ROUTES;
 
@@ -135,6 +139,56 @@ export const CHAPTER_KEY_NUMERIC_PATTERN = "^[1-9][0-9]{0,2}$";
 export const CHAPTER_KEY_LETTER_PATTERN = "^[A-Z]$";
 /** C33c — `relPath` M13 = `assets/<sha256[0..2]>/<sha256>.<png|jpg>` relatif `STUDIO_WORKSPACE_ROOT`. */
 export const STUDIO_ASSET_REL_DIR = "assets";
+
+// ── Delta DC-05: konstanta document contract (register 05 §14.1, C34-C57) ──
+// C46/C47 milik L/http/quota.ts (DC-19); C58 milik L/registry/contracts.ts (DC-06);
+// C59/C60 milik L/registry/charts.ts (DC-26).
+/** C34 — kartu kanban `t_` + 8 heksa (inv §4 K1 :290). */
+export const CARD_ID_PATTERN = "^t_[0-9a-f]{8}$";
+/** C35 — butir `key`, `taskRef`, `dependsOn`, `evidence.item` (label non-heksa). */
+export const CONTRACT_KEY_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$";
+/** C36 — pelaku (agen/profil), huruf kecil (CA-1). */
+export const CONTRACT_ACTOR_PATTERN = "^[a-z0-9][a-z0-9._-]{0,63}$";
+/** C37 — `reportedAt`: tanggal, atau tanggal + waktu ber-zona (detik dan milidetik opsional). */
+export const CONTRACT_REPORTED_AT_PATTERN =
+  "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])(T([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d(\\.\\d{1,3})?)?(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d))?$";
+/** C38 — awalan sha256 bukti (8..64 heksa kecil). */
+export const CONTRACT_SHA_PREFIX_PATTERN = "^[0-9a-f]{8,64}$";
+/** C39 — batas larik dan panjang teks rujukan payload `contractRecord`. */
+export const CONTRACT_LIMITS = { cardIds: 64, items: 500, dependsOn: 32, refs: 100, evidence: 200, refText: 500 } as const;
+/** C40 — format bawaan render dokumen ber-contractKind tanpa `formats`/`figures` (KD-41). */
+export const CONTRACT_DEFAULT_RENDER_FORMATS = ["HTML"] as const;
+/** C41 — konfigurasi teks penuh Postgres. */
+export const STUDIO_FTS_CONFIG = "simple";
+/** C42 — potongan `textPlain` untuk kolom `tsv` (KD-37). */
+export const STUDIO_FTS_MAX_CHARS = 100000;
+/** C43 — batas R22. */
+export const SEARCH_LIMITS = { qMin: 2, qMax: 200, takeDefault: 20, takeMax: 100 } as const;
+/** C44 — opsi `ts_headline` cuplikan R22. */
+export const SEARCH_SNIPPET_OPTIONS = "MaxWords=30, MinWords=10, ShortWord=2, MaxFragments=2, StartSel=[[, StopSel=]]";
+/** C45 — batas R21 (selaras `documents/route.ts:81-82`). */
+export const CONTRACT_QUERY_LIMITS = { takeDefault: 50, takeMax: 200, statusListMax: 8 } as const;
+/** C48 — sisa kuota bucket (QH-02). */
+export const STUDIO_QUOTA_REMAINING_HEADER = "X-Studio-Quota-Remaining";
+/** C49 — nama bucket E53 yang dilaporkan (QH-02, QH-04). */
+export const STUDIO_QUOTA_BUCKET_HEADER = "X-Studio-Quota-Bucket";
+/** C50 — nama final berkas pada setiap respons R10 (FN-06). */
+export const STUDIO_FINAL_FILENAME_HEADER = "X-Studio-Final-Filename";
+/** C51 — `<docNumberSafe>_rev<n>_<YYYYMMDDTHHMMSSZ>_<sha8>.<ext>` (FN-01). */
+export const FINAL_FILENAME_PATTERN =
+  "^([A-Za-z0-9](?:[A-Za-z0-9.-]{0,78}[A-Za-z0-9])?)_rev(0|[1-9][0-9]{0,5})_([0-9]{8}T[0-9]{6}Z)_([0-9a-f]{8})\\.(docx|pdf|html|svg|png)$";
+/** C52 — panjang maks `docNumberSafe` (FN-02). */
+export const FINAL_DOC_NUMBER_MAX = 80;
+/** C53 — awalan nama final berkas artefak (FN-03). */
+export const FINAL_ARTIFACT_PREFIX = "ART-";
+/** C54 — batas R23 / CLI draf (413 DR-09/DR-10). */
+export const DRAFT_LIMITS = { bodyBytes: 4194304, maxChars: 2000000, maxBlocks: 20 } as const;
+/** C55 — kunci kepala draf MD (§11.1). */
+export const DRAFT_HEADER_KEYS = ["tujuan", "langkah-berikut", "basis"] as const;
+/** C56 — `basis` draf: `<documentId>@rev<n>` atau `baru`. */
+export const DRAFT_BASIS_PATTERN = "^(?:([a-z0-9]{20,40})@rev([1-9][0-9]{0,5})|baru)$";
+/** C57 — `$schema` blok draf yang diterima. */
+export const DRAFT_ACCEPTED_SCHEMAS = ["studio.doc/v2", "studio.chapter/v2", "studio.slot/v2"] as const;
 
 // ── getStudioEnv ─────────────────────────────────────────────────────────
 

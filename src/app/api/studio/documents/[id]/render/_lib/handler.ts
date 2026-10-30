@@ -34,7 +34,7 @@ import { isStudioEngineError, StudioNotImplemented, type StudioEngineError } fro
 import type { StudioRenderScopeKind } from "@/lib/studio/contract/enums";
 import type { OutputFileDto, RenderJobDto, RenderJobError } from "@/lib/studio/contract/types/api";
 import type { CompletenessReportV2, StudioCaller } from "@/lib/studio/contract";
-import { apiLog, failure, isPlausibleId, isRecord, json, readJsonObject, reject, type ReqCtx } from "@/lib/studio/http";
+import { apiLog, failure, isPlausibleId, isRecord, json, readJsonObject, reject, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import {
   isPdfPreflightRejection,
   renderOutcomeMarker,
@@ -103,6 +103,11 @@ function isQueueFull(r: RenderScopeResult): boolean {
 }
 
 export async function handleRenderPost(req: Request, rawId: string, ctx: ReqCtx, deps: RenderRouteDeps): Promise<Response> {
+  // DC-19 (QH-03): header kuota pada respons apa pun sesudah tagihan bucket; tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => renderPost(req, rawId, ctx, deps));
+}
+
+async function renderPost(req: Request, rawId: string, ctx: ReqCtx, deps: RenderRouteDeps): Promise<Response> {
   if (!isPlausibleId(rawId)) return reject(ctx, "DOCUMENT_NOT_FOUND", "Document not found");
   const documentId = rawId;
 

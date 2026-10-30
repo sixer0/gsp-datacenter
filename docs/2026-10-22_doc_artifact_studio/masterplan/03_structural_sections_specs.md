@@ -6,6 +6,7 @@ step: SR-01
 agent: data-analyst
 date: 2026-10-23
 status: complete
+amended: 2026-10-30 DC-32 (data-analyst); rujukan register masterplan/05_document_contract_specs.md, §19; D-361..D-381
 binding: D-06, D-21, D-98, D-127, D-128, D-131, D-133, D-134, D-138, D-139, D-140, D-141; blueprint identification/05 §0-§2 dan §4; dua pesan controller 2026-10-23 (pembuatan dokumen baru; ukuran kertas)
 inputs: identification/05_structural_sections_blueprint.md, masterplan/01_specs.md, decisions/decisions.md, prisma/schema.prisma, src/lib/studio/contract/**, src/lib/studio/params/{render,page,color-type,governance-language,apparatus}.ts, src/lib/studio/services/render/pure/**, src/lib/studio/registry/{sections,lint}.ts, benchmark/manual000/doc.json, benchmark/manual000/figures/specs/*.chart.json
 ---
@@ -13,6 +14,8 @@ inputs: identification/05_structural_sections_blueprint.md, masterplan/01_specs.
 # 03 Spesifikasi Refaktor Struktur: Dokumen Terstruktur per Section (SR-01)
 
 Dokumen ini adalah **register nama tunggal** untuk semua baris SR/IP/RQ di blueprint adendum 05. Baris B1/B2 merujuk nama di sini dan tidak membuat nama baru tanpa `file_requests.md`.
+
+Amandemen DOC-5 (DC-32, D-363): nama fase document contract (baris DC-03..DC-48 blueprint `identification/07_document_contract_blueprint.md`) didefinisikan **sekali** di register `masterplan/05_document_contract_specs.md` (prefiks lanjutan di 05 §0.2). Register ini hanya merujuknya: entri ringkas di tempat yang terdampak (§0.1, §4.3, §4.6, §5.1, §6.2, §11.1, §11.2, §12, §16, §17.3, §18) dan indeks rujukan di §19. Isi 05 tidak disalin. Bila 03, 05, dan kode berbeda untuk nama 05, yang berlaku adalah kode dan keputusan D-xxx, lalu register 05; ketidakcocokan dicatat di §19.3.
 
 ## 0. Aturan baca dan sumber
 
@@ -32,11 +35,11 @@ Dokumen ini adalah **register nama tunggal** untuk semua baris SR/IP/RQ di bluep
 | `E` | Enum (lanjutan E01..E25) | E26..E43 |
 | `SID` | Id skema kontrak | SID01..SID06 |
 | `T2-` | Tipe TypeScript kontrak v2 | T2-01..T2-60, T2-60a..T2-60c |
-| `DF-` | Medan tampilan terlarang (DISPLAY_FIELD) | DF-01..DF-71 |
+| `DF-` | Medan tampilan terlarang (DISPLAY_FIELD) | DF-01..DF-71 (DF-72, DF-73: register 05 §5.5) |
 | `VF-` | Medan v1 berganti nama (V1_FIELD) | VF-01..VF-14 |
-| `SL-` | Slot kerangka bawaan | SL-01..SL-07 |
-| `EC` | Kode galat baru | EC01..EC24 |
-| `R` | Route (R01..R11 lama, R12..R20 baru) | R01..R20 |
+| `SL-` | Slot kerangka bawaan | SL-01..SL-07 (SL-08..SL-10 templat `laporan-kerja-agen`: register 05 §6.3) |
+| `EC` | Kode galat baru | EC01..EC24 (EC25..EC28: register 05 §13.1; rujukan §11.2) |
+| `R` | Route (R01..R11 lama, R12..R20 baru; R21..R23 register 05 §9) | R01..R20 (+ R21..R23 dirujuk di §12) |
 | `R-` | ParamDef kontrak baru (lanjutan R-01..R-37) | R-38..R-52 |
 | `PC-` | Perubahan ParamDef lama | PC-01..PC-07 |
 | `DV-` | DeriveFnId baru | DV-01..DV-04 |
@@ -72,6 +75,7 @@ Dokumen ini adalah **register nama tunggal** untuk semua baris SR/IP/RQ di bluep
 | Komposit galeri benchmark | R-50, R-51 | `benchmark/manual000/figures/specs/bm-fig-17..21.chart.json:11-15` (`style gallery`, `columns 3`, `gapMm 4.3`); `L/engine/chart/core/composite.ts:29,64-65` |
 | Halaman depan benchmark | KD-18, KD-19 | `benchmark/manual000/doc.json:22-238` (cover `kicker`, `control`, `colophon`, `identityString`; tabel riwayat 5 kolom ber-`widthTw`) |
 | Batas piksel | dipakai ulang, bukan nama baru | `L/services/images/decode.ts:14,16` (`IMAGE_MAX_SIDE_PX`, `IMAGE_MAX_PIXELS`) |
+| Register 05 dan kode kontrak (DC-32, 2026-10-30) | rujukan §19; hitungan 73 / 73 / 14 | `masterplan/05_document_contract_specs.md` §5.4-§5.7, §6.1-§6.3, §9, §10, §12, §13, §14.3; `L/contract/enums.ts:263-349, 436-452, 503`; `L/contract/errors.ts:96-99`; `L/contract/schema/v2/forbidden.ts:21-73, 96-141`; `L/registry/sections.ts:471-483, 666, 669`; `L/registry/slots.ts:29-40, 94`; `L/contract/env.ts:79-81, 172-183`; `decisions/decisions.md:366-386` (D-361..D-381) |
 
 Kelengkapan data: cukup untuk spesifikasi. Dua hal tidak dapat diverifikasi dengan alat agen ini dan diberi label hipotesis: perilaku `ON DELETE RESTRICT` pada cascade bertemu (KD-07) dan nilai F4 (E38). Keduanya punya langkah verifikasi.
 
@@ -338,6 +342,7 @@ Medan bersama setiap blok: `type`, `id?` (pid, C19). Tidak ada medan lain di lua
 2. Padanan v1 untuk adaptor dan harness, bukan medan v2: `params.accentCategory` (P-14) → nama kategori di `highlight`; `params.accentSectorDeg` (S-08) → indeks sektor di `highlight` (sudut / (360 / `sectors`)); `accent {point, series}` (P-03) → `highlight: [kategori, seri]`. `accent` (atau, tanpa `accent`, `params.accentPoint`/`accentGroup`/`accentSeries`) adalah sumber sorotan utama dan selalu dipetakan; `accentCategory` dan `accentSectorDeg` hanya dipakai bila sumber utama itu tidak menghasilkan sorotan (`highlight` masih kosong).
 3. Sengaja TIDAK diterima karena tampilan (domain sumbu, warna, label bawaan mesin): `axis`, `max`, `belowTargetColour`, `compassLabels`, `medianLabel`. Mesin menurunkan domain dari data, label arah S-08 dan label median S-01 dibangkitkan mesin; domain sumbu per jenis chart yang perlu dipatok = ParamDef templat `chart.kind.<KODE>.*` (D-215; P-13/P-14/S-01 ditambahkan FIX-A D-268, IP-59 ditutup). Validator menolaknya `400 SCHEMA_INVALID` dengan `checkId: "DISPLAY_FIELD"`, pointer menunjuk medan itu: DF-63 (`ChartV2`), DF-64 (`ChartPanelV2`), DF-65 (varian `ChartDataV2`) (§5.1, D-229/D-230). `widthClass` pada figur dan panel komposit juga DISPLAY_FIELD (DF-66..DF-70), demikian pula `max` di objek `limit` (DF-71). `params` di blok chart tetap DF-40 (`DISPLAY_FIELD`), `accent` di data tetap VF-12 (`V1_FIELD`).
 4. Lebar figur (chart, diagram, image, symbolSheet) bukan medan konten: satu kelas lebar per JENIS figur di templat (`chart.widthClass`, `diagram.widthClass`, `image.widthClass`, `symbolSheet.widthClass`: `text` atau `full`), mm diturunkan `figureWidthFromClass` ke `<jenis>.widthMm` berlingkup dokumen; tidak ada pengecualian per figur (D-139, D-224/D-225).
+5. Amandemen DOC-5 `chart.custom` (register 05 §12, KD-47, AM-03; D-368, D-374): `ChartV2.code` menerima `"custom"` dengan `form` (T2-66 `ChartCustomFormV2`: `mark`, `orientation`, `stacked`), hanya pada `ChartV2`, tidak pada `ChartPanelV2`. Kombinasi `form` × bentuk data `categorical`/`series`/`xy` dipetakan ke kode tergambar CU-01..CU-09 (C59; C60 = 9; I68); di luar tabel = 422 `CHART_CUSTOM_FORM_UNSUPPORTED` (EC28); salah susun `form` = 400 checkId `CHART_CUSTOM_FORM` (CH-05); rupa di `form` = `DISPLAY_FIELD` DF-73. CU-01 mempertahankan urutan data agen (D-368). `CHART_REGISTRY_COUNT` tetap 76. Kode: `L/contract/types/v2/doc.ts:181-183`, `L/registry/charts.ts:1449`.
 
 Artefak tersimpan (`artifactId`) dirujuk lewat R09. Medan tampilan pada spec artefak (`widthMm`, `heightMm`, `style`, `params`, `apparatus`, `composite.columns`, `composite.gapMm`) **diabaikan** saat dirender di dalam dokumen v2; lebar dan gaya dari templat (§0 butir b).
 
@@ -410,6 +415,7 @@ Aturan:
 - `NormUnitKind` diperluas dengan `"slot"` untuk slot tak-berulang yang tidak punya jenis unit v1 (`signatureBlock` berdiri sendiri, `sourceRegister`, `ruleIndex`).
 - Perencanaan unit: urut posisi slot dokumen. Slot berulang `chapter` → unit `part` (kunci `P<n>`) sebelum bab pertama bagian itu, lalu unit `chapter` per kunci urut numerik. Slot `appendix` → unit `appendix` per huruf urut. `signatureBlock` dengan `slot.placement = "inControlSheet"` tidak membuat unit (dirender di unit `controlSheet`). Slot opsional kosong tidak membuat unit. Pada render draf, slot wajib kosong di dalam lingkup membuat unit `placeholder: true`.
 - Alamat baris slot (M17): slot tak-berulang terisi → satu baris `F:<slotKey>`, `type` = sectionType. Pengecualian `sourceRegister` → satu baris per entri `F:<slotKey>/<n>` (n 1-based), `type = "sourceRegisterEntry"`. Slot AUTO tanpa payload → tidak ada baris.
+- Amandemen DOC-5 pid butir (register 05 §5.7, KD-34; D-376, D-380): slot `contractRecord` terisi → satu baris `F:<slotKey>` (slot `record`: `F:record`) bertipe `contractRecord`, ditambah satu baris per butir `F:record/<n>` (n 1-based, urutan `items`) bertipe `contractItem`. Pid butir diwarisi per `key` lintas revisi; butir baru mendapat pid bangkitan (§10); butir yang hilang dipensiunkan. Pola sama dengan pengecualian `sourceRegister` di atas; tata bahasa alamat tidak berubah (AC-7). Compose sudah membangun blok `F:<slotKey>/<n>` (`L/services/compose/contract-record.ts:9, 56-58`); baris M17 dan pewarisan pid per `key` milik DC-09 (D-376; sementara pid butir berbasis indeks, D-380).
 - Alamat bab: tata bahasa 01_specs §4.1 tetap; bab di slot berulang mana pun memakai `chap`. Kunci bab unik per revisi lintas slot (unik M15). `front` di tata bahasa diperluas menjadi `"F:" slotKey [ "/" posint ]`; empat kunci lama tetap sah (`address.ts:39`).
 - Penomoran artefak per kunci bab (01_specs §4.1): tabel ber-caption → `Tabel C.n`; chart/diagram/image/symbolSheet → `Gambar C.n`; derivation → `Turunan D-C.n`.
 - `snapshotSha256 = sha256Hex(stableStringify(snapshot))`. Compose deterministik: tanpa cap waktu selain `meta.issueDate`. Rekonstruksi dari M14-M18 → compose ulang → sha sama (SC-5).
@@ -548,6 +554,8 @@ Pesan issue: `"medan tampilan tidak diterima; tampilan diatur templat"`. Deteksi
 
 DF-63..DF-65 memakai satu daftar `CHART_DISPLAY_HINTS` = `axis`, `max`, `belowTargetColour`, `compassLabels`, `medianLabel` (petunjuk tampilan chart v1 yang sengaja tidak diterima, catatan chart §4.3 butir 3; D-227, D-229). DF-66..DF-69 menutup `widthClass` di tiap jenis figur dan DF-70 di panel komposit (IP-63); DF-71 menolak `max` di objek `limit` (IP-63); `widthMm` sudah DF-21. Hitungan: 71 entri = 52 global + 19 per lokasi (DF-53..DF-71). Pesan issue tetap pesan DISPLAY_FIELD di atas. Kolom Keterangan DF-63..DF-71 = `reason` di `forbidden.ts` apa adanya; DF-53..DF-62 sengaja memakai gaya register dengan rujukan (mis. DF-54 "R-50", DF-61 "KD-16"), maknanya sama dengan `reason` kode tetapi tidak harfiah.
 
+Amandemen DOC-5 (register 05 §5.5, AM-12; D-363, D-367): DF-72 (lokasi `ContractRecordPayloadV2`, juga `ContractItemV2`, `ContractEvidenceV2`, `ContractRefV2`: `label`, `columns`, `order`, `heading`) dan DF-73 (`ChartCustomFormV2`: `palette`, `axis`, `max`, `width`, `height`, `legend`) didefinisikan di register 05. Hitungan kode kini **73 = 52 global (C29) + 21 per lokasi (C30, DF-53..DF-73)**: Grep `^  "[A-Za-z_]+", // DF-\d+$` di `L/contract/schema/v2/forbidden.ts` = 52 (baris 22-73); Grep `^  "DF-\d+": ` = 21 (baris 98-136). Medan global tetap berlaku di objek kontrak (05 §5.5). Nama kode `DisplayFieldLocationRule.alsoAt` (`forbidden.ts:80, 132`) belum tercatat di register 05 (D-367: dicatat saat DC-33).
+
 ### 5.2 V1_FIELD (checkId `V1_FIELD`, 400 `SCHEMA_INVALID`)
 
 Pesan: `"medan v1 tidak diterima di v2; pakai <pengganti>"`. Prioritas: V1_FIELD diperiksa sebelum DISPLAY_FIELD (C31 `V1_FIELD_RENAMES`).
@@ -592,6 +600,8 @@ Semua `minItems`/`maxItems` null kecuali disebut. `admits` slot berulang = 21 ni
 ### 6.2 Slot kerangka bertipe lain
 
 `ruleIndex` (Indeks Aturan, AS-1) tersedia sebagai jenis slot opsional AUTO; tidak ada di kerangka bawaan.
+
+Amandemen DOC-5 (register 05 §6.1-§6.3, AM-01, AM-10, AM-11; D-371, D-376): jenis slot ke-9 `contractRecord` (C33 8 → 9). Section type S30 "Catatan Kontrak" (DOCUMENT, INTERIOR; `SECTION_REGISTRY_COUNT` 51 → 52, `DOCUMENT` 29 → 30; `L/registry/sections.ts:471-483, 666, 669`). `SLOT_KINDS`: `contentMode` INPUT saja, tak-berulang, satu per kerangka (`singlePerSkeleton`), `implicitSlotKey` `record` (`L/registry/slots.ts:94`). **`activeTiers: []`** (D-371; `sections.ts:480` `NONE`): slot ini tidak pernah lahir dari kerangka implisit §6.3 atau rencana kanonik; hanya hadir lewat kerangka eksplisit templat ber-`contractKind` (templat `laporan-kerja-agen`, SL-08..SL-10, register 05 §6.3), dan aktivasinya membaca `slot.tiers` templat (D-376). Validasi kerangka tambahan: checkId `SKELETON_CONTRACT_RECORD` (CH-06). Tidak ada di kerangka bawaan GSP DATUM §6.1.
 
 ### 6.3 Kerangka implisit (versi templat lama, `skeletonSha256 = null`)
 
@@ -803,6 +813,8 @@ Contoh: `create;chapter:3`, `slot:controlSheet`, `pid:p-d1g5j8l3mn`, `structure:
 
 Amandemen DOC-3 (batch Hermes): (a) path `/api/studio/*` yang tidak ada → `404 { error, code: "ROUTE_NOT_FOUND", message, hint, correlationId, details: { method, path, suggestion? } }` + `x-correlation-id` lewat route catch-all `src/app/api/studio/[[...notfound]]/route.ts` (GET/POST/PUT/PATCH/DELETE/OPTIONS/HEAD; tanpa sesi tetap 401); `ROUTE_NOT_FOUND` kini anggota `STUDIO_ERROR_CODES` (69 kode; `STUDIO_ERROR_HTTP` 404, D-336), PUT juga 404 JSON, HEAD 404 tanpa badan; metode salah pada route yang ada = 405 tanpa badan dari Next (JSON 405 → IP-100) (D-323). (b) Kiriman bab/slot (dan R04 bertarget) tanpa `baseRevisionNo` terbaru yang akan menimpa pid hasil PATCH sesudah kiriman terakhir lingkup itu → 409 `SCOPE_CONFLICT` `reason: PATCHED_PIDS_OVERWRITTEN`, diperiksa sesudah cek idempoten dan sebelum cek dasar §9.2, juga di dry-run R08 (D-324, `services/submit/overwrite.ts`). (c) R17/R07: pdf di format efektif + render-env tidak siap → 503 `PDF_ENGINE_UNAVAILABLE` preflight tanpa job; urutan R17 dan R07 seragam untuk `formats` apa pun: 401 → 400 badan → 429 laju → 503 `RENDER_QUEUE_FULL` → 404 → 409 `DOCUMENT_INCOMPLETE`/422 → 503 preflight (D-336, menggantikan urutan bergantung format D-331); R09 tanpa gerbang PDF. (d) D16 `evidenceRail` NOT_APPLICABLE hanya bila `device.evidenceRail.enabled = false` berasal dari lapis yang dikendalikan ADMIN (preset, templat terbatas, kunci lanjutan); bila kelak dapat ditulis USER, D16 tetap ketat (D-335).
 
+Amandemen DOC-5 (register 05 §5.6; D-363, D-375, D-382): langkah 2 menambah checkId CH-01..CH-05 (`CONTRACT_ENUM`, `CONTRACT_PATTERN`, `CONTRACT_DATE`, `CONTRACT_REF_TARGET`, `CHART_CUSTOM_FORM`) serta DF-72/DF-73 (400 `SCHEMA_INVALID`); langkah 6b (murni, sebelum kunci) I54 → 422 `CONTRACT_ITEM_KEY_DUPLICATE`; langkah 9a (dalam transaksi, sebelum by-construction) I55 → 422 `CONTRACT_REF_NOT_FOUND` / `CONTRACT_REF_PID_NOT_FOUND`, pid pensiun = peringatan `CONTRACT_REF_PID_RETIRED` di `warnings` (AM-08); langkah 9 by-construction → 422 `CHART_CUSTOM_FORM_UNSUPPORTED`. Dry-run R08 menjalankan langkah yang sama. Dokumen tanpa slot `contractRecord`: nol isu baru (D-382).
+
 Setiap galat: `{ error: <pesan Indonesia yang menyebut perbaikan dalam bahasa isi>, code, details }`.
 
 ### 11.2 Register kode baru (24; ditambahkan ke `STUDIO_ERROR_CODES` dan `STUDIO_ERROR_HTTP`, 44 → 68)
@@ -835,6 +847,17 @@ Setiap galat: `{ error: <pesan Indonesia yang menyebut perbaikan dalam bahasa is
 | EC24 | `CHAPTER_KEY_INVALID` | 422 | kunci bab tidak sesuai C33a/C33b untuk sectionType slot, atau bentrok dengan kunci di slot berulang lain | `{ "slotKey": "appendices", "key": "3", "pattern": "^[A-Z]$" }` |
 
 Kode lama yang dipakai ulang tanpa perubahan: `SCHEMA_INVALID`, `PARAM_CLASS_K_FORBIDDEN`, `PARAM_CLASS_T_READONLY`, `PARAM_UNKNOWN_KEY`, `ASSET_TOO_LARGE`, `ASSET_TYPE_UNSUPPORTED`, `FORBIDDEN`, `DOCUMENT_NOT_FOUND`, `TEMPLATE_NOT_FOUND`, `MISSION_REF_NOT_FOUND`, `DOC_NUMBER_EXISTS`, `VERSION_CONFLICT`, `CHANGE_FIELDS_REQUIRED`, `CHANGE_NOTE_REQUIRED`, `ADDRESS_INVALID`, `ADDRESS_NOT_FOUND`, `FILE_NOT_FOUND`, `RATE_LIMITED`, `RENDER_QUEUE_FULL`.
+
+Amandemen DOC-5 (register 05 §13.1, AM-05; D-363, D-367): empat kode berikut **didefinisikan di register 05**; baris di bawah hanya rujukan dengan nama identik. `STUDIO_ERROR_CODES` / `STUDIO_ERROR_HTTP` kini **73** = 44 lama + 24 (EC01-EC24) + `ROUTE_NOT_FOUND` (D-336) + 4 (EC25-EC28).
+
+| ID | Kode | HTTP | Definisi dan pemeriksa |
+|---|---|---|---|
+| EC25 | `CONTRACT_REF_NOT_FOUND` | 422 | register 05 §13.1; I55 (langkah 9a) |
+| EC26 | `CONTRACT_REF_PID_NOT_FOUND` | 422 | register 05 §13.1; I55 (langkah 9a) |
+| EC27 | `CONTRACT_ITEM_KEY_DUPLICATE` | 422 | register 05 §13.1; I54 (langkah 6b) |
+| EC28 | `CHART_CUSTOM_FORM_UNSUPPORTED` | 422 | register 05 §13.1; by-construction (langkah 9) |
+
+Cara hitung (DC-32, 2026-10-30): Grep `^  "[A-Z][A-Z0-9_-]+",$` di `L/contract/enums.ts`; baris yang jatuh di dalam `STUDIO_ERROR_CODES` (`enums.ts:263-349`) = 264-299 (36) + 301-304 (4) + 307 (1) + 311-313 (3) + 316-339 (24) + 342 (1) + 345-348 (4) = **73**. HTTP 422 keempat kode: `L/contract/errors.ts:96-99`. checkId `SCHEMA_V2_CHECK_IDS` (E41) kini 14 (`enums.ts:437-444` + `446-451`; CH-01..CH-06 register 05 §5.4).
 
 ### 11.3 Details terstruktur
 
@@ -871,7 +894,7 @@ Kode lama yang dipakai ulang tanpa perubahan: `SCHEMA_INVALID`, `PARAM_CLASS_K_F
 
 Medan lain LintDef: `stage: "build"`, `hqMode: ["S"]`, `partial: false`, `ruleRef: "D-131"` (LD-01, LD-02) atau `"D-138"` (LD-03, LD-04), `blocksIngest: false`.
 
-## 12. Route R01-R20
+## 12. Route R01-R20 (+ R21-R23, register 05)
 
 Semua route: `export const dynamic = "force-dynamic"`, `requireSession`, `getStudioCaller`, gerbang kepercayaan D-98/D-134, rate limit FIX-1, helper `L/http/**` (baca saja). `STUDIO_ROUTES` (C16) diperluas R12-R20; `studioRoutePath` menerima `params.pid`.
 
@@ -907,10 +930,19 @@ Semua route: `export const dynamic = "force-dynamic"`, `requireSession`, `getStu
 | R19 | `/api/studio/templates/[id]/skeleton` | POST | baru | `StudioSkeletonV1 & { baseVersionNo, changeNote, expertMode? }` (simpan = versi baru dengan parameter templat sama) | 201 `{ version, skeletonSha256 }` | 409 `VERSION_CONFLICT`; 403 `PRESET_READONLY`, `PARAM_SURFACE_FORBIDDEN`, `PARAM_CLASS_K_FORBIDDEN`, `FORBIDDEN`; 400 `PARAM_CLASS_T_READONLY`, `CHANGE_NOTE_REQUIRED`, `SCHEMA_INVALID` (`SKELETON_*`); 422 `SLOT_PARAM_SCOPE_INVALID`, `SLOT_DUPLICATE`, `PARAM_UNKNOWN_KEY` |
 | - | `/api/studio/import/markdown` | POST | baru (D-328) | `{ markdown, chapterKey, title?, agentId?, target?, template?, meta?, slot? }`; `?validate=1` (wajib `target`) = `dryRunChapter` R08 | 200 `{ chapter, submission?, report: { importer: "md/v1", warnings, dropped, mapping }, validation, dryRun? }`; hanya konversi (tanpa simpan/render); CLI `scripts/studio/md2chapter.ts` byte-identik | 400 `SCHEMA_INVALID`, `JSON_MALFORMED`; 401; 403; 413 `PAYLOAD_TOO_LARGE` + `details.reason` (`MD_TOO_LONG` 1.000.000 karakter, `MD_TOO_MANY_LINES` 200.000, `MD_TOO_MANY_BLOCKS` 50.000, `MD_TABLE_TOO_WIDE` 100 kolom; badan 4 MiB); 415; 422 `CHAPTER_KEY_INVALID`; 429 (ember impor 60/60 s + ember validasi R08 untuk `?validate=1`; D-337) |
 | R20 | `/api/studio/documents/[id]/content` | GET | baru | `?slot=&chapter=&rev=n`; `?shape=content\|submission` (D-347: `submission` = badan siap kirim + `baseRevisionNo` + `submitTo` + `editHints`) | 200 `{ document: { id, docNumber }, revisionNo, slot?, content }`; tanpa parameter = `StudioDocV2Resolved` penuh; `slot` = payload slot; `slot` + `chapter` = `ChapterV2` dengan `id` di bab, section, blok | 400 `SCHEMA_INVALID` (`/query/shape` bukan `content\|submission`, `shape=submission` tanpa `chapter`/`slot`, `/query/agentId` di luar 1..80); 404 `DOCUMENT_NOT_FOUND`, `REVISION_NOT_FOUND`, `ADDRESS_NOT_FOUND`; 422 `SLOT_UNKNOWN`, `SLOT_USE_CHAPTER_ENDPOINT` (`shape=submission` pada slot berulang tanpa `chapter`, `details.chapters`) |
+| R21 | `/api/studio/contracts` | GET | baru (rujukan register 05 §9.1; DC-15, D-372) | filter `mission`, `docKey`, `docNumber`, `kind`, `status`, `cardId`, `owner`, `taskRef`, `dueBefore`, `dueAfter`, `take`, `cursor` | 200 `{ contracts: ContractSummaryV2[], nextCursor }` | 400 `SCHEMA_INVALID` (pointer `/query/<nama>`); 401; 429 `RATE_LIMITED` (bucket `query`) |
+| R22 | `/api/studio/search` | GET | baru (rujukan register 05 §9.2; DC-16, D-372) | `q` wajib + `mission`, `kind`, `documentId`, `revisionNo`, `type`, `slotKey`, `take`, `cursor` | 200 `{ hits: SearchHitV2[], nextCursor, query }` (hit ber-`pid` + `address`) | 400 `SCHEMA_INVALID`; 401; 429 `RATE_LIMITED` (bucket `query`) |
+| R23 | `/api/studio/drafts/check` | POST | baru (rujukan register 05 §9.3; DC-23, D-378, D-381) | `{ markdown, agentId? }` | 200 `DraftCheckResultV2` (T2-70); dry-run R08 per blok, 0 tulis DB, tanpa render | 400; 401; 413 `PAYLOAD_TOO_LARGE` (`details.reason` `DRAFT_TOO_LONG` / `DRAFT_TOO_MANY_BLOCKS`); 415; 429 `RATE_LIMITED` (bucket `validate`, satu tagihan per blok, KD-43) |
 
 T2-60c `SubmitResultV2`: `{ document: { id, docNumber, missionFolder, docKey, template: { slug, versionNo }, tier }; created; unchanged; rebased; baseRevisionNo?; appliedOnRevisionNo?; revision: { revisionNo, changeScope, changeAuto }; chapter?: { slotKey, chapterKey, pid, sha256, blocks: Array<{ address, pid, type, artifactLabel? }> }; slot?: { slotKey, pid?, sha256, address }; completeness: CompletenessReportV2 }`. Amandemen DOC-2 (D-247, D-261): `job`, `outputs`, `renderRefused` tidak lagi diisi kiriman (D-247); medan opsional itu masih ada di tipe kontrak `types/v2/api.ts` sebagai sisa usang.
 
 Berkas draf: `…/rev-<n>/bab-<kunci>/` (CHAPTER slot chapter), `…/rev-<n>/lamp-<kunci>/` (CHAPTER slot appendix), `…/rev-<n>/slot-<slotKey>/` (SLOT). Nama berkas: dasar DATUM + ` Bab <k>` / ` Lampiran <k>` / ` <label slot>`; `StudioOutputFile.draft = true`; penanda `render.draft.marker`.
+
+Amandemen DOC-5 (register 05 §9.4-§9.6, §10, AM-06, AM-07, AM-09, AM-14..AM-16; D-364, D-366, D-367, D-372, D-380):
+- `STUDIO_ROUTES` (C16) memuat R21-R23 (`L/contract/env.ts:79-81`); berkas `API/contracts/route.ts`, `API/search/route.ts`, `API/drafts/check/route.ts` ada (Glob 2026-10-30).
+- Header kuota: `X-Studio-Quota-Remaining` (C48) dan `X-Studio-Quota-Bucket` (C49) (`env.ts:172, 174`); bucket E53 `render`, `validate`, `import`, `query` (`enums.ts:503`); aturan QH-01..QH-06 (header ada pada setiap respons sesudah tagihan, tidak pada 401; dua bucket → sisa terkecil). Terpasang di R07, R08, R09, R17, impor markdown (DC-19, D-366) dan R21/R22 (D-372).
+- Nama berkas final: `<docNumberSafe>_rev<revisionNo>_<YYYYMMDDTHHMMSSZ>_<sha8>.<ext>` (FN-01..FN-08; `FINAL_FILENAME_PATTERN` C51; artefak `rev0` + awalan `ART-` C53; `env.ts:176-183`), dihitung saat baca tanpa kolom baru (KD-39). Header `X-Studio-Final-Filename` (C50) di R10, HEAD R10, `?name=final|datum` (E57), `OutputFileDto.finalFileName` (AM-09), dan format bawaan HTML dokumen ber-`contractKind` di R17 (C40, KD-41) adalah spesifikasi register 05 yang dikerjakan DC-18/DC-20 (D-380); per Grep 2026-10-30 `API/files/[id]/route.ts` baru mengekspor `GET` (:32). Nama berkas draf di atas (dasar DATUM) tidak berubah.
+- R03 `?kind=contracts` (AM-07) diserahkan ke DC-28 (D-367).
 
 ## 13. Parameter
 
@@ -1141,12 +1173,12 @@ Jalur CLI (SR-33): `StudioDocV2` + `StudioTemplateV2` atau `ResolvedTemplate` �
 | C31 | `V1_FIELD_RENAMES` | peta VF-01..VF-14 (berkas sama) |
 | C32 | `STUDIO_COMMON_V2_SCHEMA_ID` | `"common/v2"` |
 | C32a | `SHARED_PARAM_GROUP_MEMBERS` | §13.5 (`L/registry/slots.ts`) |
-| C33 | `SLOT_SECTION_TYPES` | `["cover","controlSheet","signatureBlock","toc","chapter","appendix","sourceRegister","ruleIndex"]` (`L/registry/slots.ts`) |
+| C33 | `SLOT_SECTION_TYPES` | `["cover","controlSheet","signatureBlock","toc","chapter","appendix","sourceRegister","ruleIndex"]` (`L/registry/slots.ts`); + `"contractRecord"` (8 → 9, AM-01 register 05 §6.2, D-371; `slots.ts:29-40`) |
 | C33a | `CHAPTER_KEY_NUMERIC_PATTERN` | `"^[1-9][0-9]{0,2}$"` |
 | C33b | `CHAPTER_KEY_LETTER_PATTERN` | `"^[A-Z]$"` |
 | C33c | `STUDIO_ASSET_REL_DIR` | `"assets"`; `relPath` M13 = `assets/<sha256[0..2]>/<sha256>.<png\|jpg>` relatif `STUDIO_WORKSPACE_ROOT` |
 
-Diperluas tanpa nama baru: C16 `STUDIO_ROUTES` (+R12..R20), C17 `STUDIO_SCHEMA_IDS` (+SID01..SID05). Dipakai ulang: `IMAGE_MAX_SIDE_PX` 20000, `IMAGE_MAX_PIXELS` 80.000.000 (`services/images/decode.ts:14,16`), `STUDIO_MAX_JSON_BYTES` (C09).
+Diperluas tanpa nama baru: C16 `STUDIO_ROUTES` (+R12..R20; +R21..R23 AM-06 register 05), C17 `STUDIO_SCHEMA_IDS` (+SID01..SID05). Konstanta lanjutan C34..C60 (termasuk C48-C53 header kuota dan nama final, C59/C60 `chart.custom`) didefinisikan di register 05 §14.1. Dipakai ulang: `IMAGE_MAX_SIDE_PX` 20000, `IMAGE_MAX_PIXELS` 80.000.000 (`services/images/decode.ts:14,16`), `STUDIO_MAX_JSON_BYTES` (C09).
 
 ### 16.2 Enum TS (`L/contract/enums.ts`)
 
@@ -1164,9 +1196,11 @@ Diperluas tanpa nama baru: C16 `STUDIO_ROUTES` (+R12..R20), C17 `STUDIO_SCHEMA_I
 | E38 | `PAPER_SIZES` / `PaperSize` + `PAPER_SIZE_MM` | `A4` [210, 297], `A3` [297, 420], `A5` [148, 210], `Letter` [215,9, 279,4], `Legal` [215,9, 355,6], `F4` [215, 330] (**hipotesis** nilai lazim Indonesia, KC-11) |
 | E39 | `PAGE_ORIENTATIONS` / `PageOrientation` | `portrait`, `landscape` |
 | E40 | `RENDER_SCOPE_NAMES` / `RenderScopeName` | `document`, `chapter`, `slot` (API; dipetakan ke E27) |
-| E41 | `SCHEMA_V2_CHECK_IDS` | `DISPLAY_FIELD`, `V1_FIELD`, `PID_OP_KIND`, `SKELETON_POSITION`, `SKELETON_SECTION_TYPE`, `SKELETON_REPEATABLE`, `SKELETON_CONTENT_MODE`, `SKELETON_ADMITS` |
+| E41 | `SCHEMA_V2_CHECK_IDS` | `DISPLAY_FIELD`, `V1_FIELD`, `PID_OP_KIND`, `SKELETON_POSITION`, `SKELETON_SECTION_TYPE`, `SKELETON_REPEATABLE`, `SKELETON_CONTENT_MODE`, `SKELETON_ADMITS`; + CH-01..CH-06 register 05 §5.4 (8 → 14, `enums.ts:437-451`) |
 | E42 | `CHAPTER_EXPECTED_SOURCES` | `outline`, `contiguous` |
 | E43 | `MARGIN_DENSITIES` / `MarginDensity` | `compact`, `standard`, `wide` |
+
+Enum lanjutan E44..E57 (jenis kontrak, status laporan/butir, vonis, `QUOTA_BUCKETS`, kode peringatan/isu draf, `FINAL_NAME_MODES`, bentuk `chart.custom`) didefinisikan di register 05 §14.2.
 
 ## 17. Risiko, butir controller, kriteria penerimaan
 
@@ -1211,8 +1245,8 @@ Diperluas tanpa nama baru: C16 `STUDIO_ROUTES` (+R12..R20), C17 `STUDIO_SCHEMA_I
 | AC-2 | migration.sql memenuhi penjaga §3.4 | 0 DROP; 9 / 3 / 30 / 20 / 14 |
 | AC-3 | Rollback §3.5 hanya objek delta | 9 tabel, 14 kolom, 2 indeks, 3 tipe, 1 baris buku |
 | AC-4 | SR-04: SID01-SID05 terbit; E0, E1, E2, E3 lolos ajv; varian E1 bermedan `format` → `DISPLAY_FIELD`; varian bermedan `blockId` → `V1_FIELD` | keluaran ajv dikutip |
-| AC-5 | `STUDIO_ERROR_CODES` = 68 (kini 69 dengan `ROUTE_NOT_FOUND`, D-336); `STUDIO_ERROR_HTTP` memuat EC01-EC24 dengan HTTP §11.2 | hitungan dikutip |
-| AC-6 | `STUDIO_ROUTES` memuat R01-R20; berkas route ada untuk R12-R20 | Glob dikutip |
+| AC-5 | `STUDIO_ERROR_CODES` = 68 (kini 69 dengan `ROUTE_NOT_FOUND`, D-336; kini 73 dengan EC25-EC28 register 05, D-367, cara hitung §11.2); `STUDIO_ERROR_HTTP` memuat EC01-EC24 dengan HTTP §11.2 | hitungan dikutip |
+| AC-6 | `STUDIO_ROUTES` memuat R01-R20 (kini R01-R23, AM-06 register 05); berkas route ada untuk R12-R20 (R21-R23: kriteria register 05) | Glob dikutip |
 | AC-7 | `parseAddress` menerima `F:<slotKey>` dan `F:<slotKey>/<n>` serta 4 kunci lama (round-trip) | uji asap SR-04 |
 | AC-8 | Registri: R-38..R-52 ada sekali; PC-01..PC-07 diterapkan; DV-01..DV-04 di `DeriveFnId` | skrip hitung SR-05 |
 | AC-9 | Invarian §13.4 baris A4 portrait | 11906 × 16838, 128, [128, 166] |
@@ -1230,14 +1264,14 @@ Hitungan diperiksa dengan Grep atas berkas ini setelah penulisan; keluaran dikut
 | Enum TS | E29-E43 | 15 |
 | Id skema | SID01-SID06 | 6 |
 | Tipe kontrak v2 | T2-01-T2-60, T2-60a-T2-60c | 63 |
-| Kode galat baru | EC01-EC24 | 24 (total 68) |
-| Route | R01-R20 | 20 ID (R12-R20 baru) |
+| Kode galat baru | EC01-EC24 | 24 (total 68; kini 73 dengan `ROUTE_NOT_FOUND` + EC25-EC28 register 05) |
+| Route | R01-R20 | 20 ID (R12-R20 baru; R21-R23 dirujuk, definisi register 05) |
 | Slot bawaan | SL-01-SL-07 | 7 |
 | Param kontrak baru | R-38-R-52 | 15 |
 | Perubahan param | PC-01-PC-07 | 7 |
 | DeriveFnId baru | DV-01-DV-04 | 4 |
 | LintDef baru | LD-01-LD-04 | 4 |
-| Medan tampilan | DF-01-DF-71 | 71 (52 global + 19 per lokasi) |
+| Medan tampilan | DF-01-DF-71 | 71 (52 global + 19 per lokasi); kode kini 73 dengan DF-72/DF-73 register 05 |
 | Medan v1 | VF-01-VF-14 | 14 |
 | Adaptor tingkat atas | AD-01-AD-16 | 16 = 3 + 13 properti v1 |
 | Konstanta | C18-C33, C32a, C33a-C33c | 20 |
@@ -1247,3 +1281,43 @@ Hitungan diperiksa dengan Grep atas berkas ini setelah penulisan; keluaran dikut
 | Risiko | RK-01-RK-17 | 17 |
 | Butir controller | KC-6-KC-11 | 6 |
 | Kriteria penerimaan | AC-1-AC-10 | 10 |
+
+## 19. Rujukan ke register 05 (document contract, DC-32)
+
+Register `masterplan/05_document_contract_specs.md` (DC-02, diterima D-363) adalah register nama tunggal fase document contract. Bagian ini hanya indeks rujukan: nama ditulis identik dengan 05; definisi dan rincian tetap di 05. Asal keputusan D-361..D-381 (`decisions/decisions.md:366-386`).
+
+### 19.1 Indeks rujukan
+
+| Butir | Nama (identik register 05) | Definisi di 05 | Bukti kode (2026-10-30) | Asal |
+|---|---|---|---|---|
+| Section type dan jenis slot | `contractRecord` S30 "Catatan Kontrak"; C33 8 → 9; `activeTiers: []`; slot bawaan `record` | §6.1, §6.2; AM-01, AM-10, AM-11 | `L/registry/sections.ts:471-483` (`activeTiers: NONE` :480), `:666` (52), `:669` (DOCUMENT 30); `L/registry/slots.ts:29-40, 94` | D-371, D-376 |
+| Templat kontrak | `laporan-kerja-agen` (CK-01 `agentWorkReport`, NOTA); SL-08 `record`, SL-09 `content`, SL-10 `references` | §1.2, §6.3 | seed DC-29/DC-30 berjalan (D-379) | D-361, D-363, D-379 |
+| Kode galat HTTP | EC25 `CONTRACT_REF_NOT_FOUND`, EC26 `CONTRACT_REF_PID_NOT_FOUND`, EC27 `CONTRACT_ITEM_KEY_DUPLICATE`, EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` (semua 422) | §13.1; AM-05 | `L/contract/enums.ts:345-348`; `L/contract/errors.ts:96-99` | D-363, D-367, D-374, D-375 |
+| checkId `SCHEMA_INVALID` | CH-01 `CONTRACT_ENUM`, CH-02 `CONTRACT_PATTERN`, CH-03 `CONTRACT_DATE`, CH-04 `CONTRACT_REF_TARGET`, CH-05 `CHART_CUSTOM_FORM`, CH-06 `SKELETON_CONTRACT_RECORD` | §5.4; AM-04 | `enums.ts:446-451` | D-367 |
+| DISPLAY_FIELD | DF-72, DF-73 | §5.5; AM-12 | `L/contract/schema/v2/forbidden.ts:130-140` | D-367 |
+| Route | R21 `/api/studio/contracts` (GET), R22 `/api/studio/search` (GET), R23 `/api/studio/drafts/check` (POST) | §9.1-§9.3; AM-06 | `L/contract/env.ts:79-81`; `API/contracts/route.ts`, `API/search/route.ts`, `API/drafts/check/route.ts` | D-372, D-378, D-381 |
+| Header kuota | C48 `X-Studio-Quota-Remaining`, C49 `X-Studio-Quota-Bucket`; E53 `QUOTA_BUCKETS`; QH-01..QH-06 | §9.6; AM-16 | `env.ts:172, 174`; `enums.ts:503` | D-364, D-366, D-372 |
+| Nama berkas final | FN-01..FN-08; C50 `X-Studio-Final-Filename`, C51 `FINAL_FILENAME_PATTERN`, C52, C53 `ART-`; I59-I62; E57 `final`/`datum` | §10; AM-09, AM-14, AM-15 | `env.ts:176-183`; R10 HEAD dan `?name=` belum di kode (`API/files/[id]/route.ts:32` hanya `GET`); DC-18/DC-20 berjalan | D-361 (U-2), D-364, D-380 |
+| `chart.custom` | `ChartV2.code` `"custom"` + `form` (T2-66); CU-01..CU-09; C59, C60 = 9; I68 | §12; AM-03 | `L/contract/types/v2/doc.ts:181-183`; `L/registry/charts.ts:1449` | D-368, D-374 |
+| Pid butir | `F:record/<n>` bertipe `contractItem`; pewarisan pid per `key` | §5.7; KD-34 | `L/services/compose/contract-record.ts:9, 56-58`; baris M17 dan pewarisan = DC-09 | D-376, D-380 |
+| Data Prisma | M19-M21, MX08-MX12, migrasi `20261030220000_add_studio_contract` | §7 | migrasi terpasang di v21 | D-365 |
+
+### 19.2 Hitungan terverifikasi (sumber = kode)
+
+| Hitungan | Nilai | Cara hitung |
+|---|---|---|
+| `STUDIO_ERROR_CODES` | 73 (69 → 73) | Grep `^  "[A-Z][A-Z0-9_-]+",$` di `L/contract/enums.ts`, baris 264-348 di dalam `STUDIO_ERROR_CODES` (`:263-349`): 36 + 4 + 1 + 3 + 24 + 1 + 4 |
+| DISPLAY_FIELD (C29 + C30) | 73 (71 → 73) | Grep `^  "[A-Za-z_]+", // DF-\d+$` di `forbidden.ts` = 52; Grep `^  "DF-\d+": ` = 21 |
+| `SCHEMA_V2_CHECK_IDS` (E41) | 14 (8 → 14) | Grep yang sama di `enums.ts`: baris 437-444 (8) + 446-451 (6) |
+| `SLOT_SECTION_TYPES` (C33) | 9 (8 → 9) | Read `L/registry/slots.ts:29-40` |
+| `SECTION_REGISTRY_COUNT` | 52 (DOCUMENT 30) | `L/registry/sections.ts:666, 669` |
+
+### 19.3 Ketidakcocokan nama 03 dan 05 (dicatat; 05 tidak disunting baris ini)
+
+| # | Butir | Register 05 | Kode / keputusan | Register 03 mengikuti |
+|---|---|---|---|---|
+| 1 | `contractRecord.activeTiers` | §6.1: "semua tier" | `NONE` (`sections.ts:480`); D-371 opsi (a) `[]` | kode + D-371 (§6.2, §19.1); 05 §6.1 perlu amandemen oleh pemilik 05 |
+| 2 | `DisplayFieldLocationRule.alsoAt` | tidak ada | `forbidden.ts:80, 132` | dirujuk sebagai nama kode (§5.1); pencatatan ke 05 saat DC-33 (D-367) |
+| 3 | Rujukan baris E41 | `enums.ts:430-439` (§0.3, §5.4) | kini `enums.ts:436-452` | baris kode terkini (bukan beda nama) |
+
+Nama lain yang dirujuk di §0.1-§18 (EC25-EC28, CH-01..CH-06, DF-72/DF-73, R21-R23, C48-C53, E53, E57, CU-01..CU-09, `F:record/<n>`, `contractItem`, `laporan-kerja-agen`, `record`) identik huruf demi huruf dengan register 05.

@@ -54,6 +54,7 @@ import {
 } from "../../contract";
 import type { StudioCaller } from "../../contract/auth";
 import { StudioEngineError } from "../../contract/errors";
+import type { SubmitWarningV2 } from "../../contract/types/v2/contract";
 import {
   composeV2,
   defaultChapterSlot,
@@ -70,13 +71,22 @@ import { computeCompleteness, type CompletenessSlotInput } from "../completeness
 import { assetRefOf, resolveAssetRef, resolveSubmissionAssets, type StudioAssetRow } from "../images/asset-store";
 import { decodeImageDetailed } from "../images/decode";
 import { assetShardRelPath } from "../images/store";
-import { assertByConstruction, byConstructionError, typeCodeIssue } from "../ingest/by-construction";
+import {
+  assertByConstructionAsync,
+  byConstructionError,
+  checkContractSource,
+  contractCheckError,
+  typeCodeIssue,
+  withChartCustomPointer,
+} from "../ingest/by-construction";
+import { createPrismaContractRefReader } from "../contracts/prisma-reader";
 import { resolveIngestEnforcement } from "../ingest/gate";
 import { stripTrustMarkersForWriter } from "../ingest/trust";
 import { sha256Hex, stableStringify } from "../ingest/util";
 import { toJson } from "../revisions/rows";
 import { resolveSlotsForVersion } from "../skeleton";
 import { carryFillStamps, dbPidAllocator, readRows, reconstructSource, writeRevisionRows, type StructureRows } from "../structure";
+import { skeletonContractKind, writeContractRows } from "../structure/contract";
 import { resolveTemplate, resolveTemplateVersion } from "../templates";
 import { assertTemplateUsable } from "../templates/access";
 import { chapterScope, effectiveChange, joinScopes, slotScope } from "./change";
@@ -155,6 +165,8 @@ interface TxOutcome {
   /** Hanya dry-run: lint gerbang + snapshot pasca-gabung (null bila `unchanged`). */
   lint?: LintReport | null;
   snapshot?: NormDocSnapshotV2 | null;
+  /** DC-09 (KD-46): peringatan kontrak non-penahan (CW-01) dari gerbang I55. */
+  warnings?: SubmitWarningV2[];
 }
 
 // ── Pembantu murni ───────────────────────────────────────────────────────
@@ -297,6 +309,8 @@ function completenessOf(
   structure: { order: string[] } | undefined,
   revisionNo: number,
   doc: { id: string; docNumber: string; missionFolder: string | null; missionDocKey: string | null },
+  /** DC-WIRE (D-386, 05 §6.5): MX08 yang sudah dibaca pemanggil; null = non-kontrak. */
+  contractKind: string | null,
 ): CompletenessReportV2 {
   const layout = slotLayout(skeleton, tier, structure);
   const secByKey = new Map(rows.sections.map((s) => [s.slotKey, s]));
@@ -334,6 +348,7 @@ function completenessOf(
     revisionNo,
     slots,
     doc: { docId: doc.id, docNumber: doc.docNumber, missionFolder: doc.missionFolder, docKey: doc.missionDocKey },
+    ...(contractKind ? { contractKind } : {}),
   });
 }
 
@@ -854,7 +869,8 @@ async function applyInLock(
       changeScope: latest.changeScope ?? "",
       changeAuto: false,
       rows: prevRows,
-      completeness: completenessOf(prevRows, skeleton, tier, current.structure, latest.revisionNo, docRef),
+      // DC-WIRE: tanpa kueri baru -> cermin MX09 dokumen yang sudah terbaca (null = non-kontrak).
+      completeness: completenessOf(prevRows, skeleton, tier, current.structure, latest.revisionNo, docRef, document.contractKind ?? null),
       ...(chapterSlotKey ? { chapterSlotKey } : {}),
       template: tplResolved,
       tier,
@@ -892,16 +908,31 @@ async function applyInLock(
     rebased = (await checkBase(tx, document.id, latest, plan.baseRevisionNo, scopes, current)).rebased;
   }
 
-  const composed = composeV2({
-    source: merged.doc,
-    skeleton,
-    tier,
-    params,
-    slotParams,
-    assets: await assetInfoFor(tx, merged.doc, pre.pendingAssetInfo),
-    ...(prevRows ? { prevRows } : {}),
-    pids,
-  });
+  // DC-09: jenis kontrak templat terpatok (MX08) -> compose (label slot contractRecord, DC-10).
+  // Dikueri hanya bila kerangka memuat slot contractRecord (non-kontrak: tanpa kueri baru, D-382).
+  const contractKind = await skeletonContractKind(tx, templateVersionId, skeleton.skeleton.slots);
+  // D-382: pointer payload kontrak di badan kiriman (kiriman slot: `/payload`; selain itu dokumen tergabung).
+  const contractPointer = (k: string): string => (plan.kind === "slot" && k === plan.slotKey ? "/payload" : `/sections/${k}`);
+  // D-382 (register 05 §5.6 langkah 6b): I54 SEBELUM compose (compose kontrak DC-10 mengandaikan payload sah).
+  const contractPre = contractCheckError(checkContractSource(merged.doc, skeleton.skeleton.slots, { contractKind, contractPointer }));
+  if (contractPre) throw contractPre;
+  let composed: ReturnType<typeof composeV2>;
+  try {
+    composed = composeV2({
+      source: merged.doc,
+      skeleton,
+      tier,
+      params,
+      slotParams,
+      assets: await assetInfoFor(tx, merged.doc, pre.pendingAssetInfo),
+      ...(prevRows ? { prevRows } : {}),
+      pids,
+      ...(contractKind ? { contractKind } : {}),
+    });
+  } catch (err) {
+    // D-382: EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` mendapat pointer blok.
+    throw withChartCustomPointer(err, merged.doc);
+  }
 
   const revisionNo = (latest?.revisionNo ?? 0) + 1;
   // D-232: kiriman dokumen bertarget = satu revisi berlingkup `document` + rincian lingkup berubah.
@@ -915,7 +946,7 @@ async function applyInLock(
     lastFilledAt: now.toISOString(),
     lastFilledRevisionNo: revisionNo,
   });
-  const completeness = completenessOf(rows, skeleton, tier, merged.doc.structure, revisionNo, docRef);
+  const completeness = completenessOf(rows, skeleton, tier, merged.doc.structure, revisionNo, docRef, contractKind);
   const chapterSet = new Set(changedChapters);
   const slotSet = new Set(changedSlots);
   const changedAddresses = rows.blocks
@@ -937,10 +968,22 @@ async function applyInLock(
     }
   }
   const gatedDocumentId = document.id;
-  let gate: ReturnType<typeof assertByConstruction>;
+  let gate: Awaited<ReturnType<typeof assertByConstructionAsync>>;
   try {
-    gate = assertByConstruction(
-      { snapshot, tpl: tplResolved, tier, complete: completeness.status === "COMPLETE", intrinsic, correlationId: cid },
+    // D-382: varian async = 6b -> 9a (I55 reader BACA SAJA berklien tx: EC25/EC26, CW-01) -> 9.
+    // Non-kontrak: tanpa target, tanpa kueri.
+    gate = await assertByConstructionAsync(
+      {
+        snapshot,
+        tpl: tplResolved,
+        tier,
+        complete: completeness.status === "COMPLETE",
+        intrinsic,
+        correlationId: cid,
+        contractKind,
+        contractPointer,
+        contractRefs: createPrismaContractRefReader({ db: tx, correlationId: cid }),
+      },
       (g) =>
         submitLog({
           level: "warn",
@@ -953,7 +996,9 @@ async function applyInLock(
   } catch (err) {
     // FIX-Y (D-272): penahan kiriman bab/slot menunjuk medan BADAN kiriman agar agen dapat
     // langsung memperbaikinya; pointer dokumen tergabung disertakan sebagai `mergedPointer`.
-    if (plan.kind === "document" || !(err instanceof StudioEngineError) || err.code !== "BY_CONSTRUCTION_FAILED" || !Array.isArray(err.details)) throw err;
+    if (plan.kind === "document" || !(err instanceof StudioEngineError) || err.code !== "BY_CONSTRUCTION_FAILED" || !Array.isArray(err.details)) {
+      throw withChartCustomPointer(err, merged.doc);
+    }
     const routes = bodyPointerRoutes({
       kind: plan.kind,
       body: plan.body,
@@ -988,6 +1033,7 @@ async function applyInLock(
       tier,
       lint: gate.lint,
       snapshot,
+      ...(gate.contract.warnings.length > 0 ? { warnings: gate.contract.warnings } : {}),
     };
   }
 
@@ -1021,9 +1067,12 @@ async function applyInLock(
   for (const f of merged.metaFilled) {
     if ((META_MIRRORED_FIELDS as readonly string[]).includes(f)) mirror[f] = (merged.doc.meta as unknown as Record<string, unknown>)[f];
   }
+  // D-383 (register 05 §7.6): salinan penuh M19-M21 revisi ini + cermin MX09 (rujukan dari gerbang 9a,
+  // tanpa kueri I55 kedua). Non-kontrak (`contractKind` null): tanpa kueri, tanpa cermin.
+  const contract = await writeContractRows(tx, { documentId: document.id, revisionId: rev.id, revisionNo, contractKind, rows, resolvedRefs: gate.contract.refs, correlationId: cid });
   document = await tx.studioDocument.update({
     where: { id: document.id },
-    data: { currentRevisionNo: revisionNo, completeness: completeness.status, ...(mirror as Prisma.StudioDocumentUpdateInput) },
+    data: { currentRevisionNo: revisionNo, completeness: completeness.status, ...(mirror as Prisma.StudioDocumentUpdateInput), ...(contract.mirror ?? {}) },
   });
 
   return {
@@ -1042,6 +1091,7 @@ async function applyInLock(
     ...(chapterSlotKey ? { chapterSlotKey } : {}),
     template: tplResolved,
     tier,
+    ...(gate.contract.warnings.length > 0 ? { warnings: gate.contract.warnings } : {}),
   };
 }
 
@@ -1065,6 +1115,7 @@ async function finish(plan: SubmitPlan, o: TxOutcome): Promise<SubmitResultV2> {
     ...(o.appliedOnRevisionNo !== undefined ? { appliedOnRevisionNo: o.appliedOnRevisionNo } : {}),
     revision: { revisionNo: o.revisionNo, changeScope: o.changeScope, changeAuto: o.changeAuto },
     completeness: o.completeness,
+    ...(o.warnings && o.warnings.length > 0 ? { warnings: [...o.warnings] } : {}),
   };
   if (plan.kind === "chapter" && plan.chapterKey !== undefined) {
     const ch = o.rows.chapters.find((c) => c.chapterKey === plan.chapterKey);

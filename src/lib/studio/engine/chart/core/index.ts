@@ -25,6 +25,16 @@ export {
   type CompositeLayout,
 } from "./composite";
 export { chartCore, coreHeightMm } from "./families";
+export {
+  chartSpecFromDraft,
+  customChartCode,
+  isCustomChart,
+  resolveCustomChart,
+  toStudioChart,
+  type StudioChartCustomV1,
+  type StudioChartDraft,
+  type StudioChartInput,
+} from "./custom";
 export { chartRendererFor, drawnChartDef } from "./lookup";
 export {
   ACCENT_FIELD_PARAM_KEYS,

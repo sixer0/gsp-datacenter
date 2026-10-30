@@ -14,10 +14,14 @@
  *
  * Bawaan 120 permintaan per 60 detik per pemanggil; env `STUDIO_VALIDATE_RATE_LIMIT` /
  * `STUDIO_VALIDATE_RATE_WINDOW_MS` (dibaca sekali).
+ *
+ * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `validate`,
+ * `@/lib/studio/http/quota`); 429 membawa header kuota, respons lain dipasang route.
  */
 import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
 import { createFixedWindowLimiter, reject, renderRateIdentity, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
+import { applyQuotaHeaders, recordQuotaCharge } from "@/lib/studio/http/quota";
 
 export const VALIDATE_RATE_LIMIT_DEFAULT = 120;
 export const VALIDATE_RATE_WINDOW_MS_DEFAULT = 60_000;
@@ -51,10 +55,14 @@ export function resetValidateRateLimiter(): void {
 export function checkValidateRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
   const key = createHash("sha256").update(`validate\u0000${renderRateIdentity(caller)}`).digest("hex").slice(0, 32);
   const rl = validateLimiter().hit(key);
+  recordQuotaCharge(ctx, "validate", rl);
   if (rl.allowed) return null;
-  return reject(ctx, "RATE_LIMITED", "Too many validate requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-    callerKind: caller.kind,
-    retryAfterSec: rl.retryAfterSec,
-    limiter: "validate",
-  });
+  return applyQuotaHeaders(
+    reject(ctx, "RATE_LIMITED", "Too many validate requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
+      callerKind: caller.kind,
+      retryAfterSec: rl.retryAfterSec,
+      limiter: "validate",
+    }),
+    ctx,
+  );
 }

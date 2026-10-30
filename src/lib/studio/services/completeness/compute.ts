@@ -7,6 +7,11 @@
  * (`isSlotPayloadFilled`, sama dengan `M14.filled`), dan state slot E29 §8.1
  * (`slotState` / `slotStateOf`). Compose (`compose/snapshot.ts`, state kerangka snapshot)
  * dan R05 (state cadangan pohon slot) mengimpor fungsi ini, tidak menyalinnya.
+ *
+ * Dokumen ber-contractKind (DC-11, register 05 §6.5, KD-31): slot berulang kerangka jenis
+ * (C58 `skeleton`, mis. `content`) mengharapkan kunci bab CO wajib registri (C58 `outline`)
+ * ditambah kunci `outline` dokumen; `expectedSource = "outline"`. Tanpa `contractKind`
+ * (atau jenis tak terdaftar) perilaku identik dengan sebelumnya.
  */
 import {
   CHAPTER_KEY_LETTER_PATTERN,
@@ -16,6 +21,7 @@ import {
   type SlotStatusV2,
   type StudioSlotState,
 } from "@/lib/studio/contract";
+import { getContractKindDef } from "@/lib/studio/registry/contracts";
 import type { CompletenessChapterInput, CompletenessInput, CompletenessSlotInput } from "./types";
 
 const NUMERIC_KEY = new RegExp(CHAPTER_KEY_NUMERIC_PATTERN);
@@ -70,15 +76,45 @@ function contiguousKeys(present: readonly string[], letters: boolean): string[] 
 }
 
 /**
+ * Kunci bab CO wajib (C58 `outline`, `required`) untuk satu slot dokumen ber-contractKind
+ * (register 05 §6.5, KD-31). Berlaku hanya untuk slot berulang kerangka jenis (C58
+ * `skeleton`, cocok `slotKey` + `sectionType`); null bila `contractKind` absen, jenis tidak
+ * terdaftar, slot bukan slot berulang jenis itu, atau jenis tanpa bab wajib (perilaku
+ * non-kontrak). Jenis tak terdaftar ditolak lebih awal oleh compose (422 CONTRACT_KIND).
+ */
+export function contractRequiredChapterKeys(
+  contractKind: string | null | undefined,
+  slotKey: string,
+  sectionType: string,
+): string[] | null {
+  if (!contractKind) return null;
+  const def = getContractKindDef(contractKind);
+  if (!def) return null;
+  if (!def.skeleton.some((s) => s.repeatable && s.slotKey === slotKey && s.sectionType === sectionType)) return null;
+  const keys = def.outline.filter((o) => o.required).map((o) => o.chapterKey);
+  return keys.length > 0 ? keys : null;
+}
+
+/**
  * Kunci bab yang diharapkan satu slot berulang (§8.2): kunci `outline` bila berisi,
  * selain itu kontigu (`"1".."max"`, lampiran `"A"..huruf terbesar`; 0 bab = `[]`).
+ *
+ * `requiredKeys` (kunci CO wajib dokumen ber-contractKind, 05 §6.5): bila berisi,
+ * expected = `requiredKeys` ∪ kunci `outline` (urut alami), sumber selalu `"outline"`;
+ * `outline` absen/null tidak menghapus kunci wajib.
  */
 export function expectedChapterKeys(
   sectionType: string,
   outline: unknown,
   presentKeys: readonly string[],
+  requiredKeys?: readonly string[] | null,
 ): { expected: string[]; source: "outline" | "contiguous" } {
   const fromOutline = outlineKeyList(outline);
+  if (requiredKeys && requiredKeys.length > 0) {
+    const union = [...requiredKeys];
+    for (const k of fromOutline ?? []) if (!union.includes(k)) union.push(k);
+    return { expected: union.sort(compareChapterKeys), source: "outline" };
+  }
   if (fromOutline) return { expected: fromOutline, source: "outline" };
   return { expected: contiguousKeys(presentKeys, isLetterKeyed(sectionType)), source: "contiguous" };
 }
@@ -93,11 +129,14 @@ export function isSlotPayloadFilled(payload: unknown): boolean {
   return Object.keys(rec).some((k) => k !== "type" && rec[k] !== undefined);
 }
 
-/** Kemajuan bab satu slot berulang (T2-60b). */
-export function chapterProgress(slot: CompletenessSlotInput): ChapterProgressV2 {
+/**
+ * Kemajuan bab satu slot berulang (T2-60b). `requiredKeys` = kunci CO wajib dokumen
+ * ber-contractKind (`contractRequiredChapterKeys`); absen = perilaku non-kontrak.
+ */
+export function chapterProgress(slot: CompletenessSlotInput, requiredKeys?: readonly string[] | null): ChapterProgressV2 {
   const rows: CompletenessChapterInput[] = [...(slot.chapters ?? [])].sort((a, b) => compareChapterKeys(a.key, b.key));
   const presentKeys = rows.map((c) => c.key);
-  const { expected, source } = expectedChapterKeys(slot.sectionType, outlineOf(slot.row?.payload), presentKeys);
+  const { expected, source } = expectedChapterKeys(slot.sectionType, outlineOf(slot.row?.payload), presentKeys, requiredKeys);
   const progress: ChapterProgressV2 = {
     expected,
     expectedSource: source,
@@ -143,6 +182,10 @@ export interface SlotStateInput {
   outline?: unknown;
   /** Kunci bab yang ada (slot berulang). */
   chapterKeys?: readonly string[];
+  /** Kunci slot; hanya dibaca bersama `contractKind` (05 §6.5). */
+  slotKey?: string;
+  /** Jenis kontrak templat (MX08); absen = perilaku non-kontrak. */
+  contractKind?: string | null;
 }
 
 /**
@@ -151,7 +194,7 @@ export interface SlotStateInput {
  */
 export function slotStateOf(i: SlotStateInput): StudioSlotState {
   const slot: CompletenessSlotInput = {
-    slotKey: "",
+    slotKey: i.slotKey ?? "",
     sectionType: i.sectionType,
     label: "",
     required: i.required,
@@ -165,7 +208,8 @@ export function slotStateOf(i: SlotStateInput): StudioSlotState {
     ...(i.repeatable ? { chapters: (i.chapterKeys ?? []).map((key) => ({ key, pid: "", by: null, at: null, revisionNo: null })) } : {}),
   };
   const omitted = !slot.row && !slot.required;
-  return slotState(slot, i.repeatable && !omitted ? chapterProgress(slot) : null);
+  const required = contractRequiredChapterKeys(i.contractKind, slot.slotKey, slot.sectionType);
+  return slotState(slot, i.repeatable && !omitted ? chapterProgress(slot, required) : null);
 }
 
 /** Kunci `missingRequired` satu slot (§8.3). */
@@ -190,7 +234,7 @@ export function computeStructure(input: CompletenessInput): Omit<CompletenessRep
   for (const slot of input.slots) {
     if (!slot.active) continue;
     const omitted = !slot.row && !slot.required;
-    const progress = slot.repeatable && !omitted ? chapterProgress(slot) : null;
+    const progress = slot.repeatable && !omitted ? chapterProgress(slot, contractRequiredChapterKeys(input.contractKind, slot.slotKey, slot.sectionType)) : null;
     const state = slotState(slot, progress);
     if (progress) chapters[slot.slotKey] = progress;
     // Penulis terakhir slot berulang = bab terbaru (baris M14 berulang tidak membawa isi bab).

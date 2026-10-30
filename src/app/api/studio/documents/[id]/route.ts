@@ -40,7 +40,7 @@ import {
 } from "@/lib/studio/contract";
 import { SLOT_KIND_BY_TYPE } from "@/lib/studio/registry/slots";
 import { slotStateOf } from "@/lib/studio/services/completeness";
-import { toOutputFileDto } from "@/lib/studio/services/storage";
+import { OUTPUT_FILE_OWNER_INCLUDE, toOutputFileDto } from "@/lib/studio/services/storage";
 import { json, reject, reqCtx } from "@/lib/studio/http";
 import { failFrom, toDocumentSummary, toRevisionSummary } from "../../validate/_shared/route-kit";
 import { asCompletenessReport } from "../../validate/_shared/v2-kit";
@@ -188,7 +188,7 @@ function isRepeatable(row: SectionRow): boolean {
  * (`completeness.slotStateOf`, SR-55 M6) dari baris M14 + kunci bab M15. contentMode dan
  * minItems dari slot templat; baris tanpa slot templat memakai mode bawaan registri.
  */
-function fallbackState(row: SectionRow, chapterKeys: readonly string[]): StudioSlotState {
+function fallbackState(row: SectionRow, chapterKeys: readonly string[], contractKind: string | null): StudioSlotState {
   const repeatable = isRepeatable(row);
   const outline = row.payload && typeof row.payload === "object" ? (row.payload as { outline?: unknown }).outline : undefined;
   return slotStateOf({
@@ -201,6 +201,8 @@ function fallbackState(row: SectionRow, chapterKeys: readonly string[]): StudioS
     filled: repeatable ? chapterKeys.length > 0 : row.filled,
     ...(repeatable && outline !== undefined ? { outline } : {}),
     chapterKeys,
+    // DC-WIRE (D-386, 05 §6.5): MX09 `StudioDocument.contractKind` (sudah terbaca); null = non-kontrak.
+    ...(contractKind ? { slotKey: row.slotKey, contractKind } : {}),
   });
 }
 
@@ -209,7 +211,7 @@ function sectionAddress(chapterKey: string, sectionNo: number): string {
   return sectionNo > 0 ? `${chapterKey}.${sectionNo}` : chapterKey;
 }
 
-function buildSlots(rows: StructureRows, report: CompletenessReportV2 | null): SlotNodeV2[] {
+function buildSlots(rows: StructureRows, report: CompletenessReportV2 | null, contractKind: string | null): SlotNodeV2[] {
   const chaptersBySection = groupBy(rows.chapters, (c) => c.docSectionId);
   const subsByChapter = groupBy(rows.subsections, (s) => s.chapterId);
   const blocksBySub = groupBy(rows.blocks, (b) => b.subsectionId ?? "");
@@ -230,7 +232,7 @@ function buildSlots(rows: StructureRows, report: CompletenessReportV2 | null): S
       slotKey: row.slotKey,
       sectionType: row.sectionTypeKey,
       label: row.templateSlot?.label ?? status?.label ?? row.sectionType.name ?? row.slotKey,
-      state: status?.state ?? fallbackState(row, chapterRows.map((c) => c.chapterKey)),
+      state: status?.state ?? fallbackState(row, chapterRows.map((c) => c.chapterKey), contractKind),
       address: repeatable ? "" : `F:${row.slotKey}`,
     };
     if (repeatable) {
@@ -296,9 +298,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         orderBy: { ordinal: "asc" },
         select: { address: true, blockId: true, type: true, artifactLabel: true, ordinal: true, textPlain: true },
       }),
+      // D-387 (AM-09, CQ-3): relasi pemilik -> `toOutputFileDto` mengisi `finalFileName` tanpa query kedua.
       prisma.studioOutputFile.findMany({
         where: { revisionId: rev.id },
         orderBy: [{ role: "asc" }, { format: "asc" }, { fileName: "asc" }],
+        include: OUTPUT_FILE_OWNER_INCLUDE,
       }),
       readStructure(rev.id),
     ]);
@@ -324,7 +328,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           completeness: rev.completeness as StudioCompleteness,
         },
         tree: buildTree(blocks),
-        slots: buildSlots(structure, completeness),
+        slots: buildSlots(structure, completeness, doc.contractKind),
         completeness,
         outputs: files.map(toOutputFileDto),
         lint: rev.lintReport ?? null,

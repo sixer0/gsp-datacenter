@@ -32,6 +32,7 @@ import {
 } from "../../../contract";
 import type { StudioCaller } from "../../../contract/auth";
 import { StudioEngineError } from "../../../contract/errors";
+import type { SubmitWarningV2 } from "../../../contract/types/v2/contract";
 import { stripTrustMarkersForWriter } from "../../ingest/trust";
 import { mergeSubmission, type SkeletonInput } from "../../compose";
 import { getSkeleton } from "../../skeleton";
@@ -74,6 +75,8 @@ export interface PatchPidResult {
   baseRevisionNo: number;
   appliedOnRevisionNo: number;
   completeness: CompletenessReportV2;
+  /** DC-WIRE (D-386, KD-46): peringatan kontrak non-penahan (CW-01) `CommitOutput.warnings`; hanya bila tidak kosong. */
+  warnings?: SubmitWarningV2[];
 }
 
 /** Hasil R14 (`StructureResult`, internal; register §12 R14). Tanpa render (D-247). */
@@ -84,6 +87,8 @@ export interface StructureResult {
   baseRevisionNo: number;
   appliedOnRevisionNo: number;
   completeness: CompletenessReportV2;
+  /** DC-WIRE (D-386, KD-46): peringatan kontrak non-penahan (CW-01) `CommitOutput.warnings`; hanya bila tidak kosong. */
+  warnings?: SubmitWarningV2[];
 }
 
 function fail(code: ConstructorParameters<typeof StudioEngineError>[0], message: string, details?: unknown): never {
@@ -332,6 +337,7 @@ async function runPidEdit(
     baseRevisionNo: body.baseRevisionNo,
     appliedOnRevisionNo: n,
     completeness: commit.completeness,
+    ...(commit.warnings && commit.warnings.length > 0 ? { warnings: [...commit.warnings] } : {}),
   };
 }
 
@@ -521,6 +527,7 @@ export async function patchStructure(caller: StudioCaller, documentId: string, r
       baseRevisionNo: body.baseRevisionNo,
       appliedOnRevisionNo: out.n,
       completeness: out.commit.completeness,
+      ...(out.commit.warnings && out.commit.warnings.length > 0 ? { warnings: [...out.commit.warnings] } : {}),
     };
   } catch (e) {
     logRejected(cid, "patchStructure", e, ctxLog);

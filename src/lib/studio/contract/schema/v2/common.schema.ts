@@ -14,8 +14,33 @@
  * - Kompatibel `STUDIO_AJV_OPTIONS` (strict, discriminator, allowUnionTypes);
  *   setiap `required` di subskema mendeklarasikan propertinya (strictRequired).
  */
-import { CHART_CODES, PARAGRAPH_ROLES_V2, PROVENANCE_MARKS, RENDER_SCOPE_NAMES, SYMBOL_DIALECTS, TABLE_BLOCK_TYPES } from "../../enums";
-import { ASSET_KEY_PATTERN, ASSET_REF_PATTERN, DOC_KEY_PATTERN, PID_PATTERN } from "../../env";
+import {
+  AGENT_WORK_REPORT_STATUSES,
+  CHART_CODES,
+  CHART_CUSTOM_MARKS,
+  CHART_CUSTOM_ORIENTATIONS,
+  CONTRACT_EVIDENCE_KINDS,
+  CONTRACT_ITEM_STATUSES,
+  CONTRACT_REF_RELS,
+  CONTRACT_VERDICTS,
+  PARAGRAPH_ROLES_V2,
+  PROVENANCE_MARKS,
+  RENDER_SCOPE_NAMES,
+  SYMBOL_DIALECTS,
+  TABLE_BLOCK_TYPES,
+} from "../../enums";
+import {
+  ASSET_KEY_PATTERN,
+  ASSET_REF_PATTERN,
+  CARD_ID_PATTERN,
+  CONTRACT_ACTOR_PATTERN,
+  CONTRACT_KEY_PATTERN,
+  CONTRACT_LIMITS,
+  CONTRACT_REPORTED_AT_PATTERN,
+  CONTRACT_SHA_PREFIX_PATTERN,
+  DOC_KEY_PATTERN,
+  PID_PATTERN,
+} from "../../env";
 import { atMostOne, JSON_SCHEMA_DIALECT, STUDIO_SCHEMA_URL_BASE, xorRequired } from "../common.schema";
 import { diagramSchema } from "../diagram.schema";
 import { DOC_SCHEMA_ID, docSchema } from "../doc.schema";
@@ -90,7 +115,7 @@ export const BLOCK_V2_DEFS = [
   "SymbolSheetV2",
 ] as const;
 
-/** 6 `$defs` payload slot tak-berulang (T2-44). */
+/** 7 `$defs` payload slot tak-berulang (T2-44 + T2-61 `contractRecord`, AM-02 DC-05). */
 export const SLOT_PAYLOAD_V2_DEFS = [
   "CoverPayloadV2",
   "ControlSheetPayloadV2",
@@ -98,7 +123,14 @@ export const SLOT_PAYLOAD_V2_DEFS = [
   "TocPayloadV2",
   "SourceRegisterPayloadV2",
   "RuleIndexPayloadV2",
+  "ContractRecordPayloadV2",
 ] as const;
+
+// ── Document contract (register 05 §5.3, T2-61..T2-66; DC-05) ────────────
+// Enum skema `status` = gabungan set jenis aktif (KD-32; tahap 1 = E45). Pola = konstanta C34-C38.
+const contractKey = { type: "string", pattern: CONTRACT_KEY_PATTERN } as const;
+const contractActor = { type: "string", pattern: CONTRACT_ACTOR_PATTERN } as const;
+const contractPhaseName = { type: "string", minLength: 1, maxLength: 64 } as const;
 
 // ── Tabel (T2-18..T2-21) ─────────────────────────────────────────────────
 
@@ -467,7 +499,9 @@ export const commonV2Schema = {
       {
         type: { const: "chart" },
         ...BLOCK_ID,
-        code: { enum: [...CHART_CODES, "composite"] },
+        // AM-03 (DC-05): `custom` + `form` berbatas (T2-66); aturan pasangan di `allOf` (CH-05).
+        code: { enum: [...CHART_CODES, "composite", "custom"] },
+        form: ref("ChartCustomFormV2"),
         data: ref("ChartDataV2"),
         panels: { type: "array", minItems: 1, maxItems: 24, items: ref("ChartPanelV2") },
         artifactId: { type: "string", minLength: 1, maxLength: 64 },
@@ -487,7 +521,24 @@ export const commonV2Schema = {
         ],
         if: { properties: { code: { const: "composite" } }, required: ["code"] },
         then: { properties: { panels: true }, required: ["panels"] },
+        // CH-05: `custom` wajib `form` + `data` (oneOf di atas lalu melarang panels/artifactId);
+        // `form` terlarang pada kode lain.
+        allOf: [
+          {
+            if: { properties: { code: { const: "custom" } }, required: ["code"] },
+            then: { properties: { form: true, data: true }, required: ["form", "data"] },
+            else: { not: { properties: { form: true }, required: ["form"] } },
+          },
+        ],
       },
+    ),
+    ChartCustomFormV2: obj(
+      {
+        mark: { enum: [...CHART_CUSTOM_MARKS] },
+        orientation: { enum: [...CHART_CUSTOM_ORIENTATIONS] },
+        stacked: bool,
+      },
+      ["mark"],
     ),
     DiagramV2: obj(
       {
@@ -631,6 +682,79 @@ export const commonV2Schema = {
       ["type", "entries"],
     ),
     RuleIndexPayloadV2: obj({ type: { const: "ruleIndex" } }, ["type"]),
+    // ── Payload contractRecord (T2-61..T2-65, register 05 §5.3; tanpa medan `kind`, KD-30) ──
+    ContractRecordPayloadV2: obj(
+      {
+        type: { const: "contractRecord" },
+        status: { enum: [...AGENT_WORK_REPORT_STATUSES] },
+        verdict: { enum: [...CONTRACT_VERDICTS] },
+        owner: contractActor,
+        initiator: contractActor,
+        taskRef: contractKey,
+        reportedAt: { type: "string", pattern: CONTRACT_REPORTED_AT_PATTERN },
+        due: isoDate,
+        phase: ref("ContractPhaseV2"),
+        cardIds: {
+          type: "array",
+          maxItems: CONTRACT_LIMITS.cardIds,
+          uniqueItems: true,
+          items: { type: "string", pattern: CARD_ID_PATTERN },
+        },
+        refs: { type: "array", maxItems: CONTRACT_LIMITS.refs, items: ref("ContractRefV2") },
+        evidence: { type: "array", maxItems: CONTRACT_LIMITS.evidence, items: ref("ContractEvidenceV2") },
+        items: { type: "array", maxItems: CONTRACT_LIMITS.items, items: ref("ContractItemV2") },
+      },
+      ["type", "status", "reportedAt"],
+    ),
+    ContractPhaseV2: obj({ from: contractPhaseName, to: contractPhaseName }, ["to"]),
+    ContractRefV2: obj(
+      {
+        documentId: { type: "string", pattern: "^[a-z0-9]{20,40}$" },
+        docNumber: { type: "string", minLength: 1, maxLength: 80 },
+        pid,
+        revisionNo: { type: "integer", minimum: 1 },
+        rel: { enum: [...CONTRACT_REF_RELS] },
+      },
+      ["rel"],
+      xorRequired("documentId", "docNumber"),
+    ),
+    ContractEvidenceV2: obj(
+      {
+        kind: { enum: [...CONTRACT_EVIDENCE_KINDS] },
+        ref: { type: "string", minLength: 1, maxLength: CONTRACT_LIMITS.refText },
+        sha256: { type: "string", pattern: CONTRACT_SHA_PREFIX_PATTERN },
+        bytes: { type: "integer", minimum: 0 },
+        line: { type: "integer", minimum: 1 },
+        exitCode: { type: "integer", minimum: -2147483648, maximum: 2147483647 },
+        item: contractKey,
+        note: inline,
+      },
+      ["kind", "ref"],
+      {
+        allOf: [
+          {
+            if: { properties: { kind: { not: { const: "file" } } } },
+            then: { not: { properties: { line: true }, required: ["line"] } },
+          },
+          {
+            if: { properties: { kind: { not: { const: "command" } } } },
+            then: { not: { properties: { exitCode: true }, required: ["exitCode"] } },
+          },
+        ],
+      },
+    ),
+    ContractItemV2: obj(
+      {
+        key: contractKey,
+        title: inline,
+        status: { enum: [...CONTRACT_ITEM_STATUSES] },
+        owner: contractActor,
+        phase: contractPhaseName,
+        due: isoDate,
+        dependsOn: { type: "array", maxItems: CONTRACT_LIMITS.dependsOn, uniqueItems: true, items: contractKey },
+      },
+      ["key", "title", "status"],
+    ),
     SlotPayloadV2: unionOf(SLOT_PAYLOAD_V2_DEFS),
     /** Nilai `sections.<slotKey>` dokumen v2: slot tak-berulang atau berulang. */
     DocSectionPayloadV2: unionOf([...SLOT_PAYLOAD_V2_DEFS, "ContentSlotPayloadV2", "AppendixSlotPayloadV2"]),

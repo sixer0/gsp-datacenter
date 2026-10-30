@@ -44,6 +44,8 @@ import { STUDIO_TEMPLATE_KINDS } from "../../contract/enums";
 import { StudioEngineError } from "../../contract/errors";
 import { assertOverrideRights, resolveParams } from "../../engine/tokens";
 import { ALL_PARAMS, CATALOG_PARAMS } from "../../params";
+import { isContractKind } from "../../registry/contracts";
+import { contractRecordSkeletonIssues } from "../../registry/slots";
 import { assertTemplateUsable, isAdminCaller, type TemplateAccessOptions, type TemplateRestriction, templateRestriction } from "./access";
 import { resolveRepoAssetPath, scanCanonicalAssets } from "./assets";
 import { type ReadProfileOptions, readTemplateProfileFile } from "./import";
@@ -149,6 +151,8 @@ function toSummary(t: StudioTemplate, latest: Pick<StudioTemplateVersion, "resol
     description: t.description,
     isCanonical: t.isCanonical,
     isPreset: t.isPreset,
+    // AM-13 (register 05 MX08): kolom DB apa adanya; null = templat dokumen output.
+    contractKind: t.contractKind ?? null,
     archived: t.archived,
     latestVersionNo: t.latestVersionNo,
     createdBy: t.createdBy,
@@ -314,12 +318,23 @@ type Db = Prisma.TransactionClient;
 /** Batas waktu transaksi simpan v2 (templat + versi + hingga 32 slot bersarang). */
 const TEMPLATE_V2_TX_TIMEOUT_MS = 20_000;
 
+function idOrSlugValid(idOrSlug: string): boolean {
+  return typeof idOrSlug === "string" && idOrSlug.length > 0 && idOrSlug.length <= 200;
+}
+
+/** Templat per id atau slug; null bila tidak ada (pemanggil yang menentukan kapan 404 dilempar). */
+async function findTemplateOrNull(idOrSlug: string, db: Db = prisma): Promise<StudioTemplate | null> {
+  if (!idOrSlugValid(idOrSlug)) return null;
+  return db.studioTemplate.findFirst({ where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] } });
+}
+
+function templateNotFound(idOrSlug: string): StudioEngineError {
+  return new StudioEngineError("TEMPLATE_NOT_FOUND", idOrSlugValid(idOrSlug) ? `Templat tidak ditemukan: ${idOrSlug}` : "Templat tidak ditemukan");
+}
+
 async function findTemplate(idOrSlug: string, db: Db = prisma): Promise<StudioTemplate> {
-  if (typeof idOrSlug !== "string" || idOrSlug.length === 0 || idOrSlug.length > 200) {
-    throw new StudioEngineError("TEMPLATE_NOT_FOUND", "Templat tidak ditemukan");
-  }
-  const t = await db.studioTemplate.findFirst({ where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] } });
-  if (!t) throw new StudioEngineError("TEMPLATE_NOT_FOUND", `Templat tidak ditemukan: ${idOrSlug}`);
+  const t = await findTemplateOrNull(idOrSlug, db);
+  if (!t) throw templateNotFound(idOrSlug);
   return t;
 }
 
@@ -451,6 +466,8 @@ type TemplateIdentity = {
   description: string | null;
   isCanonical: boolean;
   isPreset?: boolean;
+  /** MX08 (register 05 §7.2): jenis kontrak C58; null/absen = templat dokumen output. */
+  contractKind?: string | null;
 };
 
 /** Templat + versi 1 (+ kerangka) di dalam transaksi pemanggil. */
@@ -800,6 +817,8 @@ export interface CreateTemplateV2Input {
   description?: string | null;
   /** Preset gaya baru (hanya ADMIN). */
   isPreset?: boolean;
+  /** Jenis kontrak C58 (hanya ADMIN; seed DC-29). Syarat slot `contractRecord` (CH-06). */
+  contractKind?: string | null;
   changeNote: string;
   template: StudioTemplateV2;
   /** Tanda kesadaran pengguna, bukan otorisasi: lanjutan tetap hanya ADMIN di v2.1 (D-163 T-1). */
@@ -835,10 +854,37 @@ function slotLayerOf(s: Pick<TemplateSlotDef, "essentials" | "advanced">): Param
   return flattenSlotParams(s) as ParamRecord;
 }
 
-/** Bentuk SID04 + kunci ganda lapis + aturan kerangka SR-06 (kiriman mentah); kembalikan templat v2. */
-function parseTemplateV2Input(raw: unknown): StudioTemplateV2 {
-  const tpl = parseTemplateV2(raw, "/template");
+/**
+ * CH-06 `SKELETON_CONTRACT_RECORD` (register 05 §5.4): slot `contractRecord` hanya pada
+ * templat ber-contractKind terdaftar, paling banyak satu, tidak berulang. 400 SCHEMA_INVALID.
+ * Dijalankan sebelum `validateSkeleton` agar pelanggaran slot kontrak membawa checkId register.
+ */
+function assertContractRecordSkeleton(
+  slots: ReadonlyArray<{ sectionType?: unknown; repeatable?: unknown }>,
+  contractKind: string | null | undefined,
+  pointerBase?: string,
+  templateKnown = true,
+): void {
+  let issues = contractRecordSkeletonIssues(slots, contractKind, pointerBase);
+  // Templat sasaran tidak ada: syarat contractKind (`dependentRequired`) bergantung sumber daya, bukan
+  // badan, sehingga tidak dinilai; aturan badan murni (maxContains, const) tetap 400 sebelum 404 (D-385).
+  if (!templateKnown) issues = issues.filter((i) => i.keyword !== "dependentRequired");
+  if (issues.length > 0) throwSchemaIssues(issues, "Templat tidak sah");
+}
+
+/**
+ * CH-06 lalu aturan kerangka SR-06 pada templat v2 yang sudah lolos bentuk.
+ * `templateKnown = false`: simpan versi ke templat yang tidak ada (lihat assertContractRecordSkeleton).
+ */
+function assertTemplateV2Skeleton(tpl: StudioTemplateV2, contractKind: string | null | undefined, templateKnown = true): void {
+  assertContractRecordSkeleton(tpl.skeleton.slots, contractKind, undefined, templateKnown);
   validateSkeleton(tpl.skeleton);
+}
+
+/** Bentuk SID04 + kunci ganda lapis + CH-06 + aturan kerangka SR-06 (kiriman mentah); kembalikan templat v2. */
+function parseTemplateV2Input(raw: unknown, contractKind: string | null | undefined): StudioTemplateV2 {
+  const tpl = parseTemplateV2(raw, "/template");
+  assertTemplateV2Skeleton(tpl, contractKind);
   return tpl;
 }
 
@@ -972,9 +1018,16 @@ async function createTemplateV2Core(tx: Db, input: CreateTemplateV2Input, caller
   if (input.isPreset !== undefined && typeof input.isPreset !== "boolean") {
     throwIssues([{ key: "isPreset", code: "SCHEMA_INVALID", message: "isPreset harus boolean", pointer: "/isPreset" }]);
   }
-  const tpl = parseTemplateV2Input(input.template);
+  const contractKind = input.contractKind ?? null;
+  if (contractKind !== null && !isContractKind(contractKind)) {
+    throwIssues([{ key: "contractKind", code: "SCHEMA_INVALID", message: `contractKind tidak terdaftar: ${String(contractKind)}`, pointer: "/contractKind" }]);
+  }
+  const tpl = parseTemplateV2Input(input.template, contractKind);
   if (input.isPreset === true && !isAdminCaller(caller)) {
     throw new StudioEngineError("FORBIDDEN", "Preset gaya hanya dapat dibuat peran ADMINISTRATOR", { reason: "PRESET_ADMIN_ONLY" });
+  }
+  if (contractKind !== null && !isAdminCaller(caller)) {
+    throw new StudioEngineError("FORBIDDEN", "Templat jenis kontrak hanya dapat dibuat peran ADMINISTRATOR", { reason: "CONTRACT_TEMPLATE_ADMIN_ONLY" });
   }
   if (await tx.studioTemplate.findUnique({ where: { slug }, select: { id: true } })) {
     throw new StudioEngineError("TEMPLATE_SLUG_EXISTS", `Slug templat sudah dipakai: ${slug}`);
@@ -986,6 +1039,7 @@ async function createTemplateV2Core(tx: Db, input: CreateTemplateV2Input, caller
     description: input.description ?? null,
     isCanonical: false,
     isPreset: input.isPreset === true,
+    ...(contractKind !== null ? { contractKind } : {}),
   };
   const r = await saveTemplateV2Tx(tx, { mode: "create", identity }, tpl, changeNote, caller, cid, input.expertMode);
   templatesLog({
@@ -998,6 +1052,7 @@ async function createTemplateV2Core(tx: Db, input: CreateTemplateV2Input, caller
       slug,
       versionNo: 1,
       isPreset: identity.isPreset,
+      contractKind: identity.contractKind ?? null,
       preset: tpl.preset ?? null,
       baseVersionId: r.version.baseVersionId,
       slots: tpl.skeleton.slots.length,
@@ -1024,8 +1079,14 @@ async function createTemplateVersionV2Core(
   if (!Number.isInteger(input.baseVersionNo) || input.baseVersionNo < 1) {
     throwIssues([{ key: "baseVersionNo", code: "SCHEMA_INVALID", message: "baseVersionNo wajib bilangan bulat >= 1", pointer: "/baseVersionNo" }]);
   }
-  const tpl = parseTemplateV2Input(input.template);
-  const t = await findTemplate(id, tx);
+  // Urutan galat seragam 400 -> 404 (D-385, seperti sebelum DC-29): bentuk, CH-06 dan kerangka
+  // SR-06 dinilai sebelum TEMPLATE_NOT_FOUND. CH-06 butuh contractKind templat, jadi templat
+  // dibaca lebih dulu tanpa melempar; 404 baru dilempar sesudah badan dinyatakan sah.
+  const tpl = parseTemplateV2(input.template, "/template");
+  const found = await findTemplateOrNull(id, tx);
+  assertTemplateV2Skeleton(tpl, found?.contractKind ?? null, found !== null);
+  if (!found) throw templateNotFound(id);
+  const t = found;
   assertPresetWritable(t, caller);
   if (t.isCanonical && !isAdminCaller(caller)) {
     throw new StudioEngineError("FORBIDDEN", "Profil DATUM-kanonik hanya dapat diubah peran ADMINISTRATOR", { reason: "CANONICAL_ADMIN_ONLY", templateId: t.id });
@@ -1283,6 +1344,11 @@ export async function importTemplateProfile(
       meta: profile.meta,
     });
     // SR-07: profil boleh membawa kerangka (divalidasi/dikanonikkan SR-06) dan penanda preset.
+    // CH-06: profil tidak membawa contractKind; acuannya contractKind templat yang ada (baru = tanpa).
+    if (profile.skeleton) {
+      const target = await prisma.studioTemplate.findUnique({ where: { slug }, select: { contractKind: true } });
+      assertContractRecordSkeleton(profile.skeleton.slots as TemplateSlotDef[], target?.contractKind ?? null, "/skeleton/slots");
+    }
     const skeleton = profile.skeleton ? validateSkeleton({ slots: profile.skeleton.slots as TemplateSlotDef[] }) : null;
     const skSha = skeleton ? skeletonShaOfSlots(skeleton.slots) : null;
     // Sidik idempoten: tanpa kerangka = sidik lama (impor ulang profil lama tetap `unchanged`).

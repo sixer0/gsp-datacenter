@@ -89,9 +89,9 @@ describe('baseline', () => {
     expect(STUDIO_ERROR_HTTP.SCHEMA_INVALID).toBe(400);
   });
 
-  it('register memuat tepat DF-01..DF-52 global dan DF-53..DF-71 per lokasi (IP-63: +DF-70/71)', () => {
+  it('register memuat tepat DF-01..DF-52 global dan DF-53..DF-73 per lokasi (IP-63: +DF-70/71; DC-05: +DF-72/73)', () => {
     expect(DISPLAY_FIELDS_GLOBAL).toHaveLength(52);
-    expect(Object.keys(DISPLAY_FIELDS_BY_LOCATION)).toEqual(Array.from({ length: 19 }, (_, i) => `DF-${53 + i}`));
+    expect(Object.keys(DISPLAY_FIELDS_BY_LOCATION)).toEqual(Array.from({ length: 21 }, (_, i) => `DF-${53 + i}`));
   });
 });
 
@@ -181,9 +181,11 @@ const LOCATION_PARENT: Record<string, string> = {
 };
 
 describe('DF-53..DF-69 per lokasi: setiap medan', () => {
-  const fieldRows = Object.entries(DISPLAY_FIELDS_BY_LOCATION).flatMap(([id, r]) =>
-    (r.fields ?? []).map((f) => [id, r.location, f] as const),
-  );
+  // DC-05: DF-72/DF-73 (payload contractRecord, form chart.custom) tidak punya induk di probe doc ini;
+  // diuji di tests/unit/studio/contract/dc05-contract-delta.test.ts.
+  const fieldRows = Object.entries(DISPLAY_FIELDS_BY_LOCATION)
+    .filter(([id]) => id !== 'DF-72' && id !== 'DF-73')
+    .flatMap(([id, r]) => (r.fields ?? []).map((f) => [id, r.location, f] as const));
   it('jumlah kasus medan per lokasi = 33 (DF-53..59, 62..71; DF-60/61 berupa nilai)', () => {
     expect(fieldRows).toHaveLength(33);
   });

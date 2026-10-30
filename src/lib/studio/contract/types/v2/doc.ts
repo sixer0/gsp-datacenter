@@ -20,6 +20,7 @@ import type {
   RunV2,
   SourceV2,
 } from "./common";
+import type { ChartCustomFormV2 } from "./contract";
 import type { AppendixSlotPayloadV2, ContentSlotPayloadV2, SlotPayloadV2 } from "./slot";
 
 /** Medan bersama setiap blok v2. */
@@ -170,10 +171,16 @@ export interface ChartPanelV2 {
 /**
  * T2-23 — tepat satu dari `data`, `panels` (wajib bila `code = "composite"`),
  * `artifactId`. Tata letak komposit dari parameter R-50/R-51 (KD-17).
+ * AM-03 (DC-05, register 05 §5.3): skema menerima `code = "custom"` yang mewajibkan
+ * `form` + `data` (tanpa `panels`/`artifactId`); `form` terlarang pada kode lain (CH-05).
+ * Union TS `code` + `"custom"` mendarat di DC-27 (D-367): perakit (`services/compose/blocks.ts`)
+ * menyerahkan `custom` + `form` ke dispatch mesin chart (`engine/chart/core/custom.ts`, I68).
  */
 export interface ChartV2 extends BlockBaseV2 {
   type: "chart";
-  code: ChartCode | "composite";
+  code: ChartCode | "composite" | "custom";
+  /** T2-66 — hanya (dan wajib) bila `code = "custom"`. */
+  form?: ChartCustomFormV2;
   data?: ChartDataV2;
   panels?: ChartPanelV2[];
   artifactId?: string;

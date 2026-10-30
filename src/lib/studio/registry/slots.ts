@@ -4,6 +4,8 @@
  * - Jenis slot (C33 `SLOT_SECTION_TYPES`) dan aturan per jenis: contentMode sah,
  *   bawaan, boleh berulang, `admits` (SR-01 §4.7, §6.3).
  * - Kelompok `shared` (C32a `SHARED_PARAM_GROUP_MEMBERS`, SR-01 §13.5).
+ * - Delta DC-06 (register 05 §6.2, AM-01, AM-11): jenis slot `contractRecord`
+ *   dan validator kerangka kontrak CH-06 `SKELETON_CONTRACT_RECORD`.
  * - `PARAM_SCOPE`: aturan cakupan kunci rinci = transkripsi research/08 §5.8
  *   (diperiksa identik dengan §5.1-5.7) + perubahan research/09 §4.3 (PD-01 ke
  *   `section:sourceRegister`) + cakupan kunci kontrak baru (SR-01 §13.1, research/09 §4.3).
@@ -13,7 +15,9 @@
  * ParamDef dari `paramScopeOf`).
  */
 import { CONTENT_BLOCK_TYPES, FIGURE_BLOCK_TYPES, TABLE_BLOCK_TYPES, type ParamScopeKind, type StudioSlotContentMode } from "../contract/enums";
+import type { ValidationIssue } from "../contract/types/api";
 import type { ParamDef } from "../contract/types/params";
+import { CONTRACT_RECORD_SECTION_TYPE, isContractKind } from "./contracts";
 import { SECTION_REGISTRY } from "./sections";
 
 /** Tata bahasa cakupan (E32): `document` | `section:<kunci registri>` | `shared:<kelompok>` | `slot`. */
@@ -31,6 +35,8 @@ export const SLOT_SECTION_TYPES = [
   "appendix",
   "sourceRegister",
   "ruleIndex",
+  // AM-01 (register 05 §6.2): 8 -> 9.
+  "contractRecord",
 ] as const;
 export type SlotSectionType = (typeof SLOT_SECTION_TYPES)[number];
 
@@ -84,12 +90,52 @@ export const SLOT_KINDS: readonly SlotKindDef[] = [
   },
   { sectionType: "sourceRegister", contentModes: ["INPUT", "MIXED"], defaultContentMode: "INPUT", repeatable: false, singlePerSkeleton: false, admitsAllowed: NONE, defaultAdmits: NONE, implicitSlotKey: "references" },
   { sectionType: "ruleIndex", contentModes: ["AUTO", "MIXED"], defaultContentMode: "AUTO", repeatable: false, singlePerSkeleton: false, admitsAllowed: NONE, defaultAdmits: NONE, implicitSlotKey: "ruleIndex" },
+  // AM-11 (register 05 §6.2); syarat contractKind templat = `contractRecordSkeletonIssues` (CH-06).
+  { sectionType: "contractRecord", contentModes: ["INPUT"], defaultContentMode: "INPUT", repeatable: false, singlePerSkeleton: true, admitsAllowed: NONE, defaultAdmits: NONE, implicitSlotKey: "record" },
 ];
 
 export const SLOT_KIND_BY_TYPE: ReadonlyMap<string, SlotKindDef> = new Map(SLOT_KINDS.map((k) => [k.sectionType, k]));
 
 export function isSlotSectionType(v: string): v is SlotSectionType {
   return (SLOT_SECTION_TYPES as readonly string[]).includes(v);
+}
+
+/** Pointer bawaan isu CH-06 (register 05 §5.4: `/template/skeleton/slots/0`). */
+export const CONTRACT_SKELETON_POINTER_BASE = "/template/skeleton/slots";
+
+/**
+ * CH-06 `SKELETON_CONTRACT_RECORD` (register 05 §5.4, simpan templat/kerangka):
+ * slot `contractRecord` pada templat tanpa contractKind terdaftar (C58), lebih
+ * dari satu slot `contractRecord`, atau slot `contractRecord` dengan
+ * `repeatable = true`. Murni; pemanggil (simpan templat / R19 / seed) melempar
+ * 400 `SCHEMA_INVALID` bila hasilnya tidak kosong. Kerangka tanpa slot
+ * `contractRecord` selalu lolos (templat non-kontrak tidak berubah).
+ */
+export function contractRecordSkeletonIssues(
+  slots: ReadonlyArray<{ sectionType?: unknown; repeatable?: unknown }>,
+  contractKind: string | null | undefined,
+  pointerBase: string = CONTRACT_SKELETON_POINTER_BASE,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const checkId = "SKELETON_CONTRACT_RECORD";
+  const kindOk = isContractKind(contractKind);
+  let seen = 0;
+  slots.forEach((slot, i) => {
+    if (slot.sectionType !== CONTRACT_RECORD_SECTION_TYPE) return;
+    const pointer = `${pointerBase}/${i}`;
+    seen += 1;
+    if (!kindOk) {
+      const why = contractKind ? `contractKind ${contractKind} tidak terdaftar` : "templat tanpa contractKind";
+      issues.push({ pointer, keyword: "dependentRequired", message: `slot contractRecord hanya untuk templat ber-contractKind terdaftar (${why})`, checkId });
+    }
+    if (seen > 1) {
+      issues.push({ pointer, keyword: "maxContains", message: "paling banyak satu slot contractRecord per kerangka", checkId });
+    }
+    if (slot.repeatable === true) {
+      issues.push({ pointer, keyword: "const", message: "slot contractRecord tidak boleh berulang (repeatable = false)", checkId });
+    }
+  });
+  return issues;
 }
 
 // ── Kelompok shared (C32a) dan perangkat halaman ─────────────────────────

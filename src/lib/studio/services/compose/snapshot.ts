@@ -28,6 +28,7 @@ import {
   type Chapter,
   type ChapterV2,
   type ContentSlotPayloadV2,
+  type ContractRecordPayloadV2,
   type ControlSheetPayloadV2,
   type CoverPayloadV2,
   type FlowItem,
@@ -53,6 +54,7 @@ import { compareChapterKeys, expectedChapterKeys as expectedChapterKeysOf, slotS
 import { plainText } from "../ingest/util";
 import { mapBlock, type BlockCtx } from "./blocks";
 import { composeContextOf, type ComposedSnapshotV2 } from "./context";
+import { projectContractRecord, resolveContractKind } from "./contract-record";
 import { composeFail } from "./errors";
 import { coverFront, controlSheetFront, signatureBlock, tocSpec } from "./front";
 import { sha256Hex, stableStringify } from "./hash";
@@ -86,7 +88,7 @@ export function expectedChapterKeys(slot: Pick<TemplateSlotDef, "sectionType">, 
  * payload berisi `type` saja (mis. `{ type: "toc" }`: snapshot FILLED, laporan AUTO_READY);
  * penyeragaman menunggu keputusan perbaikan data revisi lama (FIX-V, needs-review).
  */
-export function slotState(slot: TemplateSlotDef, payload: unknown, omitted: boolean): StudioSlotState {
+export function slotState(slot: TemplateSlotDef, payload: unknown, omitted: boolean, contractKind?: string): StudioSlotState {
   if (omitted) return "OMITTED";
   const repeatable = isRepeatable(slot);
   const p = repeatable ? (payload as ContentSlotPayloadV2 | AppendixSlotPayloadV2 | undefined) : undefined;
@@ -101,6 +103,8 @@ export function slotState(slot: TemplateSlotDef, payload: unknown, omitted: bool
     filled: repeatable ? chapterKeys.length > 0 : payload !== undefined && payload !== null,
     ...(p?.outline !== undefined ? { outline: p.outline } : {}),
     chapterKeys,
+    // DC-WIRE (D-386, 05 §6.5): absen = non-kontrak (state, dan snapshotSha256, tidak berubah).
+    ...(contractKind ? { slotKey: slot.slotKey, contractKind } : {}),
   });
 }
 
@@ -247,9 +251,10 @@ export function composeV2(input: ComposeInput): ComposeResult {
     e.units.push(u);
   };
 
-  const pushBlock = (b: Omit<NormBlockV2, "ordinal" | "textPlain" | "contentSha256">): NormBlockV2 => {
+  /** `textPlain` eksplisit hanya untuk blok berproyeksi teks tetap (contractRecord/contractItem, §5.7 register 05). */
+  const pushBlock = (b: Omit<NormBlockV2, "ordinal" | "textPlain" | "contentSha256"> & { textPlain?: string }): NormBlockV2 => {
     e.ordinal += 1;
-    const nb: NormBlockV2 = { ...b, ordinal: e.ordinal, textPlain: plainText(b.content), contentSha256: sha256Hex(stableStringify(b.content)) };
+    const nb: NormBlockV2 = { ...b, ordinal: e.ordinal, textPlain: b.textPlain ?? plainText(b.content), contentSha256: sha256Hex(stableStringify(b.content)) };
     if (nb.artifactLabel === undefined) delete nb.artifactLabel;
     if (nb.assetSha256 === undefined) delete nb.assetSha256;
     e.blocks.push(nb);
@@ -373,7 +378,7 @@ export function composeV2(input: ComposeInput): ComposeResult {
   layout.ordered.forEach((slot) => {
     const k = slot.slotKey;
     const payload = src.sections?.[k];
-    const state = slotState(slot, payload, false);
+    const state = slotState(slot, payload, false, input.contractKind);
     states.set(k, state);
     const fKey = `F:${k}`;
     const placeholder = () => {
@@ -441,6 +446,22 @@ export function composeV2(input: ComposeInput): ComposeResult {
         addUnit("slot", fKey, slot);
         const pid = structPid(k, fKey);
         pushBlock({ blockId: pid, pid, slotKey: k, address: fKey, unitKey: fKey, type: "ruleIndex", content: { mode: "auto" } });
+        return;
+      }
+      case "contractRecord": {
+        // DC-10 (register 05 §5.7, BA-10): unit interior F:<slotKey> + butir F:<slotKey>/<n>.
+        const p = payload as ContractRecordPayloadV2 | undefined;
+        if (p === undefined || p === null) return placeholder();
+        const def = resolveContractKind(src.template.slug, input.contractKind);
+        addUnit("slot", fKey, slot);
+        const recordPid = structPid(k, fKey);
+        const itemPids = (p.items ?? []).map((_, i) => structPid(k, `${fKey}/${i + 1}`, i + 1));
+        const proj = projectContractRecord(p, def, { record: recordPid, items: itemPids }, inlineCtx);
+        pushBlock({ blockId: recordPid, pid: recordPid, slotKey: k, address: fKey, unitKey: fKey, type: "contractRecord", content: proj.record.content, textPlain: proj.record.textPlain });
+        proj.items.forEach((it, i) => {
+          const pid = itemPids[i];
+          pushBlock({ blockId: pid, pid, slotKey: k, address: `${fKey}/${i + 1}`, unitKey: fKey, type: "contractItem", content: it.content, textPlain: it.textPlain });
+        });
         return;
       }
       case "chapter":

@@ -50,6 +50,7 @@ import {
   draftMarkHtml,
   isDraft,
   placeholderUnitHtml,
+  PROJECTION_BLOCK_TYPES,
   SLOT_BLOCK_RENDERERS,
   slotAttrs,
   slotCss,
@@ -72,6 +73,7 @@ export {
   type StandaloneViolationKind,
 } from "./standalone";
 export {
+  PROJECTION_BLOCK_TYPES,
   SLOT_BLOCK_RENDERERS,
   SLOT_PARAM,
   classToken,
@@ -159,7 +161,10 @@ function renderBlock(b: NormBlock, ctx: RenderContext, preview: boolean): string
     throw new HtmlAssembleError("RENDERER_MISSING", message, { address: b.address ?? undefined, blockType: b.type });
   }
   try {
-    return withAddress(render(b, ctx), b);
+    const html = render(b, ctx);
+    // Blok proyeksi (contractItem, DC-12): alamatnya sudah ada di markup blok induk.
+    if (html === "" && PROJECTION_BLOCK_TYPES.has(b.type)) return "";
+    return withAddress(html, b);
   } catch (e) {
     const notImpl = e instanceof StudioNotImplemented;
     const message = `HTML renderer ${notImpl ? "not implemented" : "failed"} for ${blockLabel(b)} (${b.type}): ${errMessage(e)}`;

@@ -2,8 +2,9 @@
  * Seed Studio (baris S70; diperbarui INT-I / IP-12, F-029; 01_specs.md §1.2 M01-M03, §5.1, §5.2, §5.5).
  *
  * Menulis, secara idempoten:
- *   1. 51 baris `StudioSectionType` (upsert berdasarkan `key`) dari
- *      `registry/sections.ts`; isi selalu disamakan dengan registri. Baris DB
+ *   1. 52 baris `StudioSectionType` (berdasarkan `key`) dari `registry/sections.ts`;
+ *      isi disamakan dengan registri, hanya baris baru/berbeda yang ditulis (DC-29:
+ *      jalan ulang tanpa perubahan = 0 tulis, `updatedAt` tidak bergeser). Baris DB
  *      yang `key`-nya tidak ada di registri DILAPORKAN (warn + hitungan di log
  *      selesai) dan TIDAK dihapus (KD-02; S85 R-22, baris IP-43c).
  *   2. Profil DATUM-kanonik lewat `ensureCanonicalTemplate` (layanan templat S49):
@@ -50,11 +51,19 @@
  *      baris DB lama vs baseline berkas di luar Δ dilaporkan `legacyRowDrift` (D-258 N3).
  *      Revisi baru dokumen 000 TIDAK dibuat di sini (baris dokumen di luar area seed
  *      templat; dibuat lewat layanan revisi R14 `templateVersion`).
- *   `--dry-run` (bersama 5/6): seluruh transaksi preset/kerangka di-rollback setelah
- *      laporan dan penjaga dihitung; tidak ada yang di-commit (FIX-SEED): upsert section type
- *      dan sinkron kanonik dilewati, dan tidak dapat digabung dengan 3/4/`--import-samples`.
+ *   7. Opsional `--contract-templates` (DC-29; register 05 §6.1, §6.3, BA-29): templat jenis
+ *      kontrak dari registri C58 (`registry/contracts.ts`), tahap 1 = `laporan-kerja-agen`
+ *      (`contractKind` agentWorkReport, kerangka NOTA SL-08..SL-10, preset GSP DATUM, lapis
+ *      `doc.defaultTier` NOTA / `doc.defaultTypeCode` LAP / `doc.typeCode` bawaan + LAP), lewat
+ *      layanan templat v2 (CH-06 ditegakkan layanan). Satu transaksi; penjaga: templat lain
+ *      (latestVersionNo, updatedAt, paramsSha256, skeletonSha256, jumlah versi) dan section type
+ *      lain tidak berubah, gagal = rollback + exit 1. Run ulang tanpa perubahan = `unchanged`.
+ *   `--dry-run` (bersama 5/6/7): seluruh transaksi preset/kerangka/kontrak di-rollback setelah
+ *      laporan dan penjaga dihitung; tidak ada yang di-commit (FIX-SEED): penulisan section type
+ *      di luar transaksi itu dan sinkron kanonik dilewati (rencana section type tetap dilaporkan),
+ *      dan tidak dapat digabung dengan 3/4/`--import-samples`.
  *
- * Pemakaian: `npx tsx prisma/seed-studio.ts [--import-benchmark] [--import-datum-gsp] [--import-samples] [--presets-and-skeletons] [--import-manual000-v2] [--dry-run]`.
+ * Pemakaian: `npx tsx prisma/seed-studio.ts [--import-benchmark] [--import-datum-gsp] [--import-samples] [--presets-and-skeletons] [--import-manual000-v2] [--contract-templates] [--dry-run]`.
  * Boleh dijalankan dari cwd mana pun (IP-43c, S85 R-22): path profil, sampel,
  * dan indeks aset diresolusi dari lokasi skrip (`REPO_ROOT`), dan cwd proses
  * dipindah ke `REPO_ROOT` agar default pustaka yang relatif cwd (akar
@@ -88,7 +97,8 @@ import { renderRevision } from "../src/lib/studio/services/render";
 import { ALL_PARAMS, CATALOG_PARAMS, PARAMS_BY_KEY, PARAMS_STRUCTURE } from "../src/lib/studio/params";
 import { ESSENTIAL_KNOBS } from "../src/lib/studio/registry/essentials";
 import { SECTION_REGISTRY, SECTION_REGISTRY_COUNT, SECTION_REGISTRY_VERSION } from "../src/lib/studio/registry/sections";
-import { isScopeAllowedInSlot } from "../src/lib/studio/registry/slots";
+import { CONTRACT_KIND_DEFS } from "../src/lib/studio/registry/contracts";
+import { contractRecordSkeletonIssues, isScopeAllowedInSlot } from "../src/lib/studio/registry/slots";
 import { skeletonSha256, validateSkeleton } from "../src/lib/studio/services/skeleton";
 import {
   canonicalVersionPayload,
@@ -184,27 +194,53 @@ async function assertDatabase(db: PrismaClient): Promise<string> {
   return name;
 }
 
-async function seedSectionTypes(tx: Prisma.TransactionClient): Promise<number> {
+type SectionTypeData = Omit<Prisma.StudioSectionTypeUncheckedCreateInput, "key" | "updatedAt">;
+
+function sectionTypeData(s: (typeof SECTION_REGISTRY)[number]): SectionTypeData {
+  return {
+    catalogId: s.catalogId,
+    group: s.group,
+    register: s.register,
+    name: s.name,
+    elements: toJson(s.elements),
+    paramRefs: [...s.paramRefs],
+    ruleRefs: [...s.ruleRefs],
+    activeTiers: [...s.activeTiers],
+    renderable: s.renderable,
+    sourceRef: s.sourceRef,
+    registryVersion: SECTION_REGISTRY_VERSION,
+  };
+}
+
+/** Rencana section type (baca saja): kunci registri yang belum ada (`create`) atau berbeda dari registri (`update`). */
+async function planSectionTypes(db: PrismaClient | Prisma.TransactionClient): Promise<{ registry: number; create: string[]; update: string[]; unchanged: number }> {
   if (SECTION_REGISTRY.length !== SECTION_REGISTRY_COUNT) {
     throw new Error(`Registri section ${SECTION_REGISTRY.length}, diharapkan ${SECTION_REGISTRY_COUNT}`);
   }
+  const rows = new Map((await db.studioSectionType.findMany()).map((r) => [r.key, r]));
+  const create: string[] = [];
+  const update: string[] = [];
   for (const s of SECTION_REGISTRY) {
-    const data = {
-      catalogId: s.catalogId,
-      group: s.group,
-      register: s.register,
-      name: s.name,
-      elements: toJson(s.elements),
-      paramRefs: [...s.paramRefs],
-      ruleRefs: [...s.ruleRefs],
-      activeTiers: [...s.activeTiers],
-      renderable: s.renderable,
-      sourceRef: s.sourceRef,
-      registryVersion: SECTION_REGISTRY_VERSION,
-    };
-    await tx.studioSectionType.upsert({ where: { key: s.key }, create: { key: s.key, ...data }, update: data });
+    const row = rows.get(s.key);
+    if (!row) {
+      create.push(s.key);
+      continue;
+    }
+    const { updatedAt: _u, key: _k, ...stored } = row;
+    void _u;
+    void _k;
+    if (stable(stored) !== stable(sectionTypeData(s))) update.push(s.key);
   }
-  return SECTION_REGISTRY.length;
+  return { registry: SECTION_REGISTRY.length, create, update, unchanged: SECTION_REGISTRY.length - create.length - update.length };
+}
+
+/** Section type idempoten (DC-29): hanya baris baru/berbeda yang ditulis; tanpa perubahan = 0 tulis. */
+async function seedSectionTypes(tx: Prisma.TransactionClient): Promise<{ registry: number; created: string[]; updated: string[]; unchanged: number }> {
+  const plan = await planSectionTypes(tx);
+  const byKey = new Map(SECTION_REGISTRY.map((s) => [s.key, s]));
+  for (const key of plan.create) await tx.studioSectionType.create({ data: { key, ...sectionTypeData(byKey.get(key)!) } });
+  for (const key of plan.update) await tx.studioSectionType.update({ where: { key }, data: sectionTypeData(byKey.get(key)!) });
+  return { registry: plan.registry, created: plan.create, updated: plan.update, unchanged: plan.unchanged };
 }
 
 /**
@@ -690,7 +726,19 @@ async function ensurePreset(
 /** Versi templat berkerangka = rujukan versi preset + lapis esensial/lanjutan + kerangka; idempoten. */
 async function ensureSkeletonVersion(
   tx: Tx,
-  p: { slug: string; name: string; description: string; preset: { slug: string; version: VersionRow }; essentials: ParamRecord; advanced?: ParamRecord; roleFormats?: Record<string, unknown>; skeletonSlots: TemplateSlotDef[]; changeNote: string },
+  p: {
+    slug: string;
+    name: string;
+    description: string;
+    preset: { slug: string; version: VersionRow };
+    essentials: ParamRecord;
+    advanced?: ParamRecord;
+    roleFormats?: Record<string, unknown>;
+    skeletonSlots: TemplateSlotDef[];
+    changeNote: string;
+    /** DC-29: jenis kontrak C58 templat (dibuat dengan medan ini; templat yang ada wajib sama). */
+    contractKind?: string;
+  },
 ): Promise<{ outcome: "created" | "new-version" | "unchanged"; version: VersionRow; computedSkeletonSha256: string }> {
   const definition: StudioTemplateV2 = {
     $schema: TEMPLATE_V2_SCHEMA_ID,
@@ -705,9 +753,16 @@ async function ensureSkeletonVersion(
   const t = await tx.studioTemplate.findUnique({ where: { slug: p.slug } });
   let outcome: "created" | "new-version" | "unchanged";
   if (!t) {
-    await createTemplateV2InTx(tx, { slug: p.slug, name: p.name, kind: "DOCUMENT", description: p.description, changeNote: p.changeNote, template: definition }, ADMIN_CALLER);
+    await createTemplateV2InTx(
+      tx,
+      { slug: p.slug, name: p.name, kind: "DOCUMENT", description: p.description, changeNote: p.changeNote, template: definition, ...(p.contractKind ? { contractKind: p.contractKind } : {}) },
+      ADMIN_CALLER,
+    );
     outcome = "created";
   } else {
+    if (p.contractKind !== undefined && t.contractKind !== p.contractKind) {
+      throw new Error(`Templat ${p.slug} ber-contractKind ${String(t.contractKind)}, diharapkan ${p.contractKind}; tidak diubah seed`);
+    }
     const latest = await latestVersionOf(tx, t.id, t.latestVersionNo);
     if (latest.skeletonSha256 === wantSk && latest.baseVersionId === p.preset.version.id && stable(asRecord(latest.overrides)) === stable(wantLayer)) {
       outcome = "unchanged";
@@ -1105,6 +1160,216 @@ async function runPresetFlags(db: string, opts: { presets: boolean; manual000: b
   }
 }
 
+// ── Templat jenis kontrak (DC-29, `--contract-templates`; register 05 §6.1, §6.3, BA-29) ──
+
+interface ContractTemplateSpec {
+  /** Jenis kontrak C58 (`registry/contracts.ts`). */
+  kind: string;
+  slug: string;
+  name: string;
+  description: string;
+  presetSlug: string;
+  /** Kerangka register (kenop slot dibaca dari preset saat seed, seperti kerangka 7 slot SR-36). */
+  slots: ReadonlyArray<Omit<TemplateSlotDef, "essentials">>;
+}
+
+const DOC_DEFAULT_TIER_KEY = "doc.defaultTier";
+const DOC_DEFAULT_TYPE_CODE_KEY = "doc.defaultTypeCode";
+const DOC_TYPE_CODE_KEY = "doc.typeCode";
+
+/** CK-01 `laporan-kerja-agen` (§6.3): SL-08..SL-10, semua tier (`tiers: []`), `admits` SL-09 = 21 jenis blok konten. */
+const CONTRACT_TEMPLATES: readonly ContractTemplateSpec[] = [
+  {
+    kind: "agentWorkReport",
+    slug: "laporan-kerja-agen",
+    name: "Laporan Kerja Agen",
+    description:
+      "Templat jenis kontrak agentWorkReport (CK-01): laporan kerja tiap agen, tier bawaan NOTA, kode jenis LAP, preset gaya GSP DATUM. Kerangka: catatan laporan, isi laporan (bab wajib 1-5), referensi.",
+    presetSlug: "datum-gsp-preset",
+    slots: [
+      { slotKey: "record", sectionType: "contractRecord", label: "Catatan Laporan", position: 1, required: true, positionLocked: true, repeatable: false, contentMode: "INPUT", tiers: [], admits: [] },
+      { slotKey: "content", sectionType: "chapter", label: "Isi Laporan", position: 2, required: true, positionLocked: false, repeatable: true, minItems: 1, contentMode: "INPUT", tiers: [], admits: [...CONTENT_BLOCK_TYPES] },
+      { slotKey: "references", sectionType: "sourceRegister", label: "Referensi", position: 3, required: false, positionLocked: false, repeatable: false, contentMode: "INPUT", tiers: [], admits: [] },
+    ],
+  },
+];
+
+/**
+ * Spesifikasi seed dicocokkan dengan registri C58 sebelum menulis: setiap jenis terdaftar punya
+ * spesifikasi (jenis baru tanpa templat = galat), slug dan kerangka ringkas (slotKey, sectionType,
+ * label, required, repeatable) sama dengan entri registri.
+ */
+function contractTemplateSpecs(): Array<{ spec: ContractTemplateSpec; def: (typeof CONTRACT_KIND_DEFS)[number] }> {
+  const out: Array<{ spec: ContractTemplateSpec; def: (typeof CONTRACT_KIND_DEFS)[number] }> = [];
+  for (const def of CONTRACT_KIND_DEFS) {
+    const spec = CONTRACT_TEMPLATES.find((s) => s.kind === def.kind);
+    if (!spec) throw new Error(`Jenis kontrak ${def.kind} terdaftar di C58 tanpa spesifikasi templat seed`);
+    if (spec.slug !== def.templateSlug) throw new Error(`Slug templat ${def.kind}: seed ${spec.slug} != registri ${def.templateSlug}`);
+    const short = (s: { slotKey: string; sectionType: string; label: string; required: boolean; repeatable: boolean }) =>
+      stable({ slotKey: s.slotKey, sectionType: s.sectionType, label: s.label, required: s.required, repeatable: s.repeatable });
+    const seedShort = spec.slots.map(short);
+    const regShort = def.skeleton.map(short);
+    if (stable(seedShort) !== stable(regShort)) throw new Error(`Kerangka seed ${spec.slug} berbeda dari kerangka registri ${def.kind}`);
+    out.push({ spec, def });
+  }
+  const orphan = CONTRACT_TEMPLATES.filter((s) => !CONTRACT_KIND_DEFS.some((d) => d.kind === s.kind)).map((s) => s.kind);
+  if (orphan.length > 0) throw new Error(`Spesifikasi templat kontrak tanpa jenis terdaftar: ${orphan.join(", ")}`);
+  return out;
+}
+
+/** Lapis templat (§6.3): tier bawaan (R-49), kode jenis bawaan (R-48), daftar kode jenis = bawaan P3-20 + kode jenis kontrak (CQ-1). */
+function contractTemplateLayer(def: (typeof CONTRACT_KIND_DEFS)[number]): ParamRecord {
+  const typeCodes = PARAMS_BY_KEY.get(DOC_TYPE_CODE_KEY)?.default;
+  if (!Array.isArray(typeCodes)) throw new Error(`Bawaan ${DOC_TYPE_CODE_KEY} bukan daftar`);
+  const list = (typeCodes as string[]).includes(def.typeCode) ? [...(typeCodes as string[])] : [...(typeCodes as string[]), def.typeCode];
+  return { [DOC_DEFAULT_TIER_KEY]: def.tier, [DOC_DEFAULT_TYPE_CODE_KEY]: def.typeCode, [DOC_TYPE_CODE_KEY]: list };
+}
+
+interface TemplateSnapshotRow {
+  slug: string;
+  latestVersionNo: number;
+  updatedAt: Date;
+  contractKind: string | null;
+  versions: bigint;
+  paramsSha256: string | null;
+  skeletonSha256: string | null;
+}
+
+/** Sidik templat selain sasaran: penjaga "templat lama tidak berubah" (§6.3). */
+async function snapshotTemplates(db: Tx, exclude: readonly string[]): Promise<Array<Record<string, unknown>>> {
+  const rows = await db.$queryRaw<TemplateSnapshotRow[]>`
+    select t.slug, t."latestVersionNo", t."updatedAt", t."contractKind",
+           (select count(*) from "StudioTemplateVersion" y where y."templateId" = t.id) as versions,
+           v."paramsSha256", v."skeletonSha256"
+    from "StudioTemplate" t left join "StudioTemplateVersion" v on v."templateId" = t.id and v."versionNo" = t."latestVersionNo"
+    where t.slug <> all(${[...exclude]}::text[])
+    order by t.slug`;
+  return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.toISOString(), versions: Number(r.versions) }));
+}
+
+/** Satu templat jenis kontrak lewat layanan templat v2 (CH-06 ditegakkan layanan); idempoten. */
+async function ensureContractTemplate(tx: Tx, spec: ContractTemplateSpec, def: (typeof CONTRACT_KIND_DEFS)[number]): Promise<Record<string, unknown>> {
+  const pt = await tx.studioTemplate.findUnique({ where: { slug: spec.presetSlug } });
+  if (!pt || !pt.isPreset) throw new Error(`Preset ${spec.presetSlug} tidak ada atau bukan preset; jalankan --presets-and-skeletons lebih dulu`);
+  const presetVersion = await latestVersionOf(tx, pt.id, pt.latestVersionNo);
+  const presetEffective = asRecord(presetVersion.resolvedParams);
+  const global = knobValues("global", presetEffective);
+  const layer = contractTemplateLayer(def);
+  const split = splitBySurface({ ...global.values, ...layer });
+  const slotSkipped: Record<string, string[]> = {};
+  const slots: TemplateSlotDef[] = spec.slots.map((s) => {
+    const k = knobValues(s.sectionType, presetEffective, (key) => isScopeAllowedInSlot(PARAMS_BY_KEY.get(key)!.scope, s));
+    if (k.skipped.length > 0) slotSkipped[s.slotKey] = k.skipped;
+    return { ...s, admits: [...s.admits], tiers: [...s.tiers], essentials: k.values };
+  });
+  // Pertahanan seed: CH-06 dicek sebelum layanan (layanan juga menolak 400 SCHEMA_INVALID).
+  const ch06 = contractRecordSkeletonIssues(slots, spec.kind);
+  if (ch06.length > 0) throw new Error(`CH-06 ${spec.slug}: ${ch06.map((i) => `${i.pointer} ${i.message}`).join("; ")}`);
+  const r = await ensureSkeletonVersion(tx, {
+    slug: spec.slug,
+    name: spec.name,
+    description: spec.description,
+    preset: { slug: spec.presetSlug, version: presetVersion },
+    essentials: split.essentials,
+    advanced: split.advanced,
+    skeletonSlots: slots,
+    changeNote: `DC-29: templat jenis kontrak ${spec.kind} (register 05 §6.3) = preset ${spec.presetSlug} v${presetVersion.versionNo} + esensial global + tier ${def.tier} / kode ${def.typeCode} + kerangka ${slots.length} slot`,
+    contractKind: spec.kind,
+  });
+  const t = await tx.studioTemplate.findUniqueOrThrow({ where: { slug: spec.slug } });
+  const stored = await tx.studioTemplateSlot.findMany({
+    where: { templateVersionId: r.version.id },
+    orderBy: { position: "asc" },
+    select: { slotKey: true, sectionTypeKey: true, position: true, required: true, repeatable: true, positionLocked: true, minItems: true, contentMode: true, tiers: true, admits: true },
+  });
+  const eff = asRecord(r.version.resolvedParams);
+  const storedOk =
+    t.contractKind === spec.kind &&
+    r.version.skeletonSha256 === r.computedSkeletonSha256 &&
+    stable(stored.map((s) => [s.slotKey, s.sectionTypeKey, s.position])) === stable(spec.slots.map((s) => [s.slotKey, s.sectionType, s.position])) &&
+    stable(Object.fromEntries(Object.keys(layer).map((k) => [k, eff[k]]))) === stable(layer);
+  return {
+    slug: spec.slug,
+    kind: spec.kind,
+    outcome: r.outcome,
+    storedOk,
+    contractKind: t.contractKind,
+    templateKind: t.kind,
+    versionNo: r.version.versionNo,
+    baseVersionId: r.version.baseVersionId,
+    preset: { slug: spec.presetSlug, versionNo: presetVersion.versionNo, versionId: presetVersion.id },
+    paramsSha256: r.version.paramsSha256,
+    skeletonSha256: r.version.skeletonSha256,
+    skeletonShaMatchesSeed: r.version.skeletonSha256 === r.computedSkeletonSha256,
+    layer: Object.fromEntries(Object.keys(layer).map((k) => [k, eff[k] ?? null])),
+    essentials: Object.keys(split.essentials).length,
+    advanced: Object.keys(split.advanced),
+    skippedKnobKeys: { global: global.skipped, slots: slotSkipped },
+    ch06Issues: ch06.length,
+    slots: stored.map((s) => ({ ...s, admits: s.admits.length })),
+  };
+}
+
+/** `--contract-templates` dalam SATU transaksi; penjaga templat lama/section type gagal = rollback + galat. */
+async function runContractTemplates(db: string, opts: { dryRun: boolean }): Promise<void> {
+  const specs = contractTemplateSpecs();
+  const targets = specs.map((s) => s.spec.slug);
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        const current = (await tx.$queryRaw<{ db: string }[]>`select current_database() as db`)[0]?.db;
+        if (current !== db) throw new Error(`DB transaksi '${current}' berbeda dari DB yang diperiksa '${db}'`);
+        const beforeTemplates = await snapshotTemplates(tx, targets);
+        const beforeSections = new Map((await tx.studioSectionType.findMany({ select: { key: true, updatedAt: true } })).map((r) => [r.key, r.updatedAt.toISOString()]));
+        // FK slot -> section type: baris `contractRecord` wajib ada di transaksi yang sama (dry-run: ikut di-rollback).
+        const sectionTypes = await seedSectionTypes(tx);
+        const templates: Record<string, unknown>[] = [];
+        for (const { spec, def } of specs) templates.push(await ensureContractTemplate(tx, spec, def));
+        const afterTemplates = await snapshotTemplates(tx, targets);
+        const afterByslug = new Map(afterTemplates.map((r) => [String(r.slug), r]));
+        const changedTemplates = beforeTemplates.filter((b) => stable(b) !== stable(afterByslug.get(String(b.slug)) ?? null)).map((b) => String(b.slug));
+        const addedTemplates = afterTemplates.filter((a) => !beforeTemplates.some((b) => b.slug === a.slug)).map((a) => String(a.slug));
+        const afterSections = await tx.studioSectionType.findMany({ select: { key: true, updatedAt: true } });
+        const sectionTypesTouched = afterSections.filter((r) => beforeSections.has(r.key) && beforeSections.get(r.key) !== r.updatedAt.toISOString()).map((r) => r.key);
+        const counts = {
+          sectionTypes: await tx.studioSectionType.count(),
+          contractTemplates: await tx.studioTemplate.count({ where: { contractKind: { not: null } } }),
+          templates: await tx.studioTemplate.count(),
+        };
+        const guard = {
+          ok:
+            changedTemplates.length === 0 &&
+            addedTemplates.length === 0 &&
+            stable([...sectionTypesTouched].sort()) === stable([...sectionTypes.updated].sort()) &&
+            templates.every((t) => t.storedOk === true),
+          otherTemplates: beforeTemplates.length,
+          changedTemplates,
+          addedTemplates,
+          sectionTypesTouched,
+          otherTemplatesBefore: beforeTemplates,
+        };
+        log(guard.ok ? "info" : "error", "Templat jenis kontrak", { database: db, dryRun: opts.dryRun, sectionTypes, templates, counts, guard });
+        if (!guard.ok) throw new Error("Penjaga templat jenis kontrak gagal (templat lain/section type berubah atau isi tersimpan tidak sesuai); transaksi di-rollback (tidak ada yang ditulis)");
+        if (opts.dryRun) {
+          throw new DryRunRollback({
+            sectionTypes: { create: sectionTypes.created, update: sectionTypes.updated, unchanged: sectionTypes.unchanged },
+            templates: templates.map((t) => ({ slug: t.slug, outcome: t.outcome, versionNo: t.versionNo, contractKind: t.contractKind })),
+            counts,
+            guardOk: guard.ok,
+          });
+        }
+      },
+      { timeout: PRESET_TX_TIMEOUT_MS, maxWait: 10_000 },
+    );
+  } catch (err) {
+    if (err instanceof DryRunRollback) {
+      log("info", "Dry-run templat jenis kontrak selesai; transaksi di-rollback (0 tulis)", { database: db, plan: err.report });
+      return;
+    }
+    throw err;
+  }
+}
+
 /** Kanonik dikelola preset: sinkron registri lewat versi baru tanpa kerangka dihentikan (akan menimpa kerangka). */
 async function describeCanonical(outcome: "preset-managed" | "deferred-to-presets" | "dry-run-not-synced"): Promise<Record<string, unknown>> {
   const t = await prisma.studioTemplate.findUniqueOrThrow({ where: { slug: CANONICAL_SLUG } });
@@ -1127,9 +1392,9 @@ async function reportCounts(db: PrismaClient): Promise<void> {
   const sections = await db.$queryRaw<{ total: bigint; grp: string; n: bigint }[]>`
     select (select count(*) from "StudioSectionType") as total, "group"::text as grp, count(*) as n
     from "StudioSectionType" group by "group" order by "group"`;
-  const templates = await db.$queryRaw<{ slug: string; versions: bigint; latest: number; keys: bigint; sha: string; preset: boolean; skeleton: boolean }[]>`
+  const templates = await db.$queryRaw<{ slug: string; versions: bigint; latest: number; keys: bigint; sha: string; preset: boolean; skeleton: boolean; contract: string | null }[]>`
     select t.slug, (select count(*) from "StudioTemplateVersion" y where y."templateId" = t.id) as versions,
-           t."latestVersionNo" as latest, t."isPreset" as preset, (v."skeletonSha256" is not null) as skeleton,
+           t."latestVersionNo" as latest, t."isPreset" as preset, (v."skeletonSha256" is not null) as skeleton, t."contractKind" as contract,
            (select count(*) from jsonb_object_keys(v."resolvedParams")) as keys, v."paramsSha256" as sha
     from "StudioTemplate" t join "StudioTemplateVersion" v on v."templateId" = t.id and v."versionNo" = t."latestVersionNo"
     order by t.slug`;
@@ -1143,7 +1408,8 @@ async function reportCounts(db: PrismaClient): Promise<void> {
   const num = (x: bigint | number | undefined) => (x === undefined ? null : Number(x));
   log("info", "Hitungan DB", {
     sectionTypes: { total: num(sections[0]?.total), byGroup: Object.fromEntries(sections.map((r) => [r.grp, num(r.n)])) },
-    templates: templates.map((r) => ({ slug: r.slug, isPreset: r.preset, versions: num(r.versions), latestVersionNo: r.latest, skeleton: r.skeleton, resolvedParamKeys: num(r.keys), paramsSha256: r.sha })),
+    templates: templates.map((r) => ({ slug: r.slug, isPreset: r.preset, contractKind: r.contract, versions: num(r.versions), latestVersionNo: r.latest, skeleton: r.skeleton, resolvedParamKeys: num(r.keys), paramsSha256: r.sha })),
+    contractTemplates: templates.filter((r) => r.contract !== null).length,
     canonicalLatest: { catalogKeysPresent: num(present[0]?.catalog), renderKeysPresent: num(present[0]?.render) },
   });
 }
@@ -1160,8 +1426,11 @@ async function main(): Promise<void> {
   const importSamplesFlag = argv.includes("--import-samples");
   const presetsFlag = argv.includes("--presets-and-skeletons");
   const manual000V2Flag = argv.includes("--import-manual000-v2");
+  const contractFlag = argv.includes("--contract-templates");
   const dryRun = argv.includes("--dry-run");
-  if (dryRun && !presetsFlag && !manual000V2Flag) throw new Error("--dry-run hanya berlaku bersama --presets-and-skeletons / --import-manual000-v2");
+  if (dryRun && !presetsFlag && !manual000V2Flag && !contractFlag) {
+    throw new Error("--dry-run hanya berlaku bersama --presets-and-skeletons / --import-manual000-v2 / --contract-templates");
+  }
   // FIX-SEED: --dry-run tidak meng-commit apa pun (dry-run v21). Impor lain menulis di luar transaksi preset.
   if (dryRun && (importBenchmark || importDatumGsp || importSamplesFlag)) {
     throw new Error("--dry-run tidak dapat digabung dengan --import-benchmark / --import-datum-gsp / --import-samples (impor itu menulis di luar transaksi preset)");
@@ -1180,9 +1449,9 @@ async function main(): Promise<void> {
       return bad ? [{ key: d.key, reason: bad }] : [];
     });
     if (defaultFindings.length > 0) log("warn", "Default registri tidak lolos validasi ParamDef-nya sendiri (temuan, seed lanjut)", { count: defaultFindings.length, findings: defaultFindings });
-    // --dry-run: upsert section type (menyentuh `updatedAt`) dilewati agar tidak ada yang di-commit.
+    // --dry-run: penulisan section type dilewati agar tidak ada yang di-commit; rencananya tetap dilaporkan.
     const sectionTypes = dryRun
-      ? { skipped: "dry-run", registry: SECTION_REGISTRY.length }
+      ? { skipped: "dry-run", plan: await planSectionTypes(prisma) }
       : await prisma.$transaction(async (tx) => seedSectionTypes(tx), { timeout: 60_000, maxWait: 10_000 });
     const unregistered = await findUnregisteredSectionTypes(prisma);
     if (unregistered.length > 0) {
@@ -1234,6 +1503,7 @@ async function main(): Promise<void> {
       }
     }
     if (presetsFlag || manual000V2Flag) await runPresetFlags(db, { presets: presetsFlag, manual000: manual000V2Flag, dryRun });
+    if (contractFlag) await runContractTemplates(db, { dryRun });
     if (importSamplesFlag) {
       const samples = await importSamples(prisma);
       log("info", "Impor sampel selesai", { database: db, summary: samples.map((s) => ({ key: s.key, outcome: s.outcome, documentId: s.documentId ?? null })) });

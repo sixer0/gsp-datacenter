@@ -26,6 +26,7 @@ export type { CompletenessTexts } from "./texts";
 export {
   chapterProgress,
   compareChapterKeys,
+  contractRequiredChapterKeys,
   expectedChapterKeys,
   isSlotPayloadFilled,
   slotState,

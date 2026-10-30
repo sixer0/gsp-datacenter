@@ -64,4 +64,10 @@ export interface CompletenessInput {
   /** Urut posisi dokumen (`structure.order`). */
   slots: CompletenessSlotInput[];
   doc: CompletenessTextContext;
+  /**
+   * Jenis kontrak templat (`StudioTemplate.contractKind`, MX08). Bila terdaftar di C58,
+   * slot berulang kerangka jenis mengharapkan kunci CO wajib ∪ outline dokumen (05 §6.5).
+   * Absen/null = perilaku non-kontrak (identik dengan sebelum DC-11).
+   */
+  contractKind?: string | null;
 }

@@ -62,6 +62,7 @@ import type {
   TableV2,
 } from "../../contract";
 import { TABLE_BLOCK_TYPES } from "../../contract";
+import { chartSpecFromDraft, type StudioChartDraft } from "../../engine/chart/core/custom";
 import type { DiagramPageKeySignal } from "../../engine/diagram/core/sheet";
 import { PARAMS_BY_KEY } from "../../params";
 import { composeFail } from "./errors";
@@ -395,7 +396,8 @@ function chart(b: ChartV2, pid: string, ctx: BlockCtx): ChartBlock {
   if (b.artifactId !== undefined) {
     spec = { artifactId: b.artifactId };
   } else {
-    const s: StudioChartV1 = {
+    // AM-03 (DC-27): `code = "custom"` disalin apa adanya lalu didispatch mesin chart di bawah.
+    const s: StudioChartDraft = {
       $schema: "studio.chart/v1",
       kind: b.code,
       title,
@@ -442,7 +444,7 @@ function chart(b: ChartV2, pid: string, ctx: BlockCtx): ChartBlock {
       const sp = specParams(d.params, ctx.params, b.code);
       if (sp) s.params = sp;
     }
-    spec = s;
+    spec = chartSpecFromDraft(s, b.form);
   }
   const out: ChartBlock = withId({ type: "chart" as const, caption: caption(b.caption, ctx), source: figureSource(b.source, ctx), widthMm, spec }, pid);
   if (b.keyRow) out.keyRow = apparatusInline(b.keyRow, "key", ctx);

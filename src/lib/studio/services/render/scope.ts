@@ -46,6 +46,7 @@ import type {
   StudioRenderScopeKind,
   StudioTier,
 } from "../../contract";
+import { CONTRACT_DEFAULT_RENDER_FORMATS } from "../../contract/env";
 import { StudioEngineError } from "../../contract/errors";
 import { checkRenderEnvReadiness } from "../../engine/soffice";
 import { findAssetBySha } from "../images";
@@ -129,8 +130,14 @@ function scopeDto(scope: RenderScope): { kind: StudioRenderScopeKind; key?: stri
   return scope.kind === "DOCUMENT" ? { kind: "DOCUMENT" } : { kind: scope.kind, key: scope.key };
 }
 
-function requestFormats(req: RenderScopeRequest): StudioOutputFormat[] {
-  return normalizeFormats([...(req.formats ?? []), ...(req.figures ?? [])]);
+/**
+ * Format diminta. KD-41 / AM-15 (DC-20, CQ-2): dokumen ber-contractKind tanpa
+ * `formats` dan `figures` -> C40 (HTML) alih-alih bawaan snapshot/orkestrator.
+ */
+function requestFormats(req: RenderScopeRequest, contractKind: string | null): StudioOutputFormat[] {
+  const asked = [...(req.formats ?? []), ...(req.figures ?? [])];
+  if (asked.length === 0 && contractKind) return [...CONTRACT_DEFAULT_RENDER_FORMATS];
+  return normalizeFormats(asked);
 }
 
 function strings(v: unknown): string[] {
@@ -191,7 +198,7 @@ export async function prepareScopeRender(client: RenderScopeDb, documentId: stri
   const scope = toRenderScope(req.scope, req.key);
   const doc = await client.studioDocument.findUnique({
     where: { id: documentId },
-    select: { id: true, docNumber: true, tier: true, missionFolder: true, missionDocKey: true, currentRevisionNo: true },
+    select: { id: true, docNumber: true, tier: true, missionFolder: true, missionDocKey: true, currentRevisionNo: true, contractKind: true },
   });
   if (!doc) throw new StudioEngineError("DOCUMENT_NOT_FOUND", `document ${documentId} not found`, { documentId });
   const revisionNo = req.revisionNo ?? doc.currentRevisionNo;
@@ -229,7 +236,7 @@ export async function prepareScopeRender(client: RenderScopeDb, documentId: stri
     snapshot,
     template,
     ...(slots ? { slots } : {}),
-    formats: requestFormats(req),
+    formats: requestFormats(req, doc.contractKind),
   };
 }
 

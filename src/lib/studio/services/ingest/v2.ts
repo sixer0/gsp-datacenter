@@ -54,7 +54,9 @@ import {
 } from "../../contract";
 import type { StudioCaller } from "../../contract/auth";
 import { StudioEngineError } from "../../contract/errors";
+import type { SubmitWarningV2 } from "../../contract/types/v2/contract";
 import { normalizeRegisterEntry } from "../../engine/bind";
+import { CONTRACT_RECORD_SECTION_TYPE } from "../../registry/contracts";
 import { checkOverrideRights } from "../../engine/tokens";
 import { ALL_PARAMS } from "../../params";
 import { adaptV1, effectiveInlinePolicy, type AdaptV1Result } from "../adapt-v1";
@@ -78,12 +80,20 @@ import type { DocV2Targeting } from "../submit/targeting";
 import { resolveDocTarget } from "../submit/target";
 import { fillerOf } from "../submit/meta";
 import { inlineFormatPolicyOf } from "../inline-format/policy";
-import { evaluateByConstruction, typeCodeIssue, v1FigureSizeIssues } from "./by-construction";
+import {
+  checkContractSource,
+  contractCheckError,
+  evaluateByConstruction,
+  resolveContractTargetRefs,
+  typeCodeIssue,
+  v1FigureSizeIssues,
+  withChartCustomPointer,
+} from "./by-construction";
 import { type IngestEnforcement } from "./gate";
 import { ASSET_TOO_LARGE_KEYWORD } from "./assets";
 import { ingestLog } from "./log";
 import { effectiveTier, jakartaDate } from "./meta";
-import { sha256Hex, stableStringify } from "./util";
+import { joinPointer, sha256Hex, stableStringify } from "./util";
 import { limitIssues, validateAgainst, validateV2Against } from "./validate";
 
 /** Kunci `x` laporan adaptor v1 (seam SR-18 `ADAPT_REPORT_X_KEY`; hanya server yang menulisnya). */
@@ -126,6 +136,8 @@ export interface IngestResultV2 extends Omit<IngestResult, "snapshot"> {
   /** Respons layanan kiriman SR-13 (simpan v2). */
   submit?: SubmitResultV2;
   warnings?: ComposeWarning[];
+  /** DC-08: peringatan kontrak non-penahan (CW-01 `CONTRACT_REF_PID_RETIRED`, KD-46). */
+  contractWarnings?: SubmitWarningV2[];
 }
 
 export interface V2Context {
@@ -174,6 +186,37 @@ export function issuesFromEngineError(e: StudioEngineError, ptr: string): Valida
 
 function isClientError(e: unknown): e is StudioEngineError {
   return e instanceof StudioEngineError && e.httpStatus >= 400 && e.httpStatus < 500;
+}
+
+/**
+ * DC-08: galat layanan ber-`details` register (EC25-EC28). dryRun -> satu isu ber-checkId kode
+ * galat + pointer + `details` utuh (R08); simpan -> galat ASLI dilempar (details register utuh,
+ * bukan daftar isu).
+ */
+function rejectWithDetails(ctx: V2Context, e: StudioEngineError, lint: LintReport | null = null): IngestResultV2 {
+  const base = issuesFromEngineError(e, ctx.ptr);
+  const issues: Array<ValidationIssue & { details?: Record<string, unknown> }> = isRecord(e.details) ? base.map((x) => ({ ...x, details: e.details as Record<string, unknown> })) : base;
+  if (ctx.dryRun) return ctx.reject(e.code, e.message, issues, lint);
+  ingestLog({ level: "warn", message: `ingest ditolak: ${e.message}`, correlationId: ctx.cid, code: e.code, context: { dryRun: false, issues: issues.length } });
+  throw e;
+}
+
+/**
+ * D-376 (DC-08): `StudioTemplate.contractKind` (MX08) templat terpatok, hanya bila kerangka
+ * memuat slot `contractRecord` (dokumen lain: tanpa kueri baru). Templat di memori (draf R08 /
+ * harness, `opts.template`) tidak dibaca dari DB: compose dan gerbang memakai C58 per slug.
+ */
+async function templateContractKind(ctx: V2Context, pinned: Pinned): Promise<string | undefined> {
+  if (ctx.opts.template) return undefined;
+  if (!pinned.skeleton.skeleton.slots.some((s) => s.sectionType === CONTRACT_RECORD_SECTION_TYPE)) return undefined;
+  const { prisma } = await import("@/lib/prisma");
+  try {
+    const row = await prisma.studioTemplate.findUnique({ where: { id: pinned.tpl.templateId }, select: { contractKind: true } });
+    return row?.contractKind ?? undefined;
+  } catch (e) {
+    ingestLog({ level: "error", message: "baca contractKind templat gagal", correlationId: ctx.cid, code: "TEMPLATE_CONTRACT_KIND_FAILED", stack_trace: e instanceof Error ? e.stack : undefined, context: { templateId: pinned.tpl.templateId } });
+    throw e;
+  }
 }
 
 // ── Templat + kerangka ───────────────────────────────────────────────────
@@ -472,6 +515,11 @@ export interface PreparedV2 {
   author: string;
   at: string;
   inputSha256: string;
+  /**
+   * DC-WIRE2 (D-389, 05 §6.5): contractKind templat yang sudah dibaca pipeline (MX08);
+   * absen = non-kontrak. Diteruskan ke kelengkapan saat persist (repository.ts).
+   */
+  contractKind?: string;
 }
 
 async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared: PreparedV2; result: IngestResultV2 } | IngestResultV2> {
@@ -520,6 +568,15 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
   });
   const knownAssetSha = new Set(assets.bySha.keys());
   const composeAssets = composeAssetsOf(assets);
+  // D-376 (DC-08): jenis kontrak templat (MX08) ke compose + gerbang; absen = C58 per slug.
+  const contractKind = await templateContractKind(ctx, pinned);
+  const contractPointer = (slotKey: string) => joinPointer(`${ctx.ptr}/sections`, slotKey);
+  // DC-08 §5.6 langkah 6b SEBELUM compose (compose kontrak mengandaikan payload lolos I54).
+  const contractPre = checkContractSource(doc, skeleton.skeleton.slots, { contractKind, contractPointer });
+  const contractPreErr = contractCheckError(contractPre);
+  if (contractPreErr) {
+    return contractPreErr.code === "SCHEMA_INVALID" ? ctx.reject(contractPreErr.code, contractPreErr.message, contractPre.issues) : rejectWithDetails(ctx, contractPreErr);
+  }
   let compose: ComposeResult;
   let recompose: (docNumber: string) => ComposeResult;
   try {
@@ -535,7 +592,15 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
       },
     });
     const run = (source: typeof merged.doc): ComposeResult => {
-      const r = composeV2({ source, skeleton, tier, params: tpl.params, ...(pinned.slotParams ? { slotParams: pinned.slotParams } : {}), assets: composeAssets });
+      const r = composeV2({
+        source,
+        skeleton,
+        tier,
+        params: tpl.params,
+        ...(pinned.slotParams ? { slotParams: pinned.slotParams } : {}),
+        assets: composeAssets,
+        ...(contractKind !== undefined ? { contractKind } : {}),
+      });
       if (p.adapt?.internal) {
         // KD-26: `allow` tepercaya -> snapshot internal = dokumen v1 asli (meta terlengkapi).
         const internal: StudioDocV1 = { ...structuredClone(p.adapt.internal), meta: { ...p.adapt.internal.meta, ...source.meta } };
@@ -546,7 +611,10 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
     };
     compose = run(merged.doc);
     recompose = (docNumber: string) => run({ ...merged.doc, meta: { ...merged.doc.meta, docNumber } });
-  } catch (e) {
+  } catch (e0) {
+    // EC28 (D-374): compose tidak membawa pointer blok chart.custom; dilengkapi dari kiriman (DC-08).
+    const e = withChartCustomPointer(e0, doc, `${ctx.ptr}/sections`);
+    if (isClientError(e) && e.code === "CHART_CUSTOM_FORM_UNSUPPORTED") return rejectWithDetails(ctx, e);
     if (isClientError(e)) return ctx.reject(e.code, e.message, issuesFromEngineError(e, ctx.ptr));
     ingestLog({ level: "error", message: "compose v2 gagal", correlationId: ctx.cid, code: "COMPOSE_FAILED", stack_trace: e instanceof Error ? e.stack : undefined, context: { templateSlug: doc.template.slug } });
     throw e;
@@ -555,14 +623,16 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
 
   // Kelengkapan (revisi 1 dokumen baru; kiriman parsial diterima) -> masukan gerbang (D-131).
   const rows = stampRevisionOne(compose.rows, filler, at);
-  const completeness = computeCompleteness(
-    completenessInputOf(skeleton, snapshot, rows, {
+  // DC-WIRE (D-386, 05 §6.5): contractKind yang sudah dibaca di atas; absen = non-kontrak.
+  const completeness = computeCompleteness({
+    ...completenessInputOf(skeleton, snapshot, rows, {
       docId: "",
       docNumber: meta.docNumber ?? "(nomor dari sekuens)",
       missionFolder: doc.mission?.folder ?? null,
       docKey: doc.docKey ?? null,
     }, 1),
-  );
+    ...(contractKind !== undefined ? { contractKind } : {}),
+  });
 
   // By-construction: gerbang BERSAMA (SR-55 H1; satu fungsi dengan R12/R13/R16/R06/R14).
   const gate = evaluateByConstruction({
@@ -574,8 +644,28 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
     intrinsic,
     notices: ctx.notices,
     registerPointer: `${ctx.ptr}/register`,
+    ...(contractKind !== undefined ? { contractKind } : {}),
+    contractPointer,
     correlationId: ctx.cid,
   });
+  // DC-08 (register 05 §5.6): 6b I54 (400 ber-checkId / 422 EC27) -> 9a I55 (EC25/EC26, baca saja) -> 9.
+  const contractErr = contractCheckError(gate.contract);
+  if (contractErr) {
+    return contractErr.code === "SCHEMA_INVALID"
+      ? ctx.reject(contractErr.code, contractErr.message, gate.contract.issues, gate.lint)
+      : rejectWithDetails(ctx, contractErr, gate.lint);
+  }
+  let contractWarnings: SubmitWarningV2[] = [];
+  if (gate.contract.targets.some((t) => (t.payload.refs ?? []).length > 0)) {
+    try {
+      const { createPrismaContractRefReader } = await import("../contracts/prisma-reader");
+      contractWarnings = (await resolveContractTargetRefs(gate.contract.targets, createPrismaContractRefReader({ correlationId: ctx.cid }))).warnings;
+    } catch (e) {
+      if (isClientError(e)) return rejectWithDetails(ctx, e, gate.lint);
+      ingestLog({ level: "error", message: "resolusi rujukan kontrak gagal", correlationId: ctx.cid, code: "CONTRACT_REFS_FAILED", stack_trace: e instanceof Error ? e.stack : undefined, context: { templateSlug: doc.template.slug } });
+      throw e;
+    }
+  }
   if (gate.blocking.length > 0) return ctx.reject("BY_CONSTRUCTION_FAILED", `${gate.blocking.length} pelanggaran by-construction`, gate.blocking, gate.lint);
   if (gate.downgraded.length > 0) {
     ingestLog({ level: "warn", message: "penahan by-construction diturunkan (D-34)", correlationId: ctx.cid, code: "D34_DOWNGRADED", context: { checks: gate.downgraded.map((d) => `${d.checkId}@${d.address ?? d.pointer ?? ""}`) } });
@@ -596,9 +686,10 @@ async function runPipeline(ctx: V2Context, p: PipelineInput): Promise<{ prepared
     completeness,
     ...(p.adapt ? { adaptReport: p.adapt.report } : {}),
     ...(compose.warnings.length > 0 ? { warnings: compose.warnings } : {}),
+    ...(contractWarnings.length > 0 ? { contractWarnings } : {}),
   };
   return {
-    prepared: { doc, pinned, compose, recompose, rows, lint: gate.lint, releaseStatus, assets, meta, author, at, inputSha256: p.inputSha256 },
+    prepared: { doc, pinned, compose, recompose, rows, lint: gate.lint, releaseStatus, assets, meta, author, at, inputSha256: p.inputSha256, ...(contractKind !== undefined ? { contractKind } : {}) },
     result,
   };
 }

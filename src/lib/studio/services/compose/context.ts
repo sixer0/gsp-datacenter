@@ -35,6 +35,8 @@ export interface ComposeContextRecord {
   params: Record<string, ParamValue>;
   slotParams?: Record<string, Record<string, ParamValue>>;
   assets?: Record<string, ComposeAssetInfo>;
+  /** Jenis kontrak templat (DC-10); hanya ditulis bila diberikan pemanggil (sha dokumen lain tetap). */
+  contractKind?: string;
 }
 
 /** Snapshot norm/v2 dengan konteks compose (+). */
@@ -54,6 +56,7 @@ export function composeContextOf(input: ComposeInput, tier: StudioTier): Compose
     for (const [k, p] of Object.entries(input.slotParams)) ctx.slotParams[k] = pick(p);
   }
   if (input.assets) ctx.assets = { ...input.assets };
+  if (input.contractKind !== undefined) ctx.contractKind = input.contractKind;
   return ctx;
 }
 

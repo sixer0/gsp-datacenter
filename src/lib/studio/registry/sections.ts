@@ -1,8 +1,9 @@
 /**
- * Registri section 51 (01_specs.md §5.2), ditulis LENGKAP oleh S03.
+ * Registri section 52 (01_specs.md §5.2), ditulis LENGKAP oleh S03.
  * Unsur, parameter, aturan, sumber disalin dari research/01 §4.1-4.3
  * (01_manual_parameter_catalog.md:839-890); tier aktif dari research/01 §5
- * (:896-916). DOCUMENT 29 + PAGE_DEVICE 7 + CHANNEL 15 = 51.
+ * (:896-916). DOCUMENT 30 + PAGE_DEVICE 7 + CHANNEL 15 = 52.
+ * Delta DC-06 (register 05 §6.1, AM-10): `contractRecord` S30 (DOCUMENT).
  * CHANNEL renderable=false (D-05: XLSX/PPTX di luar v2.1; `letter` belum punya renderer).
  * Seed S70 menyalin isi ini ke tabel StudioSectionType.
  */
@@ -21,7 +22,7 @@ const NONE = [] as const;
 const SRC = "research/01_manual_parameter_catalog.md";
 
 export const SECTION_REGISTRY: readonly SectionTypeDef[] = [
-  // ── Section dokumen (29) ── research/01 §4.1
+  // ── Section dokumen (30) ── research/01 §4.1 + register 05 §6.1
   {
     key: "cover",
     catalogId: "S01",
@@ -461,6 +462,25 @@ export const SECTION_REGISTRY: readonly SectionTypeDef[] = [
     renderable: true,
     sourceRef: `${SRC} §4.1 S29; L1153-1178`,
   },
+  // Delta DC-06 (register 05 §6.1): slot catatan kontrak; isi dipetakan compose (DC-10).
+  // DEVIASI register (needs-review DC-06): `activeTiers` kosong, bukan semua tier. Rencana
+  // kanonik (`canonicalSectionPlan`, templates/profile.ts) menurunkan opsional/terlarang dari
+  // `activeTiers`; dengan semua tier, setiap templat baru non-kontrak mendapat slot implisit
+  // `record` (melanggar CH-06) dan R04/R08/R09 jatuh BY_CONSTRUCTION_FAILED. Slot ini hanya
+  // hadir lewat kerangka eksplisit templat ber-contractKind (SL-08, tiers = semua).
+  {
+    key: "contractRecord",
+    catalogId: "S30",
+    group: "DOCUMENT",
+    register: "INTERIOR",
+    name: "Catatan Kontrak",
+    elements: ["status", "penanggung jawab", "rujukan tugas", "waktu lapor", "kartu", "butir", "bukti", "rujukan dokumen"],
+    paramRefs: [],
+    ruleRefs: ["D-139", "D-344"],
+    activeTiers: NONE,
+    renderable: true,
+    sourceRef: "register 05 §6.1",
+  },
 
   // ── Perangkat halaman (7) ── research/01 §4.2
   {
@@ -643,10 +663,10 @@ export const SECTION_REGISTRY: readonly SectionTypeDef[] = [
   },
 ];
 
-export const SECTION_REGISTRY_COUNT = 51;
+export const SECTION_REGISTRY_COUNT = 52;
 
-/** Hitungan per grup: DOCUMENT 29, PAGE_DEVICE 7, CHANNEL 15. */
-export const SECTION_REGISTRY_GROUP_COUNTS = { DOCUMENT: 29, PAGE_DEVICE: 7, CHANNEL: 15 } as const;
+/** Hitungan per grup: DOCUMENT 30, PAGE_DEVICE 7, CHANNEL 15 (AM-10). */
+export const SECTION_REGISTRY_GROUP_COUNTS = { DOCUMENT: 30, PAGE_DEVICE: 7, CHANNEL: 15 } as const;
 
 export function getSectionType(key: string): SectionTypeDef | undefined {
   return SECTION_REGISTRY.find((s) => s.key === key);

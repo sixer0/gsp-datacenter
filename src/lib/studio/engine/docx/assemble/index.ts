@@ -232,7 +232,8 @@ function inlineRunsOf(v: unknown): Run[] {
  * `DOCX_RENDERERS` tidak memuat jenisnya (renderer kontrak, mis. RQ-7, menang):
  * - `slotPlaceholder`: paragraf teks placeholder slot kosong (R-43, draf);
  * - `sourceRegisterEntry`: paragraf "[n] sitasi · jenis · URL · diakses" (URL teks, KT-11);
- * - `ruleIndex`: penanda saja (indeks aturan otomatis belum dibangun di DOCX; dicatat).
+ * - `ruleIndex`: penanda saja (indeks aturan otomatis belum dibangun di DOCX; dicatat);
+ * - `contractItem`: proyeksi butir tanpa XML (DC-13; baris tabel butir `contractRecord`).
  */
 export const SLOT_BLOCK_RENDERERS: Readonly<Record<string, DocxBlockRenderer>> = {
   slotPlaceholder: (b, ctx) => {
@@ -250,6 +251,9 @@ export const SLOT_BLOCK_RENDERERS: Readonly<Record<string, DocxBlockRenderer>> =
     ctx.log({ level: "warn", code: "RULE_INDEX_MARKER_ONLY", address: b.address ?? undefined, message: `ruleIndex (${b.address ?? b.blockId}): indeks aturan otomatis belum dibangun di DOCX; seksi dirender kosong` });
     return { xml: "" };
   },
+  // DC-13 (register 05 §5.7): butir `F:<slotKey>/<n>` = proyeksi alamat/pid; dirender sebagai
+  // baris ke-n tabel butir blok `contractRecord` (`blocks/contract-record.ts`), bukan di sini.
+  contractItem: () => ({ xml: "" }),
 };
 
 /** Perakitan lengkap dengan rincian. `assembleDocx` = bentuk kontrak §8.2. */

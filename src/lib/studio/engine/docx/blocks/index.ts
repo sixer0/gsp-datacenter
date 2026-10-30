@@ -18,6 +18,7 @@
  */
 import type { DocxBlockRenderer, DocxFragment, NormBlock, RenderContext, Run, RunProps } from "../../../contract";
 import { renderAside, renderMonoBlock } from "./boxes";
+import { renderContractRecord } from "./contract-record";
 import { BlockEnv, faceMapFrom } from "./env";
 import { renderDevice, renderSpacer } from "./primitives";
 import { renderRuleIndex, renderSlotPlaceholder, renderSourceRegisterEntry } from "./source-register";
@@ -28,6 +29,7 @@ import { renderAssumptionInline, renderList, renderParagraph } from "./text";
 export { MEDIA_REL_PLACEHOLDER_RE, mediaRelPlaceholder } from "./media";
 export { SECTION_NUMBER_GAP } from "./structure";
 export { escapeXml } from "./xml";
+export { CONTRACT_RECORD_PARTS, renderContractRecord } from "./contract-record";
 
 export type DocxTextBlockKey =
   | "paragraph"
@@ -40,7 +42,8 @@ export type DocxTextBlockKey =
   | "chapter"
   | "section"
   | "sourceRegisterEntry"
-  | "slotPlaceholder";
+  | "slotPlaceholder"
+  | "contractRecord";
 
 function renderer(fn: (env: BlockEnv) => string): DocxBlockRenderer {
   return (block: NormBlock, ctx: RenderContext): DocxFragment => {
@@ -67,6 +70,9 @@ export const docxBlocks: Partial<Record<DocxTextBlockKey, DocxBlockRenderer>> = 
   // perutean `content.mode === "auto"` ke `renderRuleIndexMarker` diajukan lewat file_requests.
   sourceRegisterEntry: renderer(renderSourceRegisterEntry),
   slotPlaceholder: renderer(renderSlotPlaceholder),
+  // DC-13: slot catatan kontrak (S30, register 05 §6.1); tabel lewat keluarga tabel DATUM.
+  // Butir `contractItem` adalah proyeksi alamat milik perakit (`assemble/index.ts`).
+  contractRecord: renderContractRecord,
 };
 
 /** RQ-7: penanda `ruleIndex` v2 (`content.mode === "auto"`) sebagai DocxBlockRenderer siap pakai. */

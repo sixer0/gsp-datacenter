@@ -18,6 +18,14 @@ export { scopeSha256, stripIds } from "./hash";
 export { seededPidAllocator, defaultChapterPid, slotPid, partPid } from "./pids";
 export { mapBlock, figureWidthMm, columnProfile, ASIDE_DEFAULT_LABELS, type BlockCtx } from "./blocks";
 export { mapInline, mapRun, mapRuns, apparatusInline, apparatusLabelText, glyphSet, DEFAULT_SYMBOL_GLYPHS, type InlineCtx } from "./inline";
+export {
+  projectContractRecord,
+  resolveContractKind,
+  reportedAtDisplay,
+  type ContractItemBlock,
+  type ContractRecordBlock,
+  type ContractRecordProjection,
+} from "./contract-record";
 export { COMPOSE_PARAM_KEYS, composeContextOf, storedComposeContext, type ComposeContextRecord, type ComposedSnapshotV2 } from "./context";
 export type {
   ComposeAssetInfo,

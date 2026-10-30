@@ -9,8 +9,9 @@
  * pengisi) -> kelengkapan (SR-11) -> gerbang by-construction BERSAMA (SR-55 H1,
  * sama dengan R04; 422 `BY_CONSTRUCTION_FAILED`) -> baris revisi ->
  * `writeRevisionRows` (M14-M18 + tulis ganda M06; pensiun pid oleh repositori)
- * -> `StudioDocument` (revisi terkini, kelengkapan, cermin meta). Dipakai R16,
- * R06 (dokumen v2), dan R14.
+ * -> baris kontrak M19-M21 bila templat ber-contractKind (DC-09, register 05 §7.6)
+ * -> `StudioDocument` (revisi terkini, kelengkapan, cermin meta, cermin kontrak MX09).
+ * Dipakai R16, R06 (dokumen v2), dan R14.
  */
 import { Prisma, type StudioDocument, type StudioRevision } from "@prisma/client";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../../../contract";
 import type { StudioCaller } from "../../../contract/auth";
 import { StudioEngineError } from "../../../contract/errors";
+import type { SubmitWarningV2 } from "../../../contract/types/v2/contract";
 import { computeCompleteness, type CompletenessInput } from "../../completeness";
 import { composeV2, validateStructure, type ComposeAssetInfo, type SkeletonInput } from "../../compose";
 import { isSlotActive, resolveSlotsForVersion } from "../../skeleton";
@@ -33,9 +35,16 @@ import {
   writeRevisionRows,
   type StructureRows,
 } from "../../structure";
+import { skeletonContractKind, writeContractRows } from "../../structure/contract";
 import { assertRevisionReconstructs } from "../../submit/integrity";
 import { fillerOf } from "../../submit/meta";
-import { assertByConstruction } from "../../ingest/by-construction";
+import {
+  assertByConstructionAsync,
+  checkContractSource,
+  contractCheckError,
+  withChartCustomPointer,
+} from "../../ingest/by-construction";
+import { createPrismaContractRefReader } from "../../contracts/prisma-reader";
 import { assertTemplateUsable, resolveTemplateVersion } from "../../templates";
 import { canonicalSha256, cloneJson } from "../canonical";
 import { revisionLog } from "../log";
@@ -71,6 +80,8 @@ export interface CommitOutput {
   revision: StudioRevision;
   completeness: CompletenessReportV2;
   rows: StructureRows;
+  /** DC-09 (KD-46, D-382): peringatan kontrak non-penahan (CW-01); hanya bila tidak kosong. */
+  warnings?: SubmitWarningV2[];
 }
 
 const ASSET_REF_RE = new RegExp(ASSET_REF_PATTERN);
@@ -193,16 +204,29 @@ export async function commitV2Revision(tx: Db, input: CommitInput): Promise<Comm
   for (const [k, s] of resolved.slots) slotParams[k] = s.params;
   const prevRows = input.prevRows;
   const allocator = await dbPidAllocator(tx, doc.id);
-  const composed = composeV2({
-    source,
-    skeleton: skel,
-    tier,
-    params: resolved.template.params,
-    slotParams,
-    assets: await assetInfo(tx, source),
-    prevRows,
-    pids: allocator,
-  });
+  // DC-09: jenis kontrak templat (MX08) -> compose (label slot contractRecord) dan tulis M19-M21.
+  // Dikueri hanya bila kerangka memuat slot contractRecord (non-kontrak: tanpa kueri baru, D-382).
+  const contractKind = await skeletonContractKind(tx, input.templateVersionId, resolved.skeleton.slots);
+  // D-382 (register 05 §5.6 langkah 6b): I54 SEBELUM compose; pointer = bentuk dokumen `/sections/<slot>`.
+  const contractPre = contractCheckError(checkContractSource(source, resolved.skeleton.slots, { contractKind }));
+  if (contractPre) throw contractPre;
+  let composed: ReturnType<typeof composeV2>;
+  try {
+    composed = composeV2({
+      source,
+      skeleton: skel,
+      tier,
+      params: resolved.template.params,
+      slotParams,
+      assets: await assetInfo(tx, source),
+      prevRows,
+      pids: allocator,
+      ...(contractKind ? { contractKind } : {}),
+    });
+  } catch (err) {
+    // D-382: EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` mendapat pointer blok.
+    throw withChartCustomPointer(err, source);
+  }
 
   // 3) Baris struktur (SR-10) = baris compose (satu sumber dengan snapshot) + cap pengisi + sha struktur.
   // SR-55b N3: cap pengisi satu helper dengan kiriman (`fillerOf`); `createdBy` tetap requester (audit).
@@ -216,14 +240,24 @@ export async function commitV2Revision(tx: Db, input: CommitInput): Promise<Comm
 
   // 4) Kelengkapan (SR-11) -> kolom revisi + dokumen.
   const order = composed.snapshot.skeleton.slots.filter((s) => s.active && !s.omitted).map((s) => s.slotKey);
-  const completeness = computeCompleteness(completenessInput(doc, newRevNo, skel, tier, rows, order));
+  // DC-WIRE (D-386, 05 §6.5): contractKind yang sudah dibaca di langkah 2; null = non-kontrak.
+  const completeness = computeCompleteness({ ...completenessInput(doc, newRevNo, skel, tier, rows, order), ...(contractKind ? { contractKind } : {}) });
 
   // 4b) SR-55 H1 (F-065): gerbang by-construction BERSAMA atas snapshot hasil sunting, sebelum
   // revisi ditulis. Penanda tersimpan sudah dibuang untuk penyunting tidak tepercaya (D-134 R-01);
   // cek bergantung kelengkapan tidak menahan selama INCOMPLETE (D-131).
   const pinnedTpl = await resolveTemplateVersion(input.templateVersionId);
-  assertByConstruction(
-    { snapshot: composed.snapshot as NormDocSnapshotV2, tpl: pinnedTpl, tier, complete: completeness.status === "COMPLETE", correlationId: input.correlationId },
+  // D-382: varian async = 6b -> 9a (I55 reader BACA SAJA berklien tx: EC25/EC26, CW-01) -> 9.
+  const gate = await assertByConstructionAsync(
+    {
+      snapshot: composed.snapshot as NormDocSnapshotV2,
+      tpl: pinnedTpl,
+      tier,
+      complete: completeness.status === "COMPLETE",
+      correlationId: input.correlationId,
+      contractKind,
+      contractRefs: createPrismaContractRefReader({ db: tx, correlationId: input.correlationId }),
+    },
     (g) =>
       revisionLog({
         level: "warn",
@@ -261,9 +295,11 @@ export async function commitV2Revision(tx: Db, input: CommitInput): Promise<Comm
   await writeRevisionRows(tx, revision.id, rows, { correlationId: input.correlationId });
   // D-258: revisi baru wajib terekonstruksi persis dari barisnya sebelum commit (satu cek, semua jalur v2).
   await assertRevisionReconstructs(tx, { revisionId: revision.id, snapshot: composed.snapshot as NormDocSnapshotV2, snapshotSha256: composed.snapshotSha256 }, { correlationId: input.correlationId, documentId: doc.id, revisionNo: newRevNo, origin: `revision ${input.changeScope}` });
+  // DC-09 (register 05 §7.6): salinan penuh M19-M21 revisi ini + cermin MX09; non-kontrak = tanpa perubahan.
+  const contract = await writeContractRows(tx, { documentId: doc.id, revisionId: revision.id, revisionNo: newRevNo, contractKind, rows, resolvedRefs: gate.contract.refs, correlationId: input.correlationId });
 
   // 6) Dokumen: penjaga optimis (kunci advisory sudah serial; ini sabuk pengaman).
-  const docData: Prisma.StudioDocumentUpdateManyMutationInput = { currentRevisionNo: newRevNo, completeness: completeness.status };
+  const docData: Prisma.StudioDocumentUpdateManyMutationInput = { currentRevisionNo: newRevNo, completeness: completeness.status, ...(contract.mirror ?? {}) };
   if (input.metaMirror) {
     docData.title = meta.title;
     docData.typeCode = meta.typeCode;
@@ -279,5 +315,6 @@ export async function commitV2Revision(tx: Db, input: CommitInput): Promise<Comm
     if (isUniqueViolation(e, "docNumber")) fail("DOC_NUMBER_EXISTS", `Nomor dokumen ${meta.docNumber} sudah dipakai dokumen lain`, { docNumber: meta.docNumber });
     throw e;
   }
-  return { revision, completeness, rows: cloneJson(rows) };
+  const warnings = gate.contract.warnings;
+  return { revision, completeness, rows: cloneJson(rows), ...(warnings.length > 0 ? { warnings: [...warnings] } : {}) };
 }

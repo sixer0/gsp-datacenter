@@ -5,7 +5,15 @@
  * selain teks -> octet-stream): Content-Type ditetapkan per ekstensi nama
  * berkas DB, `X-Content-Type-Options: nosniff` selalu, HTML/SVG (konten
  * aktif) disajikan dengan CSP ketat + `attachment` kecuali `?inline=1`.
+ *
+ * DC-18 (register 05 §9.5, §10 FN-06/FN-07; D-363 U-2): header C50
+ * `X-Studio-Final-Filename` pada setiap respons berkas; nama di
+ * `Content-Disposition` = nama final untuk dokumen ber-contractKind, nama
+ * DATUM untuk lainnya; `?name=final|datum` (E57) menimpa bawaan.
  */
+import { FINAL_FILENAME_PATTERN, FINAL_NAME_MODES, STUDIO_FINAL_FILENAME_HEADER, type FinalNameMode } from "@/lib/studio/contract";
+
+const FINAL_RE = new RegExp(FINAL_FILENAME_PATTERN);
 
 export type ServeKind = "docx" | "pdf" | "html" | "svg" | "png" | "jpg" | "other";
 
@@ -83,9 +91,35 @@ export function contentDisposition(type: "inline" | "attachment", fileName: stri
   return `${type}; filename="${asciiFallback(clean)}"; filename*=UTF-8''${rfc5987(clean)}`;
 }
 
+/**
+ * `?name=` (E57). Absen -> `null` (pakai bawaan); satu nilai E57 -> mode;
+ * nilai lain atau parameter ganda -> `"invalid"` (400 `/query/name`).
+ */
+export function parseNameMode(q: URLSearchParams): FinalNameMode | null | "invalid" {
+  const all = q.getAll("name");
+  if (all.length === 0) return null;
+  if (all.length > 1) return "invalid";
+  return (FINAL_NAME_MODES as readonly string[]).includes(all[0]) ? (all[0] as FinalNameMode) : "invalid";
+}
+
+/** Bawaan U-2 (D-363): dokumen ber-contractKind -> nama final; lainnya -> DATUM. */
+export function defaultNameMode(contractKind: string | null | undefined): FinalNameMode {
+  return typeof contractKind === "string" && contractKind !== "" ? "final" : "datum";
+}
+
+/** Nama final hanya dipakai bila cocok C51 (ASCII aman; mencegah injeksi header). */
+function safeFinalName(name: string | undefined): string | undefined {
+  return typeof name === "string" && FINAL_RE.test(name) ? name : undefined;
+}
+
 /** Header lengkap sajian berkas. */
 export function fileHeaders(i: {
+  /** Nama DATUM (kolom `fileName`). */
   fileName: string;
+  /** Nama final C51 (FN-01); dipasang di header C50 bila sah. */
+  finalFileName?: string;
+  /** Nama di Content-Disposition; bawaan `datum`. `final` tanpa nama final sah -> DATUM. */
+  nameMode?: FinalNameMode;
   bytes: number;
   sha256: string;
   inline: boolean;
@@ -93,10 +127,13 @@ export function fileHeaders(i: {
   shaVerified?: boolean;
 }): Headers {
   const kind = serveKindOf(i.fileName);
+  const finalName = safeFinalName(i.finalFileName);
+  const shownName = i.nameMode === "final" && finalName ? finalName : i.fileName;
   const h = new Headers();
   h.set("Content-Type", KIND_CONTENT_TYPE[kind]);
   h.set("Content-Length", String(i.bytes));
-  h.set("Content-Disposition", contentDisposition(dispositionType(kind, i), i.fileName));
+  h.set("Content-Disposition", contentDisposition(dispositionType(kind, i), shownName));
+  if (finalName) h.set(STUDIO_FINAL_FILENAME_HEADER, finalName);
   h.set("X-Content-Type-Options", "nosniff");
   h.set("Cache-Control", "no-store");
   h.set("Referrer-Policy", "no-referrer");

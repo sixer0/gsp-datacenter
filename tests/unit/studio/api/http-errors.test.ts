@@ -94,6 +94,11 @@ const SPEC_HTTP: Record<string, number> = {
   CHAPTER_KEY_INVALID: 422, // EC24
   // FIX-HR2 (D-332 C9; SR-56d C9): catch-all 404 FIX-H6 masuk enum kontrak.
   ROUTE_NOT_FOUND: 404,
+  // DC-05: EC25-EC28 register 05 §13.1 (literal dari tabel register).
+  CONTRACT_REF_NOT_FOUND: 422, // EC25
+  CONTRACT_REF_PID_NOT_FOUND: 422, // EC26
+  CONTRACT_ITEM_KEY_DUPLICATE: 422, // EC27
+  CHART_CUSTOM_FORM_UNSUPPORTED: 422, // EC28
 };
 /** Kode "dalam job" tanpa status HTTP tertulis di §6.3: cukup wajib 5xx bila route gagal keras. */
 const IN_JOB_ONLY = ['PDF_CONVERT_FAILED', 'RENDER_TIMEOUT'];
@@ -112,11 +117,11 @@ describe('pemetaan kode galat kontrak -> HTTP (§6.3, E24)', () => {
   });
 
   // SR-43: 41 -> 68 = 41 (S74) + 3 FIX-1 (D-134) + 24 EC01-EC24 (register 03 §11.2, SR-04).
-  // FIX-HR2: 68 -> 69 (+ ROUTE_NOT_FOUND, D-332 C9).
-  it('69 kode (36 + d1 4 + d2 1 + FIX-1 3 + EC01-EC24 + FIX-HR2 1) dan himpunan kode = STUDIO_ERROR_CODES', () => {
-    expect(Object.keys(STUDIO_ERROR_HTTP)).toHaveLength(69);
+  // FIX-HR2: 68 -> 69 (+ ROUTE_NOT_FOUND, D-332 C9). DC-05: 69 -> 73 (+ EC25-EC28, register 05 §13.3).
+  it('73 kode (36 + d1 4 + d2 1 + FIX-1 3 + EC01-EC24 + FIX-HR2 1 + EC25-EC28) dan himpunan kode = STUDIO_ERROR_CODES', () => {
+    expect(Object.keys(STUDIO_ERROR_HTTP)).toHaveLength(73);
     expect([...STUDIO_ERROR_CODES].sort()).toEqual(Object.keys(STUDIO_ERROR_HTTP).sort());
-    expect(Object.keys(SPEC_HTTP).length + IN_JOB_ONLY.length).toBe(69);
+    expect(Object.keys(SPEC_HTTP).length + IN_JOB_ONLY.length).toBe(73);
     expect([...Object.keys(SPEC_HTTP), ...IN_JOB_ONLY].sort()).toEqual([...STUDIO_ERROR_CODES].sort());
   });
 

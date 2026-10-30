@@ -699,6 +699,7 @@ model StudioTemplate {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   isPreset        Boolean            @default(false) // MX01 (SR-01): preset gaya, hanya ADMIN
+  contractKind    String? // MX08 (DC-02 §7.2): null = templat dokumen output
 
   versions  StudioTemplateVersion[]
   documents StudioDocument[]
@@ -706,6 +707,7 @@ model StudioTemplate {
   @@index([kind])
   @@index([archived])
   @@index([isPreset])
+  @@index([contractKind])
 }
 
 // M02
@@ -780,6 +782,14 @@ model StudioDocument {
   updatedAt         DateTime           @updatedAt
   missionDocKey     String? // MX03 (SR-01): null untuk dokumen v1 (KD-12)
   completeness      StudioCompleteness @default(COMPLETE) // cermin revisi terbaru
+  // MX09 (DC-02 §7.2): cermin kontrak revisi terbaru; contractCardIds = gabungan terurut unik
+  // cardIds + items[].key yang cocok C34
+  contractKind      String?
+  contractStatus    String?
+  contractOwner     String?
+  contractTaskRef   String?
+  contractDueOn     DateTime?          @db.Date
+  contractCardIds   String[]           @default([])
 
   template   StudioTemplate     @relation(fields: [templateId], references: [id], onDelete: Restrict)
   revisions  StudioRevision[]
@@ -793,6 +803,11 @@ model StudioDocument {
   @@index([hermesTaskId])
   @@index([templateId])
   @@index([createdAt])
+  @@index([contractKind, contractStatus])
+  @@index([contractOwner])
+  @@index([contractTaskRef])
+  @@index([contractDueOn])
+  @@index([contractCardIds], type: Gin)
 }
 
 // M05
@@ -830,6 +845,7 @@ model StudioRevision {
   docChapters     StudioDocChapter[]
   docSubsections  StudioDocSubsection[]
   docBlocks       StudioDocBlock[]
+  contractRecord  StudioContractRecord? // MX11 (DC-02 §7.2), tanpa SQL
 
   @@unique([documentId, revisionNo])
   @@index([templateVersionId])
@@ -1091,6 +1107,7 @@ model StudioDocSection {
   sectionType  StudioSectionType   @relation(fields: [sectionTypeKey], references: [key], onDelete: Restrict)
   chapters     StudioDocChapter[]
   blocks       StudioDocBlock[]
+  contractRecord StudioContractRecord? // MX12 (DC-02 §7.2), tanpa SQL
 
   @@unique([revisionId, slotKey])
   @@unique([revisionId, position])
@@ -1162,6 +1179,12 @@ model StudioDocBlock {
   textPlain     String  @db.Text
   contentSha256 String
   assetId       String?
+  // MX10 (DC-02 §7.2): kolom hasil `tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple',
+  // left(coalesce("textPlain", ''), 100000))) STORED` + indeks GIN "StudioDocBlock_tsv_idx",
+  // keduanya SQL tangan di migrasi 20261030220000_add_studio_contract (preseden IlSearchDoc).
+  // Tidak bisa dibaca/ditulis lewat client (pakai $queryRaw). DILARANG `prisma db push` /
+  // `migrate dev` (akan menjatuhkan kolom generated + indeks GIN); ubah lewat migrasi SQL baru.
+  tsv           Unsupported("tsvector")?
 
   revision   StudioRevision       @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   docSection StudioDocSection     @relation(fields: [docSectionId], references: [id], onDelete: Cascade)
@@ -1198,4 +1221,87 @@ model StudioDocIdentity {
 
   @@unique([documentId, pid])
   @@index([documentId, kind])
+}
+
+// ---------------------------------------------------------------------------
+// Studio document contract (DC-02 register, masterplan/05_document_contract_specs.md §7;
+// migrasi 20261030220000_add_studio_contract, DC-04). M19-M21 = salinan penuh per revisi,
+// turunan payload slot `record` (M14); documentId/revisionNo di M20/M21 = denormalisasi untuk
+// kueri revisi terkini. Rollback delta: prisma/rollback/03_rollback_studio_contract_delta.sql.
+// ---------------------------------------------------------------------------
+
+// M19 (satu per revisi ber-contractKind yang slot `record`-nya terisi)
+model StudioContractRecord {
+  id           String    @id @default(cuid())
+  revisionId   String
+  docSectionId String
+  documentId   String
+  revisionNo   Int
+  contractKind String
+  status       String
+  verdict      String?
+  owner        String?
+  initiator    String?
+  taskRef      String?
+  reportedAt   DateTime // UTC
+  dueOn        DateTime? @db.Date
+  phaseFrom    String?
+  phaseTo      String?
+  cardIds      String[]
+  itemCount    Int
+  createdAt    DateTime  @default(now())
+
+  revision   StudioRevision       @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  docSection StudioDocSection     @relation(fields: [docSectionId], references: [id], onDelete: Cascade)
+  items      StudioContractItem[]
+  refs       StudioDocRef[]
+
+  @@unique([revisionId])
+  @@unique([docSectionId])
+  @@unique([documentId, revisionNo])
+  @@index([contractKind, status])
+  @@index([cardIds], type: Gin)
+}
+
+// M20 (butir kontrak; pid = pid baris M17 `F:record/<n>`)
+model StudioContractItem {
+  id         String    @id @default(cuid())
+  recordId   String
+  documentId String
+  revisionNo Int
+  itemKey    String
+  position   Int // 1-based
+  pid        String
+  status     String
+  owner      String?
+  phase      String?
+  dueOn      DateTime? @db.Date
+  dependsOn  String[]
+  titlePlain String
+
+  record StudioContractRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, itemKey])
+  @@unique([recordId, position])
+  @@index([itemKey])
+  @@index([documentId, revisionNo])
+}
+
+// M21 (rujukan antardokumen; targetDocumentId tanpa FK, KD-36)
+model StudioDocRef {
+  id               String  @id @default(cuid())
+  recordId         String
+  fromDocumentId   String
+  revisionNo       Int
+  position         Int
+  rel              String
+  targetDocumentId String
+  targetPid        String?
+  targetRevisionNo Int?
+
+  record StudioContractRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, position])
+  @@index([targetDocumentId, targetPid])
+  @@index([fromDocumentId, revisionNo])
 }

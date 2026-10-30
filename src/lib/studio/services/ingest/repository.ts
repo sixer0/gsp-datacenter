@@ -277,7 +277,9 @@ export async function persistAdaptedV1(
         const structureSha256 = computeStructureSha256(snapshot.skeleton, rows);
         const mission = prep.doc.mission;
         const textsCtx = (id: string) => ({ docId: id, docNumber: docNumber as string, missionFolder: mission?.folder ?? null, docKey: null });
-        const pre = computeCompleteness(completenessInputOf(prep.pinned.skeleton, snapshot, rows, textsCtx(""), 1));
+        // DC-WIRE2 (D-389, 05 §6.5): contractKind dari pipeline (nol kueri baru); absen = non-kontrak.
+        const contract = prep.contractKind !== undefined ? { contractKind: prep.contractKind } : {};
+        const pre = computeCompleteness({ ...completenessInputOf(prep.pinned.skeleton, snapshot, rows, textsCtx(""), 1), ...contract });
         const doc = await tx.studioDocument.create({
           data: {
             docNumber,
@@ -297,7 +299,7 @@ export async function persistAdaptedV1(
             createdBy: ctx.caller.requester,
           },
         });
-        const completeness = computeCompleteness(completenessInputOf(prep.pinned.skeleton, snapshot, rows, textsCtx(doc.id), 1));
+        const completeness = computeCompleteness({ ...completenessInputOf(prep.pinned.skeleton, snapshot, rows, textsCtx(doc.id), 1), ...contract });
         const rev = await tx.studioRevision.create({
           data: {
             documentId: doc.id,
@@ -324,7 +326,16 @@ export async function persistAdaptedV1(
           },
         });
         await writeRevisionRows(tx, rev.id, rows, { correlationId: ctx.cid });
-        return { doc, rev, snapshot, completeness };
+        // DC-WIRE3 (D-390, D-383; 05 §7.6): M19-M21 + cermin MX09 di transaksi yang sama,
+        // sesudah baris M14/M17 revisi ada. Jalur ini tidak menjalankan cek rekonstruksi dan
+        // PreparedV2 tidak membawa refs gerbang, jadi rujukan di-resolve ulang di tx (I55).
+        // Non-kontrak (contractKind absen): tanpa impor/kueri baru, `doc` tetap.
+        if (prep.contractKind === undefined) return { doc, rev, snapshot, completeness };
+        // Impor malas: structure/contract memuat klien Prisma (barel ingest dipakai jalur render murni, D-155).
+        const { writeContractRows } = await import("../structure/contract");
+        const written = await writeContractRows(tx, { documentId: doc.id, revisionId: rev.id, revisionNo: 1, contractKind: prep.contractKind, rows, correlationId: ctx.cid });
+        const mirrored = written.mirror ? await tx.studioDocument.update({ where: { id: doc.id }, data: written.mirror }) : doc;
+        return { doc: mirrored, rev, snapshot, completeness };
       },
       { timeout: INGEST_TX_TIMEOUT_MS, maxWait: 10_000 },
     );

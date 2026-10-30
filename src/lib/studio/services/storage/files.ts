@@ -22,6 +22,7 @@ import type { OutputFileScope, StudioOutputFileDto, StudioOutputFormat, WriteOut
 import { studioRoutePath } from "../../contract/env";
 import { STUDIO_OUTPUT_FORMATS, STUDIO_OUTPUT_ROLES, STUDIO_RELEASE_STATUSES } from "../../contract/enums";
 import { StudioEngineError } from "../../contract/errors";
+import { finalFileNameOf } from "../render/final-name";
 import { errorFields, storageLog } from "./log";
 import { assertRealInsideRoot, assertSafeSegment, DOCS_DIR, resolveSafe, storageRoot, toRelPath } from "./paths";
 
@@ -58,7 +59,56 @@ export function outputFileScope(row: Pick<StudioOutputFile, "scopeKind" | "scope
   return kind !== "DOCUMENT" && row.scopeKey ? { kind, key: row.scopeKey } : { kind };
 }
 
-export function toOutputFileDto(row: StudioOutputFile): StoredOutputFileDto {
+/**
+ * Relasi pemilik untuk nama final (DC-20, register 05 §10 FN-03, KD-39):
+ * `docNumber` + `contractKind` dokumen dan `revisionNo` revisi. Dipasang pada
+ * query baris `StudioOutputFile` agar `toOutputFileDto` dapat mengisi
+ * `finalFileName` tanpa query kedua. Berkas artefak tidak membutuhkannya.
+ */
+export const OUTPUT_FILE_OWNER_INCLUDE = {
+  document: { select: { docNumber: true, contractKind: true } },
+  revision: { select: { revisionNo: true } },
+} as const;
+
+/** Baris `StudioOutputFile`, boleh membawa relasi `OUTPUT_FILE_OWNER_INCLUDE`. */
+export type OutputFileRow = StudioOutputFile & {
+  document?: { docNumber: string; contractKind?: string | null } | null;
+  revision?: { revisionNo: number } | null;
+};
+
+/**
+ * I62 atas satu baris (FN-03..FN-05): artefak -> `ART-<id>_rev0`; revisi ->
+ * `docNumberSafe(docNumber)_rev<n>` dari relasi `OUTPUT_FILE_OWNER_INCLUDE`.
+ * Selalu string (AM-09 wajib, D-389). Baris revisi tanpa relasi pemilik dimuat,
+ * atau baris tanpa revisionId/artifactId (melanggar M08), = galat pemrograman
+ * pemanggil -> `TypeError` (500 lewat studioErrorFrom), dicatat lebih dulu.
+ */
+export function finalFileNameOfRow(row: OutputFileRow): string {
+  const file = { createdAt: row.createdAt, sha256: row.sha256, format: row.format };
+  if (row.artifactId) return finalFileNameOf(file, { artifactId: row.artifactId });
+  if (row.revisionId && row.document && row.revision) {
+    return finalFileNameOf(file, { docNumber: row.document.docNumber, revisionNo: row.revision.revisionNo });
+  }
+  const reason = row.revisionId ? "owner relation not loaded (use OUTPUT_FILE_OWNER_INCLUDE)" : "row has neither revisionId nor artifactId";
+  const err = new TypeError(`finalFileNameOfRow: ${reason}`);
+  const fields = errorFields(err);
+  storageLog({
+    level: "error",
+    message: "output file final name owner missing",
+    code: "OUTPUT_FILE_OWNER_MISSING",
+    ...fields,
+    context: { ...fields.context, id: row.id, revisionId: row.revisionId, documentLoaded: row.document != null, revisionLoaded: row.revision != null },
+  });
+  throw err;
+}
+
+/**
+ * Pemeta baris -> `OutputFileDto` bersama (CQ-3): R09, R05, R10 dan semua
+ * keluaran `writeOutput` (R17, R07). `finalFileName` (AM-09) selalu diisi;
+ * baris revisi wajib dimuat dengan `OUTPUT_FILE_OWNER_INCLUDE`.
+ */
+export function toOutputFileDto(row: OutputFileRow): StoredOutputFileDto {
+  const finalFileName = finalFileNameOfRow(row);
   return {
     id: row.id,
     documentId: row.documentId,
@@ -78,6 +128,7 @@ export function toOutputFileDto(row: StudioOutputFile): StoredOutputFileDto {
     url: studioRoutePath("R10", { id: row.id }),
     draft: row.draft,
     scope: outputFileScope(row),
+    finalFileName,
   };
 }
 
@@ -228,6 +279,7 @@ export async function writeOutput(i: WriteOutputInput): Promise<StoredOutputFile
       where: { relPath },
       create: { relPath, ...fields },
       update: { ...fields },
+      include: OUTPUT_FILE_OWNER_INCLUDE,
     });
     if (prev && prev.sha256 !== sha256) {
       storageLog({
@@ -301,24 +353,27 @@ export async function readStoredFile(relPath: string): Promise<StoredFile> {
  * `FILE_NOT_FOUND` (404) bila baris tidak ada; `FILE_MISSING_ON_DISK` (410)
  * bila berkas hilang; `verifySha` opsional membandingkan sha256 (selisih ->
  * log warn, berkas tetap dikembalikan dengan `shaMatches: false`).
+ * `contractKind` = jenis kontrak dokumen pemilik (null untuk artefak dan
+ * dokumen output biasa); R10 memakainya untuk nama unduhan bawaan (U-2, D-363).
  */
 export async function readOutputFile(
   id: string,
   opts: { verifySha?: boolean } = {},
-): Promise<{ file: StoredOutputFileDto; absPath: string; data: Buffer; shaMatches?: boolean }> {
+): Promise<{ file: StoredOutputFileDto; absPath: string; data: Buffer; shaMatches?: boolean; contractKind: string | null }> {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) {
     throw new StudioEngineError("FILE_NOT_FOUND", "File not found");
   }
-  const row = await (await db()).studioOutputFile.findUnique({ where: { id } });
+  const row = await (await db()).studioOutputFile.findUnique({ where: { id }, include: OUTPUT_FILE_OWNER_INCLUDE });
   if (!row) throw new StudioEngineError("FILE_NOT_FOUND", "File not found");
   const stored = await readStoredFile(row.relPath);
   const file = toOutputFileDto(row);
-  if (!opts.verifySha) return { file, absPath: stored.absPath, data: stored.data };
+  const contractKind = row.document?.contractKind ?? null;
+  if (!opts.verifySha) return { file, absPath: stored.absPath, data: stored.data, contractKind };
   const shaMatches = sha256Hex(stored.data) === row.sha256;
   if (!shaMatches) {
     storageLog({ level: "warn", message: "stored file sha256 differs from DB", code: "STORAGE_SHA_MISMATCH", context: { id, relPath: row.relPath } });
   }
-  return { file, absPath: stored.absPath, data: stored.data, shaMatches };
+  return { file, absPath: stored.absPath, data: stored.data, shaMatches, contractKind };
 }
 
 /** Path absolut akar (untuk diagnosa/UI status; tidak membocorkan ke klien). */

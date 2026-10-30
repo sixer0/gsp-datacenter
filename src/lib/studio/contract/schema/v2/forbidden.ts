@@ -76,6 +76,8 @@ export const DISPLAY_FIELDS_GLOBAL = [
 /** Satu entri DISPLAY_FIELD per lokasi (`location` = nama `$defs`/tipe v2). */
 export interface DisplayFieldLocationRule {
   location: string;
+  /** Lokasi tambahan dengan aturan sama (DF-72 berlaku di empat objek kontrak; DC-05). */
+  alsoAt?: readonly string[];
   /** Nama medan terlarang di lokasi ini. */
   fields?: readonly string[];
   /** Nilai terlarang medan `valueField` (mis. `type`, `role`). */
@@ -91,7 +93,7 @@ export interface DisplayFieldLocationRule {
  */
 const CHART_DISPLAY_HINTS = ["axis", "max", "belowTargetColour", "compassLabels", "medianLabel"] as const;
 
-/** C30 — DF-53..DF-71: nama/nilai sah di tempat lain, terlarang di lokasi ini. */
+/** C30 — DF-53..DF-73: nama/nilai sah di tempat lain, terlarang di lokasi ini. */
 export const DISPLAY_FIELDS_BY_LOCATION: Readonly<Record<string, DisplayFieldLocationRule>> = {
   "DF-53": { location: "CaptionV2", fields: ["label"], reason: "label \"Tabel n.m\" milik mesin" },
   "DF-54": { location: "ChartV2", fields: ["columns"], reason: "tata letak komposit = parameter templat" },
@@ -124,6 +126,18 @@ export const DISPLAY_FIELDS_BY_LOCATION: Readonly<Record<string, DisplayFieldLoc
   // DF-70..DF-71 (IP-63, FIX-S; pola FIX-5): kelas lebar panel komposit dan skala maks garis ambang.
   "DF-70": { location: "ChartPanelV2", fields: ["widthClass"], reason: "lebar panel grafik komposit = parameter templat chart.widthClass" },
   "DF-71": { location: "ChartLimit", fields: ["max"], reason: "garis ambang hanya berisi nilai dan label; skala sumbu diatur templat" },
+  // DF-72..DF-73 (DC-05, AM-12; register 05 §5.5): susunan tabel catatan kontrak dan rupa chart.custom.
+  "DF-72": {
+    location: "ContractRecordPayloadV2",
+    alsoAt: ["ContractItemV2", "ContractEvidenceV2", "ContractRefV2"],
+    fields: ["label", "columns", "order", "heading"],
+    reason: "label dan susunan tabel catatan diatur templat",
+  },
+  "DF-73": {
+    location: "ChartCustomFormV2",
+    fields: ["palette", "axis", "max", "width", "height", "legend"],
+    reason: "rupa grafik kustom diatur templat",
+  },
 };
 
 /** Satu entri V1_FIELD: medan v1 per lokasi (`locations` = nama `$defs`/tipe v2) dan penggantinya. */
@@ -232,6 +246,7 @@ const SLOT_PAYLOAD_BY_TYPE: Readonly<Record<string, string>> = {
   ruleIndex: "RuleIndexPayloadV2",
   chapter: "ContentSlotPayloadV2",
   appendix: "AppendixSlotPayloadV2",
+  contractRecord: "ContractRecordPayloadV2",
 };
 
 const TABLE_TYPES: ReadonlySet<string> = new Set<string>(TABLE_BLOCK_TYPES);
@@ -341,7 +356,19 @@ const CHILD: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   DerivationLine: { label: "InlineV2", value: "InlineV2" },
   DerivationResult: { label: "InlineV2" },
   DerivationVerdict: { label: "InlineV2" },
-  ChartV2: { data: "ChartDataV2", panels: "ChartPanelV2", caption: "CaptionV2", source: "SourceV2", keyRow: "InlineV2", limit: "ChartLimit" },
+  ChartV2: {
+    data: "ChartDataV2",
+    panels: "ChartPanelV2",
+    caption: "CaptionV2",
+    source: "SourceV2",
+    keyRow: "InlineV2",
+    limit: "ChartLimit",
+    form: "ChartCustomFormV2",
+  },
+  // Delta DC-05 (register 05 §5.3): payload contractRecord.
+  ContractRecordPayloadV2: { phase: "ContractPhaseV2", refs: "ContractRefV2", evidence: "ContractEvidenceV2", items: "ContractItemV2" },
+  ContractItemV2: { title: "InlineV2" },
+  ContractEvidenceV2: { note: "InlineV2" },
   ChartPanelV2: { data: "ChartDataV2", limit: "ChartLimit" },
   ChartDataV2: { spec: "DiagramSpecV2", "*": "@same" },
   DiagramSpecV2: { "*": "@same" },
@@ -448,7 +475,9 @@ function v1Rename(field: string, loc: string): string | null {
 }
 
 function displayByLocation(field: string, loc: string): boolean {
-  return Object.values(DISPLAY_FIELDS_BY_LOCATION).some((r) => r.location === loc && (r.fields ?? []).includes(field));
+  return Object.values(DISPLAY_FIELDS_BY_LOCATION).some(
+    (r) => (r.location === loc || (r.alsoAt ?? []).includes(loc)) && (r.fields ?? []).includes(field),
+  );
 }
 
 function displayValue(valueField: "type" | "role", value: unknown, loc: string): boolean {
@@ -471,13 +500,136 @@ function genericMessage(e: AjvErrorLike): string {
   return e.message ?? e.keyword;
 }
 
+// ── Delta DC-05: checkId kontrak + chart.custom (register 05 §5.4, CH-01..CH-05) ──
+// Pemetaan per lokasi objek + nama medan (bukan schemaPath ajv). CH-03 kalender
+// (mis. 2026-02-30 lolos pola) = pemeriksaan murni pasca-ajv milik I54 (DC-07).
+// CH-06 (kerangka templat) dipancarkan validator kerangka (registri slot, DC-06).
+
+const CONTRACT_LOCATIONS: ReadonlySet<string> = new Set([
+  "ContractRecordPayloadV2",
+  "ContractPhaseV2",
+  "ContractRefV2",
+  "ContractEvidenceV2",
+  "ContractItemV2",
+]);
+/** Medan bernilai enum E45-E49 di objek kontrak. */
+const CONTRACT_ENUM_FIELDS: ReadonlySet<string> = new Set(["status", "verdict", "rel", "kind"]);
+/** Medan tanggal (C37 / `isoDate`). */
+const CONTRACT_DATE_FIELDS: ReadonlySet<string> = new Set(["reportedAt", "due"]);
+const CHART_CUSTOM_PAIR_FIELDS: ReadonlySet<string> = new Set(["form", "data", "panels", "artifactId"]);
+
+const CONTRACT_REF_TARGET_MESSAGE = "rujukan wajib memuat tepat satu dari documentId atau docNumber";
+
+/** Induk + nama medan untuk galat bernilai (indeks larik di ujung dilewati: `cardIds/0` -> `cardIds`). */
+function valueField(instancePath: string): { parent: string; field: string } | null {
+  const segs = pointerSegments(instancePath);
+  let i = segs.length - 1;
+  while (i >= 0 && /^\d+$/.test(segs[i])) i--;
+  if (i < 0) return null;
+  const parent = segs.slice(0, i).map(escapeSegment).join("/");
+  return { parent: parent ? `/${parent}` : "", field: segs[i] };
+}
+
+/** Pelanggaran pasangan `code = "custom"` / `form` pada satu ChartV2 (pointer relatif chart). */
+function chartCustomProblems(node: unknown): Array<{ suffix: string; message: string }> {
+  if (!isRecord(node)) return [];
+  const out: Array<{ suffix: string; message: string }> = [];
+  if (node.code === "custom") {
+    if (node.form === undefined) out.push({ suffix: "/form", message: "chart custom wajib memuat form" });
+    if (node.panels !== undefined) out.push({ suffix: "/panels", message: "chart custom tidak menerima panels" });
+    if (node.artifactId !== undefined) out.push({ suffix: "/artifactId", message: "chart custom tidak menerima artifactId" });
+    if (node.data === undefined) out.push({ suffix: "/data", message: "chart custom wajib memuat data" });
+  } else if (node.form !== undefined) {
+    out.push({ suffix: "/form", message: 'form hanya diterima bila code = "custom"' });
+  }
+  return out;
+}
+
+/** Medan `line`/`exitCode` pada jenis bukti yang salah (CH-04). */
+function evidenceTargetProblems(node: unknown): Array<{ suffix: string; message: string }> {
+  if (!isRecord(node)) return [];
+  const out: Array<{ suffix: string; message: string }> = [];
+  if (node.kind !== "file" && node.line !== undefined) out.push({ suffix: "/line", message: 'line hanya untuk bukti kind "file"' });
+  if (node.kind !== "command" && node.exitCode !== undefined) {
+    out.push({ suffix: "/exitCode", message: 'exitCode hanya untuk bukti kind "command"' });
+  }
+  return out;
+}
+
+function enumList(p: Record<string, unknown>): string {
+  return Array.isArray(p.allowedValues) ? p.allowedValues.map((v) => JSON.stringify(v)).join(", ") : "";
+}
+
+/**
+ * Issue ber-checkId kontrak (CH-01..CH-05) untuk satu galat ajv; `null` = bukan galat kontrak
+ * (diteruskan ke pemetaan generik). Keyword issue dibakukan per kelompok agar galat ajv
+ * kembar (oneOf + required) terdedup menjadi satu issue.
+ */
+function classifyContractError(rootId: SchemaV2RootId, data: unknown, e: AjvErrorLike, prefix: string): ValidationIssue[] | null {
+  const p = e.params as Record<string, unknown>;
+  if (e.keyword === "enum" || e.keyword === "pattern") {
+    const vf = valueField(e.instancePath);
+    if (vf === null) return null;
+    const loc = locateSchemaV2Object(rootId, data, vf.parent);
+    const pointer = prefix + e.instancePath;
+    if (CONTRACT_LOCATIONS.has(loc)) {
+      if (e.keyword === "enum" && CONTRACT_ENUM_FIELDS.has(vf.field)) {
+        return [{ pointer, keyword: e.keyword, checkId: "CONTRACT_ENUM", message: `kode kontrak tidak sah; pakai salah satu: ${enumList(p)}` }];
+      }
+      if (e.keyword === "pattern" && CONTRACT_DATE_FIELDS.has(vf.field)) {
+        const shape = vf.field === "reportedAt" ? "YYYY-MM-DD atau waktu ISO ber-zona (mis. 2026-10-30T19:30+07:00)" : "YYYY-MM-DD";
+        return [{ pointer, keyword: e.keyword, checkId: "CONTRACT_DATE", message: `tanggal tidak sah; pakai ${shape}` }];
+      }
+      if (e.keyword === "pattern") {
+        return [{ pointer, keyword: e.keyword, checkId: "CONTRACT_PATTERN", message: `format tidak sah; harus cocok pola ${String(p.pattern)}` }];
+      }
+      return null;
+    }
+    if (e.keyword === "enum" && loc === "ChartCustomFormV2") {
+      return [{ pointer, keyword: e.keyword, checkId: "CHART_CUSTOM_FORM", message: `nilai form tidak sah; pakai salah satu: ${enumList(p)}` }];
+    }
+    if (e.keyword === "enum" && loc === "ChartPanelV2" && vf.field === "code" && valueAt(data, e.instancePath) === "custom") {
+      return [{ pointer, keyword: e.keyword, checkId: "CHART_CUSTOM_FORM", message: "chart custom tidak diterima di panel komposit" }];
+    }
+    return null;
+  }
+  const loc = locateSchemaV2Object(rootId, data, e.instancePath);
+  const base = prefix + e.instancePath;
+  if (loc === "ContractRefV2") {
+    const missing = e.keyword === "required" ? p.missingProperty : undefined;
+    if (e.keyword === "oneOf" || missing === "documentId" || missing === "docNumber") {
+      return [{ pointer: base, keyword: "oneOf", checkId: "CONTRACT_REF_TARGET", message: CONTRACT_REF_TARGET_MESSAGE }];
+    }
+    return null;
+  }
+  if (loc === "ContractEvidenceV2" && (e.keyword === "not" || e.keyword === "if")) {
+    const probs = evidenceTargetProblems(valueAt(data, e.instancePath));
+    if (probs.length === 0) return null;
+    return probs.map((x) => ({ pointer: base + x.suffix, keyword: "not", checkId: "CONTRACT_REF_TARGET", message: x.message }));
+  }
+  if (loc === "ChartV2") {
+    const pair =
+      e.keyword === "if" ||
+      e.keyword === "not" ||
+      e.keyword === "oneOf" ||
+      (e.keyword === "required" && typeof p.missingProperty === "string" && CHART_CUSTOM_PAIR_FIELDS.has(p.missingProperty));
+    if (!pair) return null;
+    const probs = chartCustomProblems(valueAt(data, e.instancePath));
+    if (probs.length === 0) return null;
+    return probs.map((x) => ({ pointer: base + x.suffix, keyword: "if", checkId: "CHART_CUSTOM_FORM", message: x.message }));
+  }
+  return null;
+}
+
 /**
  * Petakan galat ajv skema v2 ke `ValidationIssue`:
  * - medan v1 berganti nama (C31) -> `checkId: "V1_FIELD"`, pesan
  *   "medan v1 tidak diterima di v2; pakai <pengganti>" (diperiksa lebih dulu);
  * - `render` di akar kiriman (D-247) -> `checkId: "RENDER_FIELD"` (pesan menunjuk endpoint render);
- * - medan/nilai tampilan DF-01..DF-71 (C29, C30) -> `checkId: "DISPLAY_FIELD"`,
+ * - medan/nilai tampilan DF-01..DF-73 (C29, C30; DF-72/73 delta DC-05) -> `checkId: "DISPLAY_FIELD"`,
  *   pesan register §5.1 apa adanya;
+ * - payload contractRecord dan chart.custom (register 05 §5.4) -> `CONTRACT_ENUM`,
+ *   `CONTRACT_PATTERN`, `CONTRACT_DATE`, `CONTRACT_REF_TARGET`, `CHART_CUSTOM_FORM`;
  * - galat lain apa adanya tanpa `checkId`.
  * Pointer issue DISPLAY_FIELD/V1_FIELD menunjuk medan yang ditolak. Hasil didedup.
  */
@@ -524,6 +676,11 @@ export function classifySchemaV2Errors(
         push({ pointer: prefix + e.instancePath, keyword: e.keyword, checkId: "DISPLAY_FIELD", message: DISPLAY_FIELD_MESSAGE });
         continue;
       }
+    }
+    const contractIssues = classifyContractError(rootId, data, e, prefix);
+    if (contractIssues !== null) {
+      for (const issue of contractIssues) push(issue);
+      continue;
     }
     push({ pointer: prefix + e.instancePath, keyword: e.keyword, message: genericMessage(e) });
   }

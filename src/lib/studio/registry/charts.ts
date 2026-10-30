@@ -17,10 +17,11 @@
  * 18 jenis tak digambar). `dataShape` diselaraskan dengan bentuk data yang dibaca
  * adapter acuan `scripts/parity/reference/fig/pc_inject.py` (permintaan S65).
  */
-import type { ChartCode, DrawnChartCode, UndrawnChartCode } from "../contract/enums";
+import type { ChartCode, ChartCustomMark, ChartCustomOrientation, DrawnChartCode, UndrawnChartCode } from "../contract/enums";
 import type { ChartDataShape } from "../contract/types/chart";
 import type { ParamValue } from "../contract/types/common";
 import type { ChartDef, ChartModule, ParamDef, ParamType } from "../contract/types/params";
+import type { ChartCustomFormV2 } from "../contract/types/v2/contract";
 
 export type { ChartDef };
 
@@ -1404,3 +1405,64 @@ export const CHART_DATA_CONSTRAINTS: Readonly<Partial<Record<DrawnChartCode, str
   "G-01": "tiles: petak kosong diisi 0; kisi dari row/col maksimum",
   "G-04": "steps: 1..6 langkah (posisi literal acuan)",
 };
+
+// ── chart.custom (05 §12; DC-26) ─────────────────────────────────────────
+
+/** Bentuk data yang diterima `chart.custom` (05 §12: hanya `categorical`, `series`, `xy`). */
+export const CHART_CUSTOM_DATA_SHAPES = ["categorical", "series", "xy"] as const satisfies readonly ChartDataShape[];
+export type ChartCustomDataShape = (typeof CHART_CUSTOM_DATA_SHAPES)[number];
+
+export type ChartCustomFormId = `CU-0${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+
+/** Satu baris tabel CU: kombinasi `form` x bentuk data -> kode keluarga tergambar yang sudah ada. */
+export interface ChartCustomFormDef {
+  id: ChartCustomFormId;
+  mark: ChartCustomMark;
+  orientation: ChartCustomOrientation;
+  stacked: boolean;
+  dataShape: ChartCustomDataShape;
+  code: DrawnChartCode;
+}
+
+/**
+ * C59 — CU-01..CU-09 (05 §12, KD-47). Setiap `code` adalah kode `drawn` dengan `dataShape`
+ * sama di CHART_REGISTRY; bentuk kustom bukan kode chart, jadi CHART_REGISTRY_COUNT tetap 76.
+ * Orientasi diverifikasi terhadap perender (CA-4): P-01 keluarga inti `bar` = batang mendatar
+ * (`core/datum.ts`, `core/gallery.ts`), mengurutkan nilai menurun secara bawaan
+ * (`chart.kind.P-01.sort` = `valueDesc`, `natural` mempertahankan urutan data; `core/prepare.ts`);
+ * K-01 batang mendatar bertumpuk (`family-k1/stack.ts` hFrame); P-02/P-03 kolom tegak;
+ * W-01/W-04/W-05 garis/area sumbu waktu mendatar; H-01/H-04 bidang x-y.
+ */
+export const CHART_CUSTOM_FORMS: readonly ChartCustomFormDef[] = [
+  { id: "CU-01", mark: "bar", orientation: "horizontal", stacked: false, dataShape: "categorical", code: "P-01" },
+  { id: "CU-02", mark: "bar", orientation: "vertical", stacked: false, dataShape: "categorical", code: "P-02" },
+  { id: "CU-03", mark: "bar", orientation: "vertical", stacked: false, dataShape: "series", code: "P-03" },
+  { id: "CU-04", mark: "bar", orientation: "horizontal", stacked: true, dataShape: "series", code: "K-01" },
+  { id: "CU-05", mark: "line", orientation: "vertical", stacked: false, dataShape: "series", code: "W-01" },
+  { id: "CU-06", mark: "area", orientation: "vertical", stacked: false, dataShape: "categorical", code: "W-04" },
+  { id: "CU-07", mark: "area", orientation: "vertical", stacked: true, dataShape: "series", code: "W-05" },
+  { id: "CU-08", mark: "point", orientation: "vertical", stacked: false, dataShape: "xy", code: "H-01" },
+  { id: "CU-09", mark: "line", orientation: "vertical", stacked: false, dataShape: "xy", code: "H-04" },
+];
+
+/** C60 — pin hitungan CHART_CUSTOM_FORMS (uji dc26 menjaga = panjang array). */
+export const CHART_CUSTOM_FORM_COUNT = 9;
+
+/** Daftar `supported` untuk `details` 422 EC28 (05 §13.1). */
+export const CHART_CUSTOM_FORM_IDS: readonly ChartCustomFormId[] = CHART_CUSTOM_FORMS.map((f) => f.id);
+
+/**
+ * I68 — kode tergambar untuk `form` x bentuk data, atau `null` bila kombinasi di luar
+ * CU-01..CU-09 (pemanggil memetakan ke 422 EC28). Bawaan T2-66: `orientation` `vertical`,
+ * `stacked` `false`. Masukan rusak (bukan objek, nilai di luar enum) juga -> `null`.
+ */
+export function resolveChartCustom(form: ChartCustomFormV2, dataShape: ChartDataShape): DrawnChartCode | null {
+  if (typeof form !== "object" || form === null) return null;
+  const orientation = form.orientation ?? "vertical";
+  const stacked = form.stacked ?? false;
+  if (typeof stacked !== "boolean") return null;
+  const hit = CHART_CUSTOM_FORMS.find(
+    (f) => f.mark === form.mark && f.orientation === orientation && f.stacked === stacked && f.dataShape === dataShape,
+  );
+  return hit?.code ?? null;
+}

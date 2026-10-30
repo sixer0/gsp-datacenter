@@ -10,3 +10,5 @@ export * from "./template";
 export * from "./norm";
 export * from "./completeness";
 export * from "./api";
+// Delta DC-05 (register 05 §5.2, T2-61..T2-74).
+export * from "./contract";

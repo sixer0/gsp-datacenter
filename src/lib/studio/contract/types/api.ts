@@ -59,6 +59,11 @@ export interface TemplateSummary {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * AM-13 (register 05 MX08, CQ-4): jenis kontrak templat C58 (`null` = templat biasa).
+   * Diisi pemeta ringkasan layanan templat dari kolom MX08 (DC-28).
+   */
+  contractKind: string | null;
 }
 
 export interface VersionSummary {
@@ -254,6 +259,11 @@ export interface OutputFileDto {
   draft: boolean;
   /** Delta IP-48 (IP-54): lingkup render berkas (kolom MX06 `scopeKind`/`scopeKey`). */
   scope: OutputFileScope;
+  /**
+   * AM-09 (DC-05; register 05 §10, C51): nama berkas final, WAJIB (D-389; diisi
+   * pemeta bersama `toOutputFileDto`, CQ-3).
+   */
+  finalFileName: string;
 }
 
 /** Lingkup render satu berkas; `key` hanya untuk CHAPTER/SLOT (DOCUMENT tanpa `key`). */
@@ -376,7 +386,10 @@ export interface ArtifactListQuery {
 
 // ── Registri dan render-env (R03, R11) ───────────────────────────────────
 
-/** `presets`, `essentials`, `slots`, `paramScopes` = delta SR-04 (register §12 R03). */
+/**
+ * `presets`, `essentials`, `slots`, `paramScopes` = delta SR-04 (register §12 R03);
+ * `contracts` = AM-07 (register 05 §9.4, registri jenis kontrak C58; DC-28).
+ */
 export type RegistryKind =
   | "sections"
   | "params"
@@ -389,7 +402,8 @@ export type RegistryKind =
   | "presets"
   | "essentials"
   | "slots"
-  | "paramScopes";
+  | "paramScopes"
+  | "contracts";
 export const REGISTRY_KINDS: readonly RegistryKind[] = [
   "sections",
   "params",
@@ -403,6 +417,7 @@ export const REGISTRY_KINDS: readonly RegistryKind[] = [
   "essentials",
   "slots",
   "paramScopes",
+  "contracts",
 ];
 
 export interface RegistryResponse<T = unknown> {

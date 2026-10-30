@@ -48,6 +48,21 @@ export {
   RENDER_RATE_WINDOW_MS_DEFAULT,
 } from "./render-guard";
 export {
+  applyQuotaHeaders,
+  checkQueryRate,
+  QUERY_RATE_LIMIT_DEFAULT,
+  QUERY_RATE_WINDOW_MS_DEFAULT,
+  QUOTA_BUCKETS,
+  quotaRateIdentity,
+  quotaReport,
+  recordQuotaCharge,
+  resetQueryRateLimiter,
+  STUDIO_QUOTA_BUCKET_HEADER,
+  STUDIO_QUOTA_REMAINING_HEADER,
+  withQuotaHeaders,
+  type QuotaBucket,
+} from "./quota";
+export {
   CLIENT_LOG_DETAIL_MAX_BYTES,
   CLIENT_LOG_MAX_BYTES,
   CLIENT_LOG_MESSAGE_MAX,

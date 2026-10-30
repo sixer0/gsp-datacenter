@@ -86,6 +86,11 @@ export interface ComposeInput {
   prevRows?: StructureRows;
   /** Pembangkit pid baris slot/intro; absen = deterministik (`slot-<slotKey>[-n]`, berbenih). */
   pids?: PidAllocator;
+  /**
+   * Jenis kontrak templat (MX08 `contractKind`, DC-10): sumber label slot `contractRecord`.
+   * Absen = entri C58 yang `templateSlug`-nya = slug templat dokumen.
+   */
+  contractKind?: string;
 }
 
 export interface ComposeWarning {

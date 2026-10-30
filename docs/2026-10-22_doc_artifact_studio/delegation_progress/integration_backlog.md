@@ -112,3 +112,4 @@ Penulis: controller. Setiap butir menjadi baris integrasi IP-nn dengan pemilik a
 | IP-104 | review batch Hermes | C5/C6 duplikasi id jangkar + kunci bab TOC, C7 dua tabel teks penyebab PDF, C8 literal geometri chart | Siklus berikut | terbuka |
 | IP-105 | DOC-3b | R09 artefak tanpa preflight PDF 503 (hanya penanda partial) | Siklus berikut | terbuka |
 | IP-106 | review 09e | Impor HTML→DOCX, heuristik buang indentasi 2154, literal 8.2 | Siklus berikut | terbuka |
+- IB-DC-1 (2026-10-30, D-363): setelah marker DC-05, satukan duplikat konstanta: `services/render/final-name.ts` (C51-C53 + tipe FinalFileNameParts T2-74) dan `http/quota.ts` (C48/C49/E53 bila didefinisikan lokal DC-19) beralih ke impor dari `contract/**`; tanpa re-export ganda. Pemilik: controller atau baris B3 yang menyentuh berkas itu (DC-18/DC-20).

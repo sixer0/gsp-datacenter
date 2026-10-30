@@ -24,15 +24,25 @@ import {
   renderSpacer,
 } from "./text";
 import { renderControlSheet, renderCover, renderPartDivider, renderSignatureBlock, renderToc } from "./wrapper";
+import { renderContractRecord } from "./contract-record";
 import { withAutoSpacers } from "./semantic";
 
 export { escapeHtml } from "./escape";
+export {
+  CONTRACT_RECORD_CLASSES,
+  CONTRACT_RECORD_PARTS,
+  contractRecordContent,
+  contractRecordParts,
+  renderContractRecord,
+  type ContractRecordContent,
+  type ContractRecordPart,
+} from "./contract-record";
 export { HTML_BLOCK_CLASSES, HTML_BLOCKS_CSS } from "./classes";
 export { parseMdLiteHtml } from "./inline";
 export { PARAM_SPACER_AUTO_MODE, autoSpacerRole, semanticRuns, semanticTransform, symbolBoundRuns, withAutoSpacer } from "./semantic";
 
 /** Renderer dibungkus spacer otomatis peran (RT-01/RQ-5; opt-in `render.spacer.autoMode`). */
-export const htmlBlocks: Partial<Record<BlockType | StructuralType, HtmlBlockRenderer>> = withAutoSpacers<BlockType | StructuralType>({
+export const htmlBlocks: Partial<Record<BlockType | StructuralType | "contractRecord", HtmlBlockRenderer>> = withAutoSpacers<BlockType | StructuralType | "contractRecord">({
   // S16: blok teks
   chapter: renderChapter,
   section: renderSection,
@@ -50,4 +60,6 @@ export const htmlBlocks: Partial<Record<BlockType | StructuralType, HtmlBlockRen
   partDivider: renderPartDivider,
   signatureBlock: renderSignatureBlock,
   appendix: renderAppendix,
+  // DC-12: slot catatan kontrak (S30, register 05 §6.1); butir `contractItem` milik perakit.
+  contractRecord: renderContractRecord,
 });

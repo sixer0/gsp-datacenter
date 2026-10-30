@@ -92,6 +92,11 @@ export const STUDIO_ERROR_HTTP: Readonly<Record<StudioErrorCode, number>> = {
   CHAPTER_KEY_INVALID: 422,
   // FIX-HR2 (D-332 C9): path Studio tak dikenal (catch-all FIX-H6).
   ROUTE_NOT_FOUND: 404,
+  // Delta DC-05 (register 05 §13.1, EC25-EC28): semua 422 (langkah 6b/9a/9, §5.6).
+  CONTRACT_REF_NOT_FOUND: 422,
+  CONTRACT_REF_PID_NOT_FOUND: 422,
+  CONTRACT_ITEM_KEY_DUPLICATE: 422,
+  CHART_CUSTOM_FORM_UNSUPPORTED: 422,
 };
 
 /** Galat mesin/layanan bertipe kode; route memetakan ke HTTP lewat studioError. */

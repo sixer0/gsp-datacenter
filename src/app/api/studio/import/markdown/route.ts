@@ -25,7 +25,7 @@ import { requireSession } from "@/lib/require-session";
 import { STUDIO_ERROR_HTTP, type DocMetaV2, type DocTargetV2, type ValidationIssue } from "@/lib/studio/contract";
 import { getStudioCaller, type StudioCaller } from "@/lib/studio/contract/auth";
 import { StudioEngineError } from "@/lib/studio/contract/errors";
-import { apiLog, isRecord, json, readJsonObject, reject, reqCtx, type ReqCtx } from "@/lib/studio/http";
+import { apiLog, isRecord, json, readJsonObject, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { importMarkdownChapter, MD_IMPORT_MAX_BODY_BYTES, type MarkdownImportResult, type MdEnvelopeOptions } from "@/lib/studio/services/import";
 import { dryRunChapter } from "@/lib/studio/services/submit";
 import { issuesFromError, type ValidateIssue } from "../../validate/_shared/error-issues";
@@ -130,6 +130,11 @@ export async function POST(req: NextRequest) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE);
+  // DC-19 (QH-03): header kuota pada respons apa pun sesudah tagihan bucket; tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => postImport(req, ctx));
+}
+
+async function postImport(req: NextRequest, ctx: ReqCtx): Promise<Response> {
   try {
     // Laju dihitung sebelum badan dibaca/diurai; identitas laju tidak bergantung pada agentId badan.
     const limited = checkImportRate(await getStudioCaller(req), ctx);
