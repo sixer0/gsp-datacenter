@@ -21,4 +21,4 @@ Penulis: controller. Sumber baris: `identification/02_structured.md`.
 | Koreksi user + loop perbaikan siklus 1 | RT-01 (JSON konten saja, D-119), FIX-1, FIX-3, FIX-5, FIX-6, FIX-8, IP-39a, IP-39b; menyusul FIX-2, FIX-4, sampel Manual 000 | BERJALAN | maks 3 siklus per kriteria |
 | Final F2 | S75, S77, S98, S80 (port 9021), S82, S81 | MENUNGGU F1 | soffice/DB uji/host tenang |
 | G6-G7 | S88, S89 | MENUNGGU | commit lokal; push hanya atas izin |
-| Refaktor struktur (adendum 05) | SR-01..SR-61, IP-41..43, RQ-1..6 | SELESAI DIVERIFIKASI (SR-58 VERIFIED-WITH-NOTES D-305; celah ditutup D-306..D-315; benchmark D-17 LULUS official3 dengan D-289); MENUNGGU keputusan USER akhir + commit lokal | blueprint disetujui D-141; tambahan UX-01, FIX-4a/4b, RQ-7..12, DOC-1, FIX-5, SUB-1 |
+| Refaktor struktur (adendum 05) | SR-01..SR-61, IP-41..43, RQ-1..6 | SELESAI DIVERIFIKASI (SR-58 VERIFIED-WITH-NOTES D-305; celah ditutup D-306..D-315; benchmark D-17 LULUS official3 dengan D-289); keputusan USER akhir D-316/D-317; COMMIT LOKAL 9c1648d (tanpa push) | blueprint disetujui D-141; tambahan UX-01, FIX-4a/4b, RQ-7..12, DOC-1, FIX-5, SUB-1 |
