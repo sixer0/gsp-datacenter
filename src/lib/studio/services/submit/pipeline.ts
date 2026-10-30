@@ -9,7 +9,9 @@
  *  2. Di dalam kunci (`withDocumentLock`): cari dokumen; buat bila belum ada
  *     (revisi 1 = kerangka kosong + kiriman, D-153); baca revisi terbaru n;
  *     `mergeSubmission` (SR-08: struktur, pid §10, idempoten sha KD-13); tanpa
- *     perubahan -> `unchanged` tanpa revisi; cek dasar per lingkup (§9.2;
+ *     perubahan -> `unchanged` tanpa revisi; FIX-H2 (D-322): pid yang disunting lewat PATCH
+ *     sesudah kiriman terakhir lingkupnya / `baseRevisionNo` tidak boleh ditimpa (409
+ *     `SCOPE_CONFLICT` + `overwrittenPids`, `overwrite.ts`); cek dasar per lingkup (§9.2;
  *     409 `SCOPE_CONFLICT`, selain itu `rebased`); `composeV2`; kelengkapan SR-11;
  *     gerbang by-construction BERSAMA (SR-55 H1, `ingest/by-construction`, sama
  *     dengan R04; 422 `BY_CONSTRUCTION_FAILED`); tulis revisi n+1 + baris struktur
@@ -83,6 +85,7 @@ import { SUBMIT_TX_MAX_WAIT_MS, setReadOnly, withDocumentLock, type LockedTarget
 import { newSubmitCorrelationId, submitLog, submitLogError } from "./log";
 import { assertCreatable, fillerOf, jakartaDate } from "./meta";
 import { assertRevisionReconstructs } from "./integrity";
+import { assertNoPatchedOverwrite } from "./overwrite";
 import type { ResolvedTarget } from "./target";
 
 const ASSET_REF_RE = new RegExp(ASSET_REF_PATTERN);
@@ -857,6 +860,23 @@ async function applyInLock(
       tier,
       ...(plan.dryRun ? { lint: null, snapshot: null } : {}),
     };
+  }
+
+  // FIX-H2 (D-322, Hermes C2): kiriman tidak boleh diam-diam menimpa pid yang disunting lewat
+  // PATCH sesudah kiriman terakhir lingkupnya (atau sesudah `baseRevisionNo`) -> 409 berdaftar pid.
+  if (!created && latest && prevRows) {
+    await assertNoPatchedOverwrite(tx, {
+      documentId: document.id,
+      latestRevisionNo: latest.revisionNo,
+      ...(plan.baseRevisionNo !== undefined ? { baseRevisionNo: plan.baseRevisionNo } : {}),
+      current,
+      merged,
+      prevRows,
+      isRepeatableSlot: (slotKey) => {
+        const s = layout.byKey.get(slotKey);
+        return s ? isRepeatable(s) : false;
+      },
+    });
   }
 
   // Cek dasar per lingkup (§9.2).

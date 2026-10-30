@@ -78,3 +78,24 @@ export { errorCodeOf } from "./common";
 export { installRenderLogSinks, JOB_LOG_MAX_ENTRIES, type JobLogEntry } from "./joblog";
 export { lintAfterRender, lintArtifact, releaseFor } from "./lint";
 export { FORMAT_MIME, normalizeFormats } from "./naming";
+// FIX-H1 (D-322): gerbang awal PDF + penanda hasil sebagian R17/R09.
+export {
+  assertPdfRenderReady,
+  isPdfPreflightRejection,
+  layCausesOf,
+  pdfNotReadyDetails,
+  renderOutcomeMarker,
+  renderStatusHeaders,
+  suggestedFormatsWithoutPdf,
+  withRetryAfterHeader,
+  PDF_NOT_READY_MESSAGE,
+  PDF_PREFLIGHT_RETRY_AFTER_SEC,
+  PDF_PREFLIGHT_STAGE,
+  RENDER_ENV_STATUS_ENDPOINT,
+  RENDER_STATUS_HEADER,
+  type PdfNotReadyCause,
+  type PdfNotReadyCauseCode,
+  type PdfNotReadyDetails,
+  type ReadinessFn,
+  type RenderOutcomeMarker,
+} from "./preflight";

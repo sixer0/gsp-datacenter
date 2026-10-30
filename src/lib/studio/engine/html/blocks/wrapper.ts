@@ -20,6 +20,7 @@ import {
   type HtmlBlockRenderer,
   type Inline,
   type NormBlock,
+  type ParaFormat,
   type PartSpec,
   type RenderContext,
   type RoleKey,
@@ -39,13 +40,16 @@ import {
   tocKickerText,
   type ControlSheetBlockKind,
 } from "../../front/texts";
+import { railK2ReserveOf } from "../../docx/blocks/rail";
+import { isTocSectionRole, TOC_ROLE_PARENT, TOC_SECTION_SIZE_STEP_HALFPT, tocEntryRoles, tocOutline, tocSectionIndentTw, tocSectionSize } from "../../docx/wrapper/toc-refs";
 import { htmlTables } from "../tables";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
 import { childBlock, contentOf, el, isObj, language, paramList, paramNum, paramStr, reportBad } from "./common";
-import { assetDataUri, datumRuleHtml, isDevice, renderDevice, sealBandHtml, spineText } from "./device";
+import { assetDataUri, datumRuleHtml, DECORATIVE_IMG_ATTRS, isDevice, renderDevice, sealBandHtml, spineText } from "./device";
 import { attr, escapeHtml, finite, num } from "./escape";
 import { DEFAULT_MD_ROLES, hasInline, inlineHtml, inlinePlain } from "./inline";
 import { baseRun, semanticTransform } from "./semantic";
+import { roleFormat } from "./style";
 import {
   renderAside,
   renderAssumptionInline,
@@ -195,8 +199,19 @@ function frontAddressPrefix(block: NormBlock, kind: string): string {
   return block.address && block.address.startsWith("F:") ? block.address.split("/")[0] : `F:${kind}`;
 }
 
-function unit(block: NormBlock, kind: string, cls: string, inner: string, tag = "section"): string {
-  return `<${tag} class="${cls}"${attr("data-wrapper", kind)}${attr("data-address", block.address ?? undefined)}${attr("data-block", block.blockId)}>${inner}</${tag}>`;
+function unit(block: NormBlock, kind: string, cls: string, inner: string, tag = "section", id?: string): string {
+  return `<${tag} class="${cls}"${attr("id", id)}${attr("data-wrapper", kind)}${attr("data-address", block.address ?? undefined)}${attr("data-block", block.blockId)}>${inner}</${tag}>`;
+}
+
+/**
+ * Jangkar internal sasaran daftar isi (FIX-H4): sama dengan id kepala bab/lampiran
+ * `text.ts` (`st-ch-<kunci>`, `st-app-<kunci>`), kepala section `st-sec-<nomor>` (FIX-T2)
+ * dan id pembatas bagian `st-part-<id>`.
+ * HTML tidak berhalaman tetap (nomor halaman tidak relevan), jadi entri menjadi tautan.
+ */
+function tocAnchorId(prefix: "st-ch" | "st-app" | "st-part" | "st-sec", key: string): string | undefined {
+  const k = key.replace(/[^A-Za-z0-9_-]/g, "");
+  return k ? `${prefix}-${k}` : undefined;
 }
 
 // ── Sampul ───────────────────────────────────────────────────────────────
@@ -262,7 +277,7 @@ function coverAuto(block: NormBlock, ctx: RenderContext, data: Partial<CoverData
         const key = findLogoKey(ctx);
         if (!key) return "";
         const uri = assetDataUri(ctx, key, block);
-        return uri ? el(ctx, "div", { classes: [C.device, C.logo], role: "cover.logo" }, `<img${attr("src", uri)} alt="logo">`) : "";
+        return uri ? el(ctx, "div", { classes: [C.device, C.logo], role: "cover.logo" }, `<img${attr("src", uri)}${DECORATIVE_IMG_ATTRS}>`) : "";
       }
       case "baris alamat di atas garis rambut":
         return (
@@ -396,36 +411,67 @@ function chapterLabelOf(ctx: RenderContext, c: Chapter, key: string, appendix: b
   return hasText(c.kicker) ? plainKicker(c.kicker) : chapterLabelText(key, appendix, language(ctx));
 }
 
-/** Entri daftar isi turunan struktur, urutan DOCX `deriveTocEntries` (C14): bab tanpa bagian, bagian + babnya, lampiran. */
-function chapterTitleEntries(ctx: RenderContext): TocEntry[] {
-  const doc = ctx.snapshot?.doc;
-  if (!doc) return [];
-  const out: TocEntry[] = [];
-  const chapters = Array.isArray(doc.chapters) ? doc.chapters : [];
-  const parts = Array.isArray(doc.parts) ? doc.parts : [];
-  const keyOf = (c: Chapter, i: number, appendix: boolean) => c.key ?? (appendix ? String.fromCharCode(65 + i) : String(i + 1));
-  const chapterEntry = (c: Chapter, i: number): TocEntry => {
-    const key = keyOf(c, i, false);
-    return { level: "chapter", label: { runs: [{ t: chapterLabelOf(ctx, c, key, false) }] }, title: c.title, page: "" };
-  };
-  // Keanggotaan bab = `partId` (sama dengan DOCX dan penempatan unit normalisasi); bab tanpa bagian sah lebih dulu.
-  const partIds = new Set(parts.filter(isObj).map((p) => p.id));
-  chapters.forEach((c, i) => {
-    if (!c.partId || !partIds.has(c.partId)) out.push(chapterEntry(c, i));
+/** Entri TOC turunan + jangkar sasarannya (FIX-H4); tingkat boleh `section` (FIX-T2). */
+type TocRowHtml = Omit<TocEntry, "level"> & { level: TocEntry["level"] | "section"; anchor?: string };
+
+/**
+ * Entri daftar isi turunan struktur = kerangka DOCX `tocOutline` (C14: bab tanpa bagian,
+ * bagian + babnya, lampiran; section tingkat 2 sesudah bab/lampirannya, tingkat = `toc.levels`).
+ * Jangkar section = id kepala section `text.ts` (`st-sec-<nomor, titik jadi tanda hubung>`).
+ */
+function chapterTitleEntries(ctx: RenderContext): TocRowHtml[] {
+  if (!ctx.snapshot?.doc) return [];
+  return tocOutline(ctx).map((node): TocRowHtml => {
+    switch (node.level) {
+      case "part": {
+        // FIX-SERAH (D-295): label bawaan sama dengan pembatas bagian bila konten tanpa label (compose v2).
+        const p = node.part;
+        return { level: "part", label: partLabelOf(ctx, p.label, p.id), title: p.title, page: "", anchor: typeof p.id === "string" ? tocAnchorId("st-part", p.id) : undefined };
+      }
+      case "section":
+        return { level: "section", label: { runs: [{ t: node.number }] }, title: node.section.title, page: "", anchor: tocAnchorId("st-sec", node.number.replace(/\./g, "-")) };
+      default: {
+        const appendix = node.level === "appendix";
+        return {
+          level: node.level,
+          label: { runs: [{ t: chapterLabelOf(ctx, node.chapter, node.key, appendix) }] },
+          title: node.chapter.title,
+          page: "",
+          anchor: tocAnchorId(appendix ? "st-app" : "st-ch", node.key),
+        };
+      }
+    }
   });
-  for (const p of parts) {
-    if (!isObj(p)) continue;
-    // FIX-SERAH (D-295): label bawaan sama dengan pembatas bagian bila konten tanpa label (compose v2).
-    out.push({ level: "part", label: partLabelOf(ctx, p.label, p.id), title: p.title, page: "" });
-    chapters.forEach((c, i) => {
-      if (c.partId === p.id) out.push(chapterEntry(c, i));
-    });
+}
+
+/**
+ * Sel entri daftar isi dengan peran tingkatnya (FIX-TL, padanan DOCX `entryRoles` + `roleFormat`).
+ * Peran turunan (`toc.section*`, `toc.appendix*`) mewarisi sub-objek templat peran bab yang
+ * tidak disetelnya sendiri. Section lalu diturunkan seperti DOCX: run 1 pt lebih kecil (ukuran
+ * bab - 1 pt, atau relatif `1em - 1pt` bila bab tanpa ukuran) dan indentasi tingkat 2
+ * (`tocSectionIndentTw`) pada label dan judul. Indentasi ditulis di pembungkus isi karena
+ * `margin-left` tidak berlaku pada sel tabel.
+ */
+function tocCellHtml(ctx: RenderContext, role: RoleKey, cls: string, inner: string, col: number): string {
+  const parentRole = TOC_ROLE_PARENT[role];
+  if (!parentRole) return el(ctx, "td", { classes: [cls], role }, inner);
+  const own = roleFormat(ctx, role);
+  const parent = roleFormat(ctx, parentRole);
+  if (!isTocSectionRole(role)) {
+    return el(ctx, "td", { classes: [cls], role, format: own.para ? undefined : parent.para, run: own.run ? undefined : parent.run }, inner);
   }
-  (Array.isArray(doc.appendices) ? doc.appendices : []).forEach((a, i) => {
-    const key = keyOf(a, i, true);
-    out.push({ level: "appendix", label: { runs: [{ t: chapterLabelOf(ctx, a, key, true) }] }, title: a.title, page: "" });
-  });
-  return out;
+  const para = own.para ?? parent.para;
+  const parentRun = parent.run;
+  const derivedSz = tocSectionSize(parentRun?.szHalfPt);
+  const run = own.run ? undefined : parentRun ? { ...parentRun, ...(derivedSz !== undefined ? { szHalfPt: derivedSz } : {}) } : undefined;
+  const wrap: string[] = [];
+  if (col !== 2) {
+    const indentTw = own.para ? (own.para.indLeftTw ?? 0) : tocSectionIndentTw(ctx.tpl?.params) + (parent.para?.indLeftTw ?? 0);
+    if (indentTw > 0) wrap.push("display:block", `padding-left:${num(indentTw / 20)}pt`);
+  }
+  if (!own.run && derivedSz === undefined) wrap.push(`font-size:calc(1em - ${num(TOC_SECTION_SIZE_STEP_HALFPT / 2)}pt)`);
+  const body = wrap.length > 0 ? `<span style="${wrap.join(";")}">${inner}</span>` : inner;
+  return el(ctx, "td", { classes: [cls], role, format: { ...(own.para ? {} : para), indLeftTw: undefined }, run }, body);
 }
 
 export const renderToc: HtmlBlockRenderer = (block, ctx) => {
@@ -438,14 +484,14 @@ export const renderToc: HtmlBlockRenderer = (block, ctx) => {
   parts.push(el(ctx, "p", { classes: [C.paragraph, C.frontKicker], role: "front.kicker" }, hasInline(t.kicker) ? inlineHtml(t.kicker) : escapeHtml(tocKickerText(language(ctx)))));
   if (hasText(t.title)) parts.push(el(ctx, "h2", { classes: [C.heading, C.tocTitle], role: "toc.title" }, inlineHtml(t.title)));
   // Entri konten bila ada (mode apa pun), selain itu turunan struktur (DOCX: `entries` kosong -> deriveTocEntries).
-  const given = Array.isArray(t.entries) ? t.entries.filter(isObj) : [];
+  const given: TocRowHtml[] = Array.isArray(t.entries) ? t.entries.filter(isObj) : [];
   const entries = given.length > 0 ? given : chapterTitleEntries(ctx);
   const rows = entries.map((e) => {
-    const part = e.level === "part";
-    const roles: [RoleKey, RoleKey, RoleKey] = part
-      ? ["toc.partLabel", "toc.partTitle", "toc.partPage"]
-      : ["toc.chapterLabel", "toc.chapterTitle", "toc.chapterPage"];
-    return `<tr class="${C.tocRow}"${attr("data-level", e.level)}>${el(ctx, "td", { classes: [C.tocLabel], role: roles[0] }, inlineHtml(e.label))}${el(ctx, "td", { classes: [C.tocEntryTitle], role: roles[1] }, inlineHtml(e.title))}${el(ctx, "td", { classes: [C.tocPage], role: roles[2] }, escapeHtml(typeof e.page === "string" ? e.page : ""))}</tr>`;
+    // FIX-TL: peran per tingkat = sumber bersama DOCX (`tocEntryRoles`); section = toc.section*,
+    // lampiran = toc.appendix* hanya bila templat menyetelnya (selain itu peran bab, keluaran lama).
+    const roles = tocEntryRoles(e.level, ctx.tpl?.roleFormats);
+    const title = e.anchor ? `<a class="${C.tocLink}" href="#${e.anchor}">${inlineHtml(e.title)}</a>` : inlineHtml(e.title);
+    return `<tr class="${C.tocRow}"${attr("data-level", e.level)}>${tocCellHtml(ctx, roles[0], C.tocLabel, inlineHtml(e.label), 0)}${tocCellHtml(ctx, roles[1], C.tocEntryTitle, title, 1)}${tocCellHtml(ctx, roles[2], C.tocPage, escapeHtml(typeof e.page === "string" ? e.page : ""), 2)}</tr>`;
   });
   parts.push(`<table class="${C.tocTable}"><tbody>${rows.join("")}</tbody></table>`);
   if (hasText(t.note)) parts.push(el(ctx, "p", { classes: [C.paragraph, C.tocNote], role: "toc.note" }, inlineHtml(t.note)));
@@ -454,10 +500,21 @@ export const renderToc: HtmlBlockRenderer = (block, ctx) => {
 
 // ── Pembatas bagian ──────────────────────────────────────────────────────
 
+/**
+ * Lede pembatas bagian pada moda rel K2 (A + `framePr`, FIX-T2/D-350; padanan DOCX `partLedeXml`
+ * dan `k2Format` text.ts FIX-R1): margin kanan PERAN yang sama dengan cadangan rel dibuang.
+ * `table3col` (Manual 000) dan moda B: undefined (format peran apa adanya).
+ */
+function partLedeK2Format(ctx: RenderContext): ParaFormat | undefined {
+  const reserve = railK2ReserveOf((k) => ctx.tpl?.params?.[k]);
+  return reserve !== undefined && roleFormat(ctx, "part.lede").para?.indRightTw === reserve ? { indRightTw: undefined } : undefined;
+}
+
 export const renderPartDivider: HtmlBlockRenderer = (block, ctx) => {
   const p = contentOf<PartSpec>(ctx, block);
   if (!p) return "";
-  if (Array.isArray(p.body) && p.body.length > 0) return unit(block, "part", C.part, bodyHtml(block, ctx, p.body, null));
+  const partAnchor = typeof p.id === "string" ? tocAnchorId("st-part", p.id) : undefined;
+  if (Array.isArray(p.body) && p.body.length > 0) return unit(block, "part", C.part, bodyHtml(block, ctx, p.body, null), "section", partAnchor);
   const parts: string[] = [sealBandHtml(ctx, {})];
   const label = partLabelOf(ctx, p.label, p.id);
   parts.push(el(ctx, "p", { classes: [C.paragraph, C.partKicker], role: "wrapper.kicker" }, inlineHtml(label)));
@@ -466,7 +523,7 @@ export const renderPartDivider: HtmlBlockRenderer = (block, ctx) => {
     parts.push(datumRuleHtml(ctx, "wrapper.datumRule", requiredParamMm(ctx, block, WRAPPER_DATUM_RULE_KEYS, "lebar Datum Rule pembungkus")));
   }
   if (hasInline(p.title)) parts.push(el(ctx, "h2", { classes: [C.heading, C.partTitle], role: "part.title" }, inlineHtml(p.title)));
-  if (hasInline(p.lede)) parts.push(el(ctx, "p", { classes: [C.paragraph, C.partLede], role: "part.lede" }, inlineHtml(p.lede)));
+  if (hasInline(p.lede)) parts.push(el(ctx, "p", { classes: [C.paragraph, C.partLede], role: "part.lede", format: partLedeK2Format(ctx) }, inlineHtml(p.lede)));
   const keys = Array.isArray(p.chapterKeys) ? p.chapterKeys.filter((k) => typeof k === "string") : [];
   if (p.showChapterList !== false && keys.length > 0) {
     const chapters = Array.isArray(ctx.snapshot?.doc?.chapters) ? ctx.snapshot.doc.chapters : [];
@@ -491,7 +548,7 @@ export const renderPartDivider: HtmlBlockRenderer = (block, ctx) => {
     const s = spineText(ctx);
     if (s) parts.push(spineStringHtml(ctx, escapeHtml(s)));
   }
-  return unit(block, "part", C.part, parts.join(""));
+  return unit(block, "part", C.part, parts.join(""), "section", partAnchor);
 };
 
 // ── Blok tanda tangan ────────────────────────────────────────────────────

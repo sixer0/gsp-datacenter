@@ -128,3 +128,21 @@ Penulis: controller. Sumber: Execution Profile blueprint `identification/02_stru
 | 2026-10-23 | Verifikasi akhir | FIX-2 | 1 | src/lib/studio/engine/html/** (pembungkus: lembar kendali, TOC, kicker lampiran) — teks bawaan diselaraskan ke DOCX lewat sumber teks bersama |
 | 2026-10-23 | Verifikasi akhir | DL-1 | 1 | laporan test/18_datum_lint_node_docx.md, keluaran tests/datumlint/out/** |
 | 2026-10-23 | Verifikasi akhir | FIX-F | 1 | services/submit/meta.ts, engine/html/blocks/{wrapper,text}.ts, engine/front/apparatus.ts, services/render/artifact.ts (keyRowOnPage), scripts/parity/compare/compare_docx.py |
+| 2026-10-30 | Batch Hermes | FIX-H1 | 1 | src/lib/studio/services/render/** (kecuali figures.ts), src/app/api/studio/documents/[id]/render/**, src/app/api/studio/artifacts/** (jalur PDF), engine/render-env cek kesiapan |
+| 2026-10-30 | Batch Hermes | FIX-H2 | 1 | src/lib/studio/services/submit/**, services/compose/merge.ts |
+| 2026-10-30 | Batch Hermes | FIX-H4 | 1 | src/lib/studio/engine/docx/{blocks,wrapper,package}/** (rail paragraf, TOC), engine/html/blocks/** setara (bukan figures) |
+| 2026-10-30 | Batch Hermes | FIX-H6 | 1 | src/app/api/studio/[...notfound]/** (baru), helper respons galat bersama bila perlu |
+| 2026-10-30 | Batch Hermes | FIX-H7 | 1 | src/lib/studio/services/import/** (baru), src/app/api/studio/import/** (baru), scripts/studio/md2chapter.ts (baru) |
+| 2026-10-30 | Batch Hermes | FIX-H8 | 1 | src/lib/studio/engine/docx/figures/**, engine/html figur alt, engine/chart/core/** (tinggi minimum), services/render/figures.ts |
+| 2026-10-30 | Batch Hermes penutup | FIX-HZ1 | 1 | src/app/api/studio/validate/**, render preflight urutan, R07 renderRevision, components/studio render-card + completeness-tab |
+| 2026-10-30 | Batch Hermes penutup | FIX-HZ2 | 1 | engine/docx/{blocks,wrapper}/media.ts + HTML dekoratif, engine/lint/structure/checks-d.ts |
+| 2026-10-30 | Batch Hermes penutup | FIX-HZ3 | 1 | prisma/seed-studio.ts + preset/profil GSP; runtime DB v21 (templat/preset) |
+| 2026-10-30 | Batch Hermes review | FIX-HR1 | 1 | src/lib/studio/services/import/**, src/app/api/studio/import/** |
+| 2026-10-30 | Batch Hermes review | FIX-HR2 | 1 | render route handler (urutan), src/app/api/studio/[[...notfound]]/**, contract/errors.ts (ROUTE_NOT_FOUND), services/submit/overwrite.ts (kueri), alt-text.ts pindah ke modul bersama + pemakai |
+| 2026-10-30 | Batch Hermes review | FIX-HR3 | 1 | engine/lint/structure/checks-d.ts (D16) + pembaca lapis parameter (baca) |
+| 2026-10-30 | Uji ulang Hermes | FIX-R1 | 1 | engine/docx/blocks/rail.ts + host paragraf (indentasi), lint ASSERT G-RAIL-3 (klaim spesifik) |
+| 2026-10-30 | Uji ulang Hermes | FIX-T2 | 1 | engine/docx/wrapper/{toc-refs,pages}.ts, engine/docx/blocks/structure.ts (bookmark bagian/lampiran), html setara |
+| 2026-10-30 | Uji ulang Hermes | FIX-S3 | 1 | route + layanan GET /content (services/structure proyeksi isi) |
+| 2026-10-30 | Uji ulang Hermes | FIX-CLI | 1 | scripts/studio/md2chapter.ts, services/render/preflight.ts (pesan), http/route-not-found.ts (pesan) |
+| 2026-10-30 | Uji ulang Hermes | FIX-TL | 1 | src/lib/studio/params/** + registry (toc.levels), peran toc.section* (roleFormats preset/registri), pemakai di engine/docx/wrapper/toc-refs.ts |
+| 2026-10-30 | Review penutup | FIX-TQ | 1 | engine/docx/wrapper/toc-refs.ts (+ pemakai), G-RAIL-3 di engine/docx/assemble/index.ts, scripts/studio/md2chapter.ts (pesan) |

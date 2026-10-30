@@ -53,10 +53,12 @@ export function paragraphXml(format: ParaFormat | undefined, runsXml: string): s
 export interface InlineDrawing {
   relId: string;
   docPrId: number;
-  /** `wp:docPr/@name`, mis. "Picture 6". */
+  /** `wp:docPr/@name`: nama objek bermakna (FIX-H8, mis. "Gambar 3.1 — <caption>"). */
   docPrName: string;
-  /** Teks alternatif (caption polos). */
+  /** Teks alternatif `wp:docPr/@descr` (label + caption + sumber). */
   descr?: string;
+  /** `wp:docPr/@title` (judul teks alternatif). */
+  title?: string;
   /** `pic:cNvPr/@name` (nama berkas). */
   fileName: string;
   widthMm: number;
@@ -69,7 +71,7 @@ export function inlineDrawingXml(d: InlineDrawing): string {
   return (
     `<w:drawing><wp:inline xmlns:wp="${WP_NS}" xmlns:a="${A_NS}" xmlns:pic="${PIC_NS}">` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    `<wp:docPr${attrs({ id: d.docPrId, name: d.docPrName, descr: d.descr || undefined })}/>` +
+    `<wp:docPr${attrs({ id: d.docPrId, name: d.docPrName, descr: d.descr || undefined, title: d.title || undefined })}/>` +
     `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
     `<a:graphic><a:graphicData uri="${PIC_NS}"><pic:pic>` +
     `<pic:nvPicPr><pic:cNvPr${attrs({ id: 0, name: d.fileName })}/><pic:cNvPicPr/></pic:nvPicPr>` +

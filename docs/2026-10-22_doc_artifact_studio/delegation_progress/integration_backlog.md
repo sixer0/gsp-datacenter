@@ -105,3 +105,10 @@ Penulis: controller. Setiap butir menjadi baris integrasi IP-nn dengan pemilik a
 | IP-97 | SR-56c C9 | Baseline 13,5 pt tertanam di `compare_dg_d242.py:30` | Siklus berikut | terbuka |
 | IP-98 | SR-56c C10 | Selftest paritas FAIL bukan SKIP bila paket Python hilang | Siklus berikut | terbuka |
 | IP-99 | FIX-F | Kapitalisasi string punggung HTML vs DOCX belum diperiksa (DOCX kapital lewat format run) | Siklus berikut | terbuka |
+| IP-100 | FIX-H6 | Metode salah pada route Studio yang ada → 405 Next tanpa badan/correlation id | Handler 405 JSON per route atau middleware | terbuka |
+| IP-101 | FIX-H2 | Sunting struktur (setOutline/reorder) yang ditimpa kiriman dokumen tanpa base belum dilindungi | Siklus berikut | terbuka |
+| IP-102 | FIX-HZ1 | `docx-determinism` sekali gagal saat agen lain merender bersamaan (terpisah lulus) — pantau flaky | Siklus berikut | terbuka |
+| IP-103 | FIX-HZ1 | `history-tab.tsx` belum menampilkan status render baru (503/partial) | Siklus berikut | terbuka |
+| IP-104 | review batch Hermes | C5/C6 duplikasi id jangkar + kunci bab TOC, C7 dua tabel teks penyebab PDF, C8 literal geometri chart | Siklus berikut | terbuka |
+| IP-105 | DOC-3b | R09 artefak tanpa preflight PDF 503 (hanya penanda partial) | Siklus berikut | terbuka |
+| IP-106 | review 09e | Impor HTML→DOCX, heuristik buang indentasi 2154, literal 8.2 | Siklus berikut | terbuka |

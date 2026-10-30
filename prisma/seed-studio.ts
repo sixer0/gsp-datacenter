@@ -32,11 +32,12 @@
  *      dari versi lama terbaru (`skeletonSha256` null) `datum-kanonik` / `datum-gsp`
  *      (nilai baseline disematkan pada setiap kunci lama yang berbeda dari bawaan
  *      registri; GSP DATUM + P4S-13 BM D-151 + `symbol.sheet.fit` true KT-7 +
- *      `table.widthClass` full), lalu versi baru kedua templat = rujukan preset +
- *      kenop esensial global (nilai dibaca dari preset) + kerangka 7 slot (register
- *      §6.1; kenop slot dari preset). Satu transaksi; penjaga §8.2: `paramsSha256`
- *      terproyeksi ke kunci versi lama sama (Kanonik persis, GSP di luar Δ beralasan =
- *      {P4S-13, symbol.sheet.fit, table.widthClass}; nilai Δ wajib = keputusan);
+ *      `table.widthClass` full + `render.rail.renderer` framePr D-327), lalu versi
+ *      baru kedua templat = rujukan preset + kenop esensial global (nilai dibaca dari
+ *      preset) + kerangka 7 slot (register §6.1; kenop slot dari preset). Satu
+ *      transaksi; penjaga §8.2: `paramsSha256` terproyeksi ke kunci versi lama sama
+ *      (Kanonik persis, GSP di luar Δ beralasan = {P4S-13, symbol.sheet.fit,
+ *      table.widthClass, render.rail.renderer}; nilai Δ wajib = keputusan);
  *      gagal = rollback + exit 1. Run ulang tanpa perubahan = `unchanged`. FIX-SEED
  *      (D-258 N2): deterministik di DB segar maupun berisi — baseline GSP dari profil
  *      berkas memakai nilai terukur kunci yang kini kelas T bila sumbernya terbukti
@@ -448,6 +449,8 @@ const MANUAL000_V2_TEMPLATE = path.join("benchmark", "manual000", "template.v2.j
 /** P4S-13 nilai BM (D-151; research/09 §8.1): nomor dokumen, huruf revisi, PAGE, NUMPAGES, klasifikasi. */
 const REGISTER_BOLD_KEY = "device.registerBlock.boldFields";
 const BM_REGISTER_BOLD_FIELDS = ["nomor dokumen", "revisi", "nomor lembar", "jumlah lembar", "klasifikasi"];
+/** R-12 perender rel bukti: GSP DATUM = chip `framePr` HS rev B (D-327); Manual 000 tetap `table3col` (BM T013). */
+const RAIL_RENDERER_KEY = "render.rail.renderer";
 /** Batas iterasi penyematan (sematan bisa mengubah kunci turunan beracuan lain). */
 const PIN_PASSES_MAX = 4;
 
@@ -506,9 +509,10 @@ const PRESET_MIGRATIONS: readonly PresetMigrationSpec[] = [
     presetSlug: "datum-gsp-preset",
     presetName: "GSP DATUM",
     presetDescription:
-      "Preset gaya GSP DATUM: profil tampilan Manual DATUM 2.6.0 (format terukur Manual 000) tanpa pelepas penegakan lint; huruf tebal blok register BM (P4S-13), lembar simbol pas-halaman.",
-    // D-151 (P4S-13 BM), D-165 KT-7 (fit true), research/09 §8.1 (`table.widthClass` full menggantikan override P5-14 = 166).
-    decided: { [REGISTER_BOLD_KEY]: BM_REGISTER_BOLD_FIELDS, "symbol.sheet.fit": true, "table.widthClass": "full" },
+      "Preset gaya GSP DATUM: profil tampilan Manual DATUM 2.6.0 (format terukur Manual 000) tanpa pelepas penegakan lint; huruf tebal blok register BM (P4S-13), lembar simbol pas-halaman, rel bukti chip framePr (HS rev B).",
+    // D-151 (P4S-13 BM), D-165 KT-7 (fit true), research/09 §8.1 (`table.widthClass` full menggantikan override P5-14 = 166),
+    // D-327 (rel framePr HS rev B; baseline v1 mewarisi table3col dari profil Manual 000).
+    decided: { [REGISTER_BOLD_KEY]: BM_REGISTER_BOLD_FIELDS, "symbol.sheet.fit": true, "table.widthClass": "full", [RAIL_RENDERER_KEY]: "framePr" },
     delta: [
       { key: REGISTER_BOLD_KEY, reason: "D-151 / D-165 KT-6: P4S-13 nilai BM (nomor dokumen, revisi, nomor lembar, jumlah lembar, klasifikasi)" },
       { key: "symbol.sheet.fit", reason: "D-165 KT-7: lembar simbol isi-pas = gaya manual (RL datum_symbols.py --sheet)" },
@@ -516,6 +520,11 @@ const PRESET_MIGRATIONS: readonly PresetMigrationSpec[] = [
         key: "table.widthClass",
         reason:
           "research/09 §8.1, D-162: kenop kelas lebar menggantikan override P5-14 = 166 (kini kelas T); turunan table.columnWidthSumMm BUKAN Δ, dibandingkan dengan nilai terukur baseline (166)",
+      },
+      {
+        key: RAIL_RENDERER_KEY,
+        reason:
+          "D-327 (FIX-H4 C4, Hermes): templat GSP mencerminkan datum-house-style fleet, HS rev B / G-RAIL rev B = chip rel w:framePr; baseline v1 table3col warisan profil Manual 000 (BM.docx T013). Manual 000 tetap table3col. Turunan render.rail.colsTw (kelas T) BUKAN Δ, tetap dibandingkan dengan baseline",
       },
     ],
     dropPrefixes: [DATUM_GSP_DROPPED_OVERRIDE_PREFIX],

@@ -11,16 +11,72 @@
  * Moda B (tanpa kolom rel): baris rel ditulis sebagai paragraf biasa di
  *   bawah inang (format peran rel), tanpa bingkai.
  *
+ * K2 rev B (RAIL-1008, FIX-R1/D-342): pada perender `framePr` ruang rel adalah
+ * properti PER-PARAGRAF. Hanya inang chip yang menyempit; prosa tanpa provenans
+ * memakai lebar teks penuh (166 mm pada A4, mengikuti token grid kertas lain).
+ * Indentasi kanan peran yang sama dengan cadangan rel (gutter + rel) adalah sisa
+ * profil `table3col` dan dibuang dari paragraf tanpa rel (`text.ts` hostFormat).
+ * `assertRailK2` (G-RAIL-3 rev B) memeriksa XML unit hasil render: paragraf
+ * menyempit sebesar cadangan rel tanpa chip sesudahnya, atau chip tanpa inang,
+ * = BY_CONSTRUCTION_FAILED. Moda `table3col` (Manual 000) tidak tersentuh.
+ *
  * Baris tanda: run glif (`glyphRun[mark]` peran `rail.mark`, cadangan wajah
  * symbolGlyph + warna `marks.<m>.colour`) lalu run label " <label>" (pola
  * BM.docx: spasi pemisah di awal run label). Teks label/sumber/catatan apa adanya.
  */
-import { PROVENANCE_GLYPHS, type ParaFormat, type ProvenanceMark, type RailLine, type RunProps } from "../../../contract";
-import type { BlockEnv } from "./env";
+import { PROVENANCE_GLYPHS, type ParaFormat, type ParamValue, type ProvenanceMark, type RailLine, type RunProps } from "../../../contract";
+import { StudioEngineError } from "../../../contract/errors";
+import { mmToTw } from "../../tokens";
+import type { BlockEnv, RailLayout } from "./env";
 import { singleRowTable } from "./table";
 import { el } from "./xml";
 
 export type HostVariant = "plain" | "framePr" | "table";
+
+function isNum(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+/**
+ * Resolver murni tata rel (sumber tunggal untuk `BlockEnv.rail()` dan assert
+ * G-RAIL-3 tingkat perakit). `textColumnMm` dipanggil hanya bila
+ * `render.rail.colsTw` tidak ditulis templat.
+ */
+export function resolveRailLayout(param: (key: string) => ParamValue | undefined, textColumnMm: () => number): RailLayout {
+  const renderer = param("render.rail.renderer") === "table3col" ? "table3col" : "framePr";
+  const raw = param("render.rail.colsTw");
+  let colsTw = Array.isArray(raw) && raw.every(isNum) && raw.length > 0 ? (raw as number[]).map(Math.round) : undefined;
+  if (!colsTw) {
+    const text = textColumnMm();
+    const g = param("grid.gutterMm");
+    const r = param("grid.evidenceRailMm");
+    const gutter = isNum(g) ? g : 6;
+    const rail = isNum(r) ? r : 32;
+    colsTw = param("layout.railMode") === "B" ? [mmToTw(text + gutter + rail)] : [mmToTw(text), mmToTw(gutter), mmToTw(rail)];
+  }
+  // P4S-07 (FIX-H4): templat mematikan rel = moda B dengan bentang penuh, sama dengan HTML
+  // (`buildHtmlShell`: railEnabled false -> B); baris rel tetap tertulis di bawah inang.
+  if (param("device.evidenceRail.enabled") === false) {
+    return { mode: "B", renderer, colsTw: [colsTw.reduce((x, y) => x + y, 0)] };
+  }
+  // `auto` tanpa konteks sitasi = susunan moda A (D-37); B bila diminta atau kolom rel tunggal.
+  const mode = param("layout.railMode") === "B" || colsTw.length < 3 ? "B" : "A";
+  return { mode, renderer, colsTw };
+}
+
+/** Cadangan rel (gutter + rel, twip) bila tata rel berada di moda K2 (A + `framePr`); selain itu undefined. */
+export function railK2ReserveTw(lay: RailLayout): number | undefined {
+  return lay.mode === "A" && lay.renderer === "framePr" && lay.colsTw.length >= 3 ? lay.colsTw[1] + lay.colsTw[2] : undefined;
+}
+
+/**
+ * Cadangan rel K2 dari parameter saja (tanpa menuntut `grid.textColumnMm`: kolom teks
+ * tidak ikut cadangan), untuk perakit dan varian `plain` yang tidak boleh gagal karena
+ * parameter kolom teks absen.
+ */
+export function railK2ReserveOf(param: (key: string) => ParamValue | undefined): number | undefined {
+  return railK2ReserveTw(resolveRailLayout(param, () => 0));
+}
 
 function markGlyph(env: BlockEnv, mark: ProvenanceMark): string {
   const v = env.param(`marks.${mark.toLowerCase()}.glyph`);
@@ -81,7 +137,14 @@ export function railLinesXml(env: BlockEnv, lines: readonly RailLine[], framePr?
 export function withRail(env: BlockEnv, rail: readonly RailLine[] | undefined, host: (v: HostVariant) => string): string {
   if (!rail || rail.length === 0) return host("plain");
   const lay = env.rail();
-  if (lay.mode === "B") return host("plain") + railLinesXml(env, rail);
+  if (lay.mode === "B") {
+    // FIX-H4: rel dimatikan templat (P4S-07) = perilaku jelas, bukan diam-diam: baris tetap
+    // ditulis (konten kekal) di bawah inang dan tercatat di log render.
+    if (env.param("device.evidenceRail.enabled") === false) {
+      env.warn(`rel bukti dimatikan templat (device.evidenceRail.enabled = false): ${rail.length} baris rel ditulis moda B di bawah paragraf`);
+    }
+    return host("plain") + railLinesXml(env, rail);
+  }
   const [textTw, gutterTw, railTw] = lay.colsTw;
   if (lay.renderer === "framePr") {
     const framePr = el("w:framePr", { "w:w": railTw, "w:wrap": "none", "w:hAnchor": "margin", "w:x": textTw + gutterTw });
@@ -98,4 +161,80 @@ export function withRail(env: BlockEnv, rail: readonly RailLine[] | undefined, h
 export function railHostIndentTw(env: BlockEnv): number {
   const cols = env.rail().colsTw;
   return cols.length >= 3 ? cols[1] + cols[2] : 0;
+}
+
+// ── G-RAIL-3 rev B (K2): assert byte jadi per unit ─────────────────────────
+
+interface ParaInfo {
+  chip: boolean;
+  rightTw: number | undefined;
+  text: string;
+}
+
+/** Paragraf `w:p` (urut kemunculan, termasuk bersarang) dengan sifat pPr langsungnya. */
+function scanParagraphs(xml: string): ParaInfo[] {
+  const out: ParaInfo[] = [];
+  const re = /<w:p(?=[\s>\/])[^>]*?(\/?)>/g;
+  for (let m = re.exec(xml); m; m = re.exec(xml)) {
+    if (m[1] === "/") {
+      out.push({ chip: false, rightTw: undefined, text: "" });
+      continue;
+    }
+    const start = re.lastIndex;
+    const pPr = xml.startsWith("<w:pPr>", start) ? xml.slice(start, xml.indexOf("</w:pPr>", start)) : "";
+    const ind = /<w:ind\b[^>]*?\bw:right="(-?\d+)"/.exec(pPr);
+    const end = xml.indexOf("</w:p>", start);
+    const text = (end < 0 ? "" : xml.slice(start, end)).replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, "").replace(/<[^>]+>/g, "");
+    out.push({ chip: pPr.includes("<w:framePr"), rightTw: ind ? Number(ind[1]) : undefined, text: text.slice(0, 60) });
+  }
+  return out;
+}
+
+export interface RailK2Report {
+  /** Paragraf inang (menyempit sebesar cadangan, diikuti chip). */
+  hosts: number;
+  /** Chip `w:framePr`. */
+  chips: number;
+}
+
+/**
+ * G-RAIL-3 rev B (K2, setara konsistensi dua arah HS pada tingkat paragraf):
+ * pada moda K2 (A + `framePr`) setiap paragraf dengan `w:ind w:right` sama dengan
+ * cadangan rel WAJIB diikuti chip `w:framePr`, dan setiap chip WAJIB didahului
+ * inang atau chip lain. Pelanggaran = BY_CONSTRUCTION_FAILED (render gagal keras).
+ * Di luar moda K2 (moda B, `table3col`) mengembalikan undefined tanpa memeriksa.
+ */
+export function assertRailK2(xml: string, lay: RailLayout, where: string): RailK2Report | undefined {
+  const reserve = railK2ReserveTw(lay);
+  if (reserve === undefined) return undefined;
+  const paras = scanParagraphs(xml);
+  const narrowed: string[] = [];
+  const orphans: string[] = [];
+  let hosts = 0;
+  let chips = 0;
+  paras.forEach((p, i) => {
+    if (p.chip) {
+      chips += 1;
+      const prev = paras[i - 1];
+      if (!prev || (!prev.chip && prev.rightTw === undefined)) orphans.push(p.text);
+      return;
+    }
+    if (p.rightTw !== reserve) return;
+    if (paras[i + 1]?.chip) hosts += 1;
+    else narrowed.push(p.text);
+  });
+  if (narrowed.length > 0 || orphans.length > 0) {
+    const parts = [
+      narrowed.length > 0 ? `${narrowed.length} paragraf tanpa chip menyempit w:right=${reserve} (prosa tanpa provenans wajib selebar teks penuh)` : "",
+      orphans.length > 0 ? `${orphans.length} chip w:framePr tanpa paragraf inang` : "",
+    ].filter(Boolean);
+    throw new StudioEngineError("BY_CONSTRUCTION_FAILED", `G-RAIL-3 rev B (K2) gagal pada ${where}: ${parts.join("; ")}`, {
+      gate: "G-RAIL-3",
+      unit: where,
+      reserveTw: reserve,
+      narrowed: narrowed.slice(0, 5),
+      orphans: orphans.slice(0, 5),
+    });
+  }
+  return { hosts, chips };
 }

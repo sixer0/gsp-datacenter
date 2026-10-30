@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { chapterKickerText } from "../../front/texts";
 import { palette } from "../wrapper/formats";
 import { datumRulePng } from "../wrapper/media";
+import { bookmarkWrap, chapterTocTarget, chapterTocTargetOf, sectionTocTarget, type TocTarget } from "../wrapper/toc-refs";
 import { imageHeightMm, inlineDrawingRun, loadImageAsset, type LoadedImage } from "./media";
 import { mergePara } from "./props";
 import { structuralFor } from "./text";
@@ -91,7 +92,7 @@ function datumRuleXml(env: BlockEnv): string {
   const key = `rule${Math.round(widthMm)}`;
   const img = loadImageAsset(env, key);
   const heightMm = img ? imageHeightMm(img, widthMm) : undefined;
-  if (img && heightMm !== undefined) return env.para(para, inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {})));
+  if (img && heightMm !== undefined) return env.para(para, inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
   if (img) env.warn(`tinggi aset Datum Rule "${key}" tidak terbaca`, "ASSET_TYPE_UNSUPPORTED");
   // C10 (D-44: "datumRule (asset rule128, derived)", D-66): aset tidak ada ->
   // rule dibangkitkan dengan geometri BM (pembangkit S18, piksel setara BM).
@@ -99,12 +100,24 @@ function datumRuleXml(env: BlockEnv): string {
     const gen = generatedDatumRule(env, widthMm);
     if (gen) {
       env.warn(`Datum Rule bab "${key}" dibangkitkan dari geometri BM (aset tidak ada)`, "FILE_NOT_FOUND");
-      return env.para(para, inlineDrawingRun(env, gen.img, gen.widthMm, gen.heightMm, env.rPr(rf.run ?? {})));
+      return env.para(para, inlineDrawingRun(env, gen.img, gen.widthMm, gen.heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
     }
   }
   env.warn(`Datum Rule bab memakai cadangan garis bawah paragraf (aset "${key}")`);
   const bottom = env.rule("device.datumRule.weightMm", "rules.primary.colour", 0.2, "ink900");
   return env.para(mergePara(para, { borders: { bottom } }), "");
+}
+
+/**
+ * Penanda sasaran PAGEREF daftar isi (FIX-H4): bab dokumen dicari lewat blockId
+ * (sama dengan pembuka lampiran), cadangan kunci efektif. Tanpa TOC turunan = undefined.
+ */
+function tocTarget(env: BlockEnv, c: Partial<Chapter>, key: string): TocTarget | undefined {
+  const appendix = env.unitKind() === "appendix";
+  const doc = env.ctx.snapshot.doc;
+  const list = appendix ? (doc.appendices ?? []) : (doc.chapters ?? []);
+  const hit = c.blockId ? list.find((x) => x.blockId === c.blockId) : undefined;
+  return hit ? chapterTocTargetOf(env.ctx, hit, appendix) : chapterTocTarget(env.ctx, key, appendix);
 }
 
 export function renderChapter(env: BlockEnv): string {
@@ -116,7 +129,7 @@ export function renderChapter(env: BlockEnv): string {
   const titleRole = env.role("chapter.title", structuralFor("chapter.title"));
   let xml = env.para(kickerRole.para ?? {}, env.inline(kicker, kickerRole.run ?? {}, false));
   if (datumRuleEnabled(env)) xml += datumRuleXml(env);
-  xml += env.para(titleRole.para ?? {}, env.inline(c.title, titleRole.run ?? {}, false));
+  xml += env.para(titleRole.para ?? {}, bookmarkWrap(tocTarget(env, c, key), env.inline(c.title, titleRole.run ?? {}, false)));
   return xml;
 }
 
@@ -134,5 +147,7 @@ export function renderSection(env: BlockEnv): string {
     const gap = "runs" in c.title ? "" : SECTION_NUMBER_GAP;
     numberXml = env.run({ t: number + gap }, numberRun);
   }
-  return env.para(para, numberXml + env.inline(c.title, titleRun, false));
+  // FIX-T2 (D-342 S2): penanda sasaran PAGEREF daftar isi pada kepala section (hanya bila TOC turunan memuat section).
+  const target = sectionTocTarget(env.ctx, env.block.blockId, env.block.address ?? undefined, env.unitKind() === "appendix");
+  return env.para(para, bookmarkWrap(target, numberXml + env.inline(c.title, titleRun, false)));
 }

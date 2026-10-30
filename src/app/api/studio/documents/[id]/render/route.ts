@@ -3,8 +3,13 @@
  * 03_structural_sections_specs.md §12 R17, blueprint 05 §2.6/§2.11, D-131).
  *
  * Badan `{ scope: "document" | "chapter" | "slot", key?, formats?, figures?, revisionNo? }`.
- * - 200 `{ job: RenderJobDto & { scope, draft }, outputs, completeness }`;
+ * - 200 `{ job: RenderJobDto & { scope, draft }, outputs, completeness, partial,
+ *   failedFormats, errors }` + header `X-Studio-Render-Status` (FIX-H1);
  *   `chapter`/`slot` selalu boleh (draf).
+ * - 503 `PDF_ENGINE_UNAVAILABLE` `details.stage: "preflight"` + `Retry-After` bila
+ *   format efektif memuat pdf dan render-env tidak siap; tanpa job (FIX-H1, D-322).
+ *   Urutan seragam apa pun `formats` (FIX-HR2, D-332 C1): 401 -> 404 -> 409
+ *   `DOCUMENT_INCOMPLETE`/422 -> 503 preflight; satu gerbang di layanan.
  * - 409 `DOCUMENT_INCOMPLETE` `{ completeness, allowedScopes, forwardToController }`
  *   untuk `scope: "document"` pada revisi INCOMPLETE (contoh E3b).
  * - 404 `ADDRESS_NOT_FOUND`/`REVISION_NOT_FOUND`/`DOCUMENT_NOT_FOUND`, 422 `SLOT_UNKNOWN`,

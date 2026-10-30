@@ -10,7 +10,7 @@
  *   diagram     -> 9 keluarga diagram + tata letak efektif (§8.3)
  *   symbols     -> 41 simbol (S31)
  *   lint        -> pemeriksaan lint (§5.4)
- *   roles       -> 70 kunci peran format (§5.6)
+ *   roles       -> 76 kunci peran format (§5.6; +6 peran toc.section dan toc.appendix, D-355)
  *   presets     -> templat `isPreset` aktif (DB) + status terbatas D-98 dari versi terbaru
  *   essentials  -> 30 kenop esensial berlabel awam (D-165/D-168): `items` datar + `global` +
  *                  `bySectionType` (setiap C33 sectionType, <= 8 per kelompok) + medan esensial

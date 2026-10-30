@@ -57,6 +57,7 @@ import {
   mediaName,
   mediaRelId,
   WRAPPER_DOCPR_ID_BASE,
+  type DecorativeKind,
   type LoadedImage,
   type MediaItem,
 } from "./media";
@@ -113,8 +114,8 @@ export class WrapperBuilder {
     this.ctx.log({ level: "warn", message, code, address: this.block.address ?? undefined, at: `docx/wrapper:${this.block.type}` });
   }
 
-  /** Run gambar inline; media didaftarkan sekali per nama. */
-  imageRun(img: LoadedImage, widthMm: number, heightMm: number): string {
+  /** Run gambar inline (aparatus dekoratif, FIX-HZ2); media didaftarkan sekali per nama. */
+  imageRun(img: LoadedImage, widthMm: number, heightMm: number, decorative: DecorativeKind = "ornament"): string {
     const name = mediaName(img.data, img.ext);
     if (!this.media.has(name)) this.media.set(name, { name, data: img.data, contentType: img.contentType });
     this.pictures += 1;
@@ -125,6 +126,8 @@ export class WrapperBuilder {
       widthMm,
       heightMm,
       docPrId: WRAPPER_DOCPR_ID_BASE + this.block.ordinal * 16 + this.pictures,
+      decorative,
+      lang: this.lang,
     });
   }
 
@@ -432,7 +435,7 @@ export function datumRuleParagraphXml(b: WrapperBuilder, d: Partial<DeviceBlock>
   const widthMm = d.widthMm ?? datumRuleWidthMm(b, interior);
   const rule = loadDatumRule(b.ctx, widthMm, interior ? c.interiorInk : c.ink, d.asset);
   const heightMm = d.heightMm ?? rule.heightMm;
-  return paragraphXml(paraOf(b.ctx, datumRuleRoleFor(b.unit), d.format), b.imageRun(rule.img, rule.widthMm, heightMm));
+  return paragraphXml(paraOf(b.ctx, datumRuleRoleFor(b.unit), d.format), b.imageRun(rule.img, rule.widthMm, heightMm, "datumRule"));
 }
 
 export function deviceXml(b: WrapperBuilder, d: DeviceBlock): void {
@@ -448,7 +451,7 @@ export function deviceXml(b: WrapperBuilder, d: DeviceBlock): void {
       const img = loadLogo(b.ctx, d.asset);
       const widthMm = d.widthMm ?? DEFAULT_LOGO_WIDTH_MM;
       const heightMm = d.heightMm ?? (img.widthPx && img.heightPx ? (widthMm * img.heightPx) / img.widthPx : widthMm / 2);
-      b.push(paragraphXml(paraOf(b.ctx, "cover.logo", d.format), b.imageRun(img, widthMm, heightMm)));
+      b.push(paragraphXml(paraOf(b.ctx, "cover.logo", d.format), b.imageRun(img, widthMm, heightMm, "logo")));
       return;
     }
     case "hairline":

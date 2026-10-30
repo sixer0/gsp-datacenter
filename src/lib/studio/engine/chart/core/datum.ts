@@ -22,14 +22,63 @@ import type { CorePrep } from "./prepare";
 import { axisDomain } from "./scale";
 import { SvgDoc, dcPx, textWidthMm } from "./svg";
 
-/** Taksiran tinggi DC `tinggi()` (DC:76-92), mm. */
-export function datumHeightMm(spec: StudioChartV1, family: "bar" | "column" | "threshold"): number {
+/** Token geometri batang DC (DC:150-156): jarak antarbaris, tebal batang, pita atas+bawah (mm). */
+export const DC_BAR_PITCH_MM = 7.2;
+export const DC_BAR_THICK_MM = 4.4;
+export const DC_BAR_PAD_MM = 6;
+
+/**
+ * FIX-H8 (D-322, uji Hermes E): tinggi badan minimum terbaca keluarga batang (bar/threshold),
+ * = tinggi plot panel bawaan Manual 000 Gambar 8.1 (`PANEL_DEFAULT_PLOT_MM` composite.ts; tidak
+ * diimpor agar tidak membentuk siklus impor, kesamaan dijaga uji unit). DC `tinggi()` tidak
+ * berbatas bawah: 2 batang = 20,4 mm pada lebar 128 mm (pita tipis). Hanya berlaku bila
+ * `n * 7,2 + 6 < 32`, yaitu n <= 3 kategori; n >= 4 tetap rumus DC persis (paritas Python).
+ */
+export const BAR_MIN_BODY_MM = 32;
+/** Batas tebal batang saat pita diperbesar: 2 x token DC (n = 1 tidak menjadi blok raksasa). */
+export const BAR_MAX_THICK_MM = 2 * DC_BAR_THICK_MM;
+
+/** Geometri baris batang: jarak antarbaris + tebal + geser ke tengah slot; `scaled` = aturan FIX-H8 aktif. */
+export interface BarRows {
+  pitch: number;
+  thick: number;
+  inset: number;
+  scaled: boolean;
+}
+
+/** Geometri DC tetap (tanpa aturan tinggi minimum). */
+export const DC_BAR_ROWS: Readonly<BarRows> = Object.freeze({ pitch: DC_BAR_PITCH_MM, thick: DC_BAR_THICK_MM, inset: 0, scaled: false });
+
+/** Geometri baris batang menurut jumlah kategori (DC persis bila n * 7,2 + 6 >= tinggi minimum). */
+export function barRows(n: number): BarRows {
+  const dcBody = n * DC_BAR_PITCH_MM + DC_BAR_PAD_MM;
+  if (n <= 0 || dcBody >= BAR_MIN_BODY_MM) return { ...DC_BAR_ROWS };
+  const pitch = (BAR_MIN_BODY_MM - DC_BAR_PAD_MM) / n;
+  const prop = (pitch * DC_BAR_THICK_MM) / DC_BAR_PITCH_MM;
+  const thick = Math.min(prop, BAR_MAX_THICK_MM);
+  return { pitch, thick, inset: (prop - thick) / 2, scaled: true };
+}
+
+/** Taksiran tinggi DC `tinggi()` (DC:76-92) tanpa batas bawah, mm (gaya gallery memakai ini). */
+export function dcHeightMm(spec: StudioChartV1, family: "bar" | "column" | "threshold"): number {
   const pts = spec.data?.shape === "categorical" ? spec.data.points : [];
   const n = pts.length;
   let badan = family === "column" ? 46 + (pts.some((p) => p.sub !== undefined && p.sub !== "") ? 12 : 0) : n * 7.2 + 6;
   if (spec.note) badan += 6;
   if (family === "threshold") badan += 5;
   return badan + (spec.apparatus === "figure" ? 22 : 0);
+}
+
+/**
+ * Tinggi kanvas gaya datum, mm: DC `tinggi()`, kecuali keluarga batang dengan n <= 3 kategori
+ * yang badannya dinaikkan ke `BAR_MIN_BODY_MM` (FIX-H8). Kolom tidak berubah (badan tetap 46 mm).
+ */
+export function datumHeightMm(spec: StudioChartV1, family: "bar" | "column" | "threshold"): number {
+  const dc = dcHeightMm(spec, family);
+  if (family === "column") return dc;
+  const n = spec.data?.shape === "categorical" ? spec.data.points.length : 0;
+  const rows = barRows(n);
+  return rows.scaled ? dc - (n * 7.2 + 6) + BAR_MIN_BODY_MM : dc;
 }
 
 /** `puncak` DC:139-140: maks |nilai| (dan |limit| bila limit bukan 0/None) x 1,14, atau 1. */
@@ -69,28 +118,42 @@ export function renderDatum(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
     const kanan = W - 24;
     const lebar = kanan - kiri;
     let y = 3;
-    const tb = 4.4;
-    const jarak = 7.2;
+    // FIX-H8: pita diperbesar hanya bila kanvas memang disediakan untuknya (tinggi gaya datum);
+    // panel/kanvas lebih pendek tetap memakai geometri DC tetap (tanpa luapan).
+    const rowsMin = barRows(pts.length);
+    const rows = rowsMin.scaled && H + 1e-9 >= datumHeightMm(spec, prep.family) ? rowsMin : DC_BAR_ROWS;
+    const tb = rows.thick;
+    const jarak = rows.pitch;
+    // Garis dasar label: DC `y + tb * 0,78`; pada pita diperbesar = tengah batang + selisih DC yang sama.
+    const baseline = (top: number): number => (rows.scaled ? top + tb / 2 + DC_BAR_THICK_MM * (0.78 - 0.5) : top + tb * 0.78);
+    if (rows.scaled) {
+      issues.push({
+        checkId: "BAR_MIN_HEIGHT",
+        status: "REPORT",
+        detail: `${pts.length} kategori: badan batang dinaikkan ke ${BAR_MIN_BODY_MM} mm (jarak ${jarak.toFixed(2)} mm, tebal ${tb.toFixed(2)} mm); DC ${(pts.length * DC_BAR_PITCH_MM + DC_BAR_PAD_MM).toFixed(1)} mm`,
+      });
+    }
     pts.forEach((x, i) => {
       const v = x.value;
       const L = (lebar * (v - lo)) / span;
       const lewat = limit !== null && v > limit;
       const warna = lewat ? prep.overColour : x.accent ? pal.role.accent : pal.ink700;
       const tinta = lewat ? prep.overColour : x.accent ? pal.role.accent : pal.ink900;
-      doc.text(kiri - 2.2, y + tb * 0.78, x.label, { face: D, sizePt: 6.6, fill: pal.ink400, anchor: "end" });
-      doc.rect(kiri, y, L, tb, warna, { mark: { mark: "bar", series, index: i } });
+      const top = y + rows.inset;
+      doc.text(kiri - 2.2, baseline(top), x.label, { face: D, sizePt: 6.6, fill: pal.ink400, anchor: "end" });
+      doc.rect(kiri, top, L, tb, warna, { mark: { mark: "bar", series, index: i } });
       if (prep.valueLabel !== "none") {
         const s = fmt(v, dec);
         const fits = L >= textWidthMm(s, 6.8, "data") + 2;
         if (prep.valueLabel === "inside" && fits) {
-          doc.text(kiri + L - 1.0, y + tb * 0.78, s, { face: D, sizePt: 6.8, fill: pal.paper, anchor: "end", attrs: ' data-label="value"' });
+          doc.text(kiri + L - 1.0, baseline(top), s, { face: D, sizePt: 6.8, fill: pal.paper, anchor: "end", attrs: ' data-label="value"' });
         } else {
-          doc.text(W - 1.5, y + tb * 0.78, s, { face: D, sizePt: 6.8, fill: tinta, anchor: "end", attrs: ' data-label="value"' });
+          doc.text(W - 1.5, baseline(top), s, { face: D, sizePt: 6.8, fill: tinta, anchor: "end", attrs: ' data-label="value"' });
         }
       }
       y += jarak;
     });
-    const dasar = y - jarak + tb + 1.4;
+    const dasar = y - jarak + rows.inset + tb + 1.4;
     doc.open('data-axis="y"');
     doc.line(kiri, 3, kiri, dasar, pal.ink900, dcPx(1.1));
     doc.close();

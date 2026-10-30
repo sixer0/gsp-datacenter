@@ -174,7 +174,10 @@ export type DiagramEdgeKind = (typeof DIAGRAM_EDGE_KINDS)[number];
 export const SYMBOL_DIALECTS = ["iec", "isa", "sec", "mil"] as const;
 export type SymbolDialect = (typeof SYMBOL_DIALECTS)[number];
 
-/** E23 — 70 RoleKey (§5.6, U01-U70), berurutan sesuai ID. */
+/**
+ * E23 — 76 RoleKey (§5.6, U01-U70 berurutan sesuai ID; U71-U76 = delta aditif FIX-TL D-351/D-352:
+ * peran entri daftar isi section dan lampiran, gaya bawaan turunan dari peran bab efektif).
+ */
 export const ROLE_KEYS = [
   "cover.logo",
   "cover.addressLine",
@@ -246,6 +249,13 @@ export const ROLE_KEYS = [
   "spacer.afterBlock",
   "spacer.afterList",
   "spacer.generic",
+  // FIX-TL (D-351/D-352): entri TOC section (indentasi tingkat 2, 1 pt lebih kecil) dan lampiran (bawaan = bab).
+  "toc.sectionLabel",
+  "toc.sectionTitle",
+  "toc.sectionPage",
+  "toc.appendixLabel",
+  "toc.appendixTitle",
+  "toc.appendixPage",
 ] as const;
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
@@ -327,6 +337,9 @@ export const STUDIO_ERROR_CODES = [
   "ASSET_NOT_FOUND",
   "DOCUMENT_INCOMPLETE",
   "CHAPTER_KEY_INVALID",
+  // Delta FIX-HR2 (aditif; D-332 C9, SR-56d): path `/api/studio/*` yang tidak cocok
+  // route mana pun (catch-all `[[...notfound]]`, FIX-H6). 404.
+  "ROUTE_NOT_FOUND",
 ] as const;
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number];
 

@@ -167,6 +167,8 @@ export const PARAM_SCOPE: ScopeRuleTable = {
     "image.widthClass": "section:image",
     "symbolSheet.widthClass": "section:symbolSheet",
     "appendix.kicker.pattern": "section:appendix",
+    // FIX-TL (D-351/D-352): kedalaman daftar isi, cakupan sama dengan kenop render.toc.* (prefiks di bawah).
+    "toc.levels": "section:toc",
   },
   groups: {
     P1: DOC,

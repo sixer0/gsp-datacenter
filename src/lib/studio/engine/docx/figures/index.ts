@@ -41,6 +41,7 @@ export {
   type FigureMediaEntry,
   type FigureMime,
 } from "./media";
+export { FIGURE_DESCR_MAX, FIGURE_NAME_MAX, FIGURE_NAME_SEPARATOR, figureAltText, normalizeAltText, shortenAtWord, stripSourceLabel, type FigureAltInput, type FigureAltText } from "../../front/alt-text";
 export { DOCPR_ID_BASE, EMU_PER_MM, inlineDrawingXml, mmToEmu, type InlineDrawing } from "./ooxml";
 export { FIGURE_LABELS, FIGURE_LABEL_SPACING, figureRole } from "./defaults";
 export {

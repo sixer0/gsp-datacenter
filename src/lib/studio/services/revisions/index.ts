@@ -48,7 +48,7 @@ import {
   stripTrustMarkersForWriter,
   validateSchema,
 } from "../ingest";
-import { renderRevision } from "../render";
+import { assertPdfRenderReady, renderRevision } from "../render";
 import { assertNoActiveRenderJob } from "../render/job";
 import { assertTemplateUsable, resolveTemplate } from "../templates";
 import { canonicalSha256, cloneJson, sha256Hex } from "./canonical";
@@ -569,6 +569,10 @@ export async function rerenderRevision(
     for (const o of prior) if (!firstSha.has(key(o))) firstSha.set(key(o), o.sha256);
 
     const fmts = formats?.length ? [...new Set(formats)] : pickFormats(asSnapshot(rev).doc, primaryFormats(prior));
+    // FIX-HZ1 (D-325): gerbang PDF yang sama dengan R17 (503 PDF_ENGINE_UNAVAILABLE tahap
+    // preflight, tanpa job) SETELAH 404/409 RENDER_IN_PROGRESS. Revisi INCOMPLETE dilewati
+    // agar 409 DOCUMENT_INCOMPLETE dari `renderRevision` tetap didahulukan (urutan R17).
+    if (rev.completeness !== "INCOMPLETE") await assertPdfRenderReady(fmts);
     const outcome = await renderRevision(rev.id, fmts, caller ?? INTERNAL_CALLER);
 
     let compared = 0;

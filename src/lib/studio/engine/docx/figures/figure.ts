@@ -45,6 +45,7 @@ import {
   mergePara,
   mergeRun,
 } from "./defaults";
+import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../front/alt-text";
 import { failRender, warnRender } from "./log";
 import { type FigureImage, type FigureMediaEntry, addMedia, figureImageFromBytes, figureMediaRelId, resolveRasterAsset } from "./media";
 import { DOCPR_ID_BASE, drawingParagraphXml, inlineRunsXml, paragraphXml, textRun } from "./ooxml";
@@ -366,6 +367,22 @@ function fileNameFor(block: NormBlock, fb: FigureBlock, ctx: RenderContext, labe
   return `${label}${n > 0 ? ` ${n + 1}` : ""}.${ext}`;
 }
 
+/** Masukan teks alternatif figur (FIX-H8): label, caption, sumber polos, bahasa, petunjuk jenis. */
+function figureAltInput(fb: FigureBlock, ctx: RenderContext, label: string): FigureAltInput {
+  let kindHint: string | undefined;
+  if (fb.type === "chart" && fb.spec && "kind" in fb.spec && typeof fb.spec.kind === "string") kindHint = fb.spec.kind;
+  else if (fb.type === "symbolSheet") kindHint = fb.dialect;
+  else if (fb.type === "image") kindHint = ctx.snapshot.doc.assets?.[fb.asset]?.path;
+  return {
+    type: fb.type,
+    label,
+    caption: inlinePlain(fb.caption.inline),
+    source: stripSourceLabel(inlinePlain(fb.source.inline)),
+    language: ctx.snapshot.doc.meta?.language,
+    kindHint,
+  };
+}
+
 // ── Renderer ─────────────────────────────────────────────────────────────
 
 function renderFigure(type: FigureBlockType): DocxBlockRenderer {
@@ -375,19 +392,22 @@ function renderFigure(type: FigureBlockType): DocxBlockRenderer {
     const label = captionLabel(block, fb.caption, ctx);
     const media: FigureMediaEntry[] = [];
     const sheets = figureSheets(block, fb, ctx);
-    const descr = `${label} ${inlinePlain(fb.caption.inline)}`.trim();
     const paraFormat = mergePara(role.para, fb.format, fb.paragraphFormat);
+    const altBase = figureAltInput(fb, ctx, label);
 
     let pictures = "";
     sheets.forEach((s, i) => {
       guardSheet(block, fb, s, ctx);
       const name = addMedia(media, s.img);
       const docPrId = DOCPR_ID_BASE + block.ordinal * 16 + i;
+      // FIX-H8: nama/judul/deskripsi objek dari nomor + caption (+ sumber), bukan "Picture n".
+      const alt = figureAltText({ ...altBase, sheet: { index: i + 1, count: sheets.length } });
       pictures += drawingParagraphXml(paraFormat, {
         relId: figureMediaRelId(name),
         docPrId,
-        docPrName: `Picture ${docPrId}`,
-        descr,
+        docPrName: alt.name,
+        descr: alt.descr,
+        title: alt.title,
         fileName: fileNameFor(block, fb, ctx, label, name.endsWith(".png") ? "png" : "jpg", i),
         widthMm: s.widthMm,
         heightMm: s.heightMm,

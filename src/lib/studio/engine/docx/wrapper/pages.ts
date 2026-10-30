@@ -31,6 +31,7 @@ import type {
   ParaFormat,
   PartSpec,
   RenderContext,
+  RunProps,
   SignatureBlock,
   StudioDocV1,
   TableBlock,
@@ -51,6 +52,7 @@ import {
   tocKickerText,
   type ControlSheetBlockKind,
 } from "../../front/texts";
+import { railK2ReserveOf } from "../blocks/rail";
 import { paraOf, pStr, roleFormat, type WrapperRole } from "./formats";
 import {
   datumRuleParagraphXml,
@@ -67,6 +69,18 @@ import {
   WrapperBuilder,
   type WrapperUnit,
 } from "./render";
+import {
+  bookmarkParagraph,
+  chapterTocTargetOf,
+  hasDerivedToc,
+  pageRefRunsXml,
+  partTocTarget,
+  tocEntryRoles,
+  tocLevelsOf,
+  tocOutline,
+  tocOutlineRange,
+  type TocTarget,
+} from "./toc-refs";
 import { inlinePlain, inlineRuns, paragraphXml, runsXml, scaleCols, tableXml, textInline, type WRow } from "./xml";
 
 // ── Pembantu ─────────────────────────────────────────────────────────────
@@ -303,43 +317,88 @@ export const renderControlSheet: DocxBlockRenderer = (block, ctx) => {
 
 // ── toc ──────────────────────────────────────────────────────────────────
 
-/** Entri daftar isi dari struktur dokumen (C14: bagian lalu babnya, bab tanpa bagian, lampiran). */
-export function deriveTocEntries(b: WrapperBuilder): TocEntry[] {
-  const doc = b.ctx.snapshot.doc;
-  const out: TocEntry[] = [];
-  const chapterEntry = (ch: Chapter, appendix: boolean): TocEntry => {
-    const list = appendix ? (doc.appendices ?? []) : doc.chapters;
-    const key = chapterKey(list, ch, appendix);
-    return { level: appendix ? "appendix" : "chapter", label: textInline(chapterLabel(b, ch, key, appendix)), title: ch.title, page: "" };
-  };
-  const partIds = new Set((doc.parts ?? []).map((p) => p.id));
-  for (const ch of doc.chapters) if (!ch.partId || !partIds.has(ch.partId)) out.push(chapterEntry(ch, false));
-  for (const p of doc.parts ?? []) {
-    // FIX-SERAH (D-295): label bawaan sama dengan pembatas bagian bila konten tanpa label (compose v2).
-    out.push({ level: "part", label: hasText(p.label) ? p.label : textInline(defaultPartLabelText(p.id, b.lang)), title: p.title, page: "" });
-    for (const ch of doc.chapters) if (ch.partId === p.id) out.push(chapterEntry(ch, false));
-  }
-  for (const a of doc.appendices ?? []) out.push(chapterEntry(a, true));
-  return out;
+/** Tingkat baris daftar isi: tingkat entri kontrak + section turunan (FIX-T2, D-342 S2). */
+export type TocRowLevel = TocEntry["level"] | "section";
+
+/** Entri daftar isi turunan struktur (bentuk TocEntry, tingkat boleh `section`). */
+export type DerivedTocEntry = Omit<TocEntry, "level"> & { level: TocRowLevel };
+
+/** Baris daftar isi: entri + sasaran penanda nomor halaman (FIX-H4; hanya entri turunan). */
+interface TocRow {
+  entry: DerivedTocEntry;
+  target?: TocTarget;
 }
 
-function entryRoles(level: TocEntry["level"]): [WrapperRole, WrapperRole, WrapperRole] {
-  return level === "part" ? ["toc.partLabel", "toc.partTitle", "toc.partPage"] : ["toc.chapterLabel", "toc.chapterTitle", "toc.chapterPage"];
+/**
+ * Entri turunan struktur beserta sasaran PAGEREF-nya: kerangka `tocOutline`
+ * (urutan C14, section tingkat 2 sesudah bab/lampirannya, tingkat = `toc.levels`).
+ */
+function deriveTocRows(b: WrapperBuilder): TocRow[] {
+  const bookmarked = hasDerivedToc(b.ctx.snapshot);
+  return tocOutline(b.ctx).map((node): TocRow => {
+    const target = bookmarked ? node.target : undefined;
+    switch (node.level) {
+      case "part": {
+        // FIX-SERAH (D-295): label bawaan sama dengan pembatas bagian bila konten tanpa label (compose v2).
+        const p = node.part;
+        const label = hasText(p.label) ? p.label : textInline(defaultPartLabelText(p.id, b.lang));
+        return { entry: { level: "part", label, title: p.title, page: "" }, target };
+      }
+      case "section":
+        // FIX-T2: label = nomor section (sama dengan kepala section), judul = judul section.
+        return { entry: { level: "section", label: textInline(node.number), title: node.section.title, page: "" }, target };
+      default: {
+        const appendix = node.level === "appendix";
+        return {
+          entry: { level: node.level, label: textInline(chapterLabel(b, node.chapter, node.key, appendix)), title: node.chapter.title, page: "" },
+          target,
+        };
+      }
+    }
+  });
+}
+
+/** Entri daftar isi dari struktur dokumen (C14: bagian lalu babnya, bab tanpa bagian, lampiran; section bila tingkatnya dimuat). */
+export function deriveTocEntries(b: WrapperBuilder): DerivedTocEntry[] {
+  return deriveTocRows(b).map((r) => r.entry);
+}
+
+/**
+ * Isi nomor halaman entri: halaman literal konten bila ada, selain itu medan
+ * PAGEREF ke penanda judul sasaran (FIX-H4), selain itu kosong.
+ */
+function tocPageRunsXml(b: WrapperBuilder, row: TocRow, run: RunProps): string {
+  if (row.entry.page) return runsXml([{ t: row.entry.page }], run, b.params);
+  return row.target ? pageRefRunsXml(row.target, run, b.params) : "";
+}
+
+/**
+ * Peran sel/paragraf entri per tingkat (FIX-TL, `tocEntryRoles` toc-refs = sumber bersama HTML):
+ * bagian = peran bagian; bab = peran bab; section = `toc.section*` (indentasi tingkat 2, 1 pt
+ * lebih kecil); lampiran = `toc.appendix*` bila templat menyetelnya, selain itu peran bab.
+ */
+function entryRoles(b: WrapperBuilder, level: TocRowLevel): readonly [WrapperRole, WrapperRole, WrapperRole] {
+  return tocEntryRoles(level, b.ctx.tpl.roleFormats) as unknown as readonly [WrapperRole, WrapperRole, WrapperRole];
 }
 
 /** Daftar isi statis T010 (KT-10..KT-15, TCP-11/12): label | judul | halaman. */
-function staticTocTable(b: WrapperBuilder, entries: readonly TocEntry[]): void {
+function staticTocTable(b: WrapperBuilder, tocRows: readonly TocRow[]): void {
   const grid = scaleCols([1474, 7144, 793], b.textWidthTw());
-  const rows: WRow[] = entries.map((e) => ({
-    cells: entryRoles(e.level).map((role, i) => {
+  const rows: WRow[] = tocRows.map((row) => ({
+    cells: entryRoles(b, row.entry.level).map((role, i) => {
       const rf = roleFormat(b.ctx, role);
-      const inline = i === 0 ? e.label : i === 1 ? e.title : textInline(e.page);
+      const e = row.entry;
+      // Kolom halaman tanpa literal: medan PAGEREF (FIX-H4); dengan literal: teks apa adanya (Manual 000 T010).
+      const content =
+        i === 2 && !e.page && row.target
+          ? tocPageRunsXml(b, row, rf.run ?? {})
+          : runsXml(inlineRuns(i === 0 ? e.label : i === 1 ? e.title : textInline(e.page)), rf.run ?? {}, b.params);
       return {
         widthTw: grid[i],
         borders: rf.cell?.borders,
         marginsTw: rf.cell?.marginsTw,
         shading: rf.cell?.shading,
-        paragraphsXml: paragraphXml(rf.para, runsXml(inlineRuns(inline), rf.run ?? {}, b.params)),
+        paragraphsXml: paragraphXml(rf.para, content),
       };
     }),
   }));
@@ -348,27 +407,44 @@ function staticTocTable(b: WrapperBuilder, entries: readonly TocEntry[]): void {
 
 /**
  * Daftar isi medan TOC (R-22 "field"): `TOC \o "1-2" \h \z \u` kompleks yang
- * membentang paragraf entri; hasil cache = entri statis tanpa halaman
- * (atau halaman literal bila diberikan) agar soffice/Word yang tidak
- * memperbarui medan tetap menampilkan isi. `updateFields` (R-03) diatur S14.
+ * membentang paragraf entri; hasil cache = entri statis dengan halaman literal
+ * bila diberikan, selain itu medan PAGEREF bersarang ke penanda judul (FIX-H4,
+ * pola hasil TOC Word) agar soffice/Word yang tidak memperbarui medan TOC tetap
+ * menampilkan isi bernomor halaman. `updateFields` (R-03) diatur S14.
  */
-function fieldTocXml(b: WrapperBuilder, entries: readonly TocEntry[]): void {
+function fieldTocXml(b: WrapperBuilder, tocRows: readonly TocRow[]): void {
+  const entries = tocRows.map((r) => r.entry);
   const width = b.textWidthTw();
-  const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
+  // FIX-T2: rentang kerangka medan = tingkat turunan (`toc.levels`; bawaan "1-2"); FIX-TQ: satu sumber `tocLevelsOf`.
+  const range = tocOutlineRange(tocLevelsOf(b.ctx).levels);
+  const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "${range}" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
   const end = `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
   if (entries.length === 0) {
     const rf = roleFormat(b.ctx, "toc.chapterTitle");
     b.push(paragraphXml(rf.para, begin + runsXml([{ t: L.tocPlaceholder[b.lang] }], rf.run ?? {}, b.params) + end));
     return;
   }
+  // FIX-H4: kolom label setara tabel statis T010 (tab kiri), halaman rata kanan di tepi kolom teks;
+  // dulu satu tab kanan saja sehingga judul terdorong ke kanan dan halaman jatuh ke baris berikut.
+  const labelTw = scaleCols([1474, 7144, 793], width)[0];
   entries.forEach((e, i) => {
-    const [lr, tr, pr] = entryRoles(e.level).map((r) => roleFormat(b.ctx, r));
-    const para: ParaFormat = { ...tr.para, tabs: [{ posTw: width, val: "right", leader: "none" }] };
+    const [lr, tr, pr] = entryRoles(b, e.level).map((r) => roleFormat(b.ctx, r));
+    // FIX-TL: entri section menjorok (indLeft peran section); tab judul ikut bergeser agar
+    // judul section juga menjorok terhadap judul bab. Tingkat lain: tab tetap (keluaran lama).
+    const shift = e.level === "section" ? (tr.para?.indLeftTw ?? 0) : 0;
+    const para: ParaFormat = {
+      ...tr.para,
+      tabs: [
+        { posTw: labelTw + shift, val: "left", leader: "none" },
+        { posTw: width, val: "right", leader: "none" },
+      ],
+    };
     const runs =
       runsXml(inlineRuns(e.label), lr.run ?? {}, b.params) +
       runsXml([{ tab: true }], tr.run ?? {}, b.params) +
       runsXml(inlineRuns(e.title), tr.run ?? {}, b.params) +
-      (e.page ? runsXml([{ tab: true }, { t: e.page }], pr.run ?? {}, b.params) : "");
+      (e.page ? runsXml([{ tab: true }, { t: e.page }], pr.run ?? {}, b.params) : "") +
+      (!e.page && tocRows[i].target ? runsXml([{ tab: true }], pr.run ?? {}, b.params) + tocPageRunsXml(b, tocRows[i], pr.run ?? {}) : "");
     b.push(paragraphXml(para, (i === 0 ? begin : "") + runs + (i === entries.length - 1 ? end : "")));
   });
 }
@@ -386,13 +462,18 @@ export const renderToc: DocxBlockRenderer = (block, ctx) => {
     items.push(paraItem("kicker", spec.kicker ?? textInline(tocKickerText(b.lang))));
     if (hasText(spec.title)) items.push(paraItem("title", spec.title));
     frontItemsXml(b, items);
-    let entries = spec.entries;
-    if (!entries || entries.length === 0) {
-      entries = deriveTocEntries(b);
-      if (spec.mode === "static") b.warn("daftar isi statis tanpa entries: entri diturunkan dari struktur dokumen tanpa nomor halaman", "BY_CONSTRUCTION_FAILED");
+    let rows: TocRow[];
+    if (spec.entries && spec.entries.length > 0) {
+      rows = spec.entries.map((entry) => ({ entry }));
+    } else {
+      if (tocLevelsOf(b.ctx).invalid) b.warn("parameter toc.levels tidak dikenal (bilangan bulat 1-3); kedalaman bawaan 2 dipakai", "SCHEMA_INVALID");
+      rows = deriveTocRows(b);
+      if (spec.mode === "static" && rows.some((r) => !r.target)) {
+        b.warn("daftar isi statis tanpa entries: sebagian entri turunan tanpa sasaran nomor halaman", "BY_CONSTRUCTION_FAILED");
+      }
     }
-    if (spec.mode === "static") staticTocTable(b, entries);
-    else fieldTocXml(b, entries);
+    if (spec.mode === "static") staticTocTable(b, rows);
+    else fieldTocXml(b, rows);
     if (hasText(spec.note)) b.push(roleParagraphXml(b, "toc.note", spec.note));
   });
 };
@@ -448,6 +529,19 @@ function isPartSpec(v: Record<string, unknown>): boolean {
   return typeof v.id === "string" && isObj(v.title) && Array.isArray(v.chapterKeys);
 }
 
+/**
+ * Lede pembatas bagian (K-22). Moda rel K2 (A + `framePr`, FIX-T2/D-350, paritas FIX-R1
+ * `hostFormat` varian plain): prosa tanpa chip selebar teks penuh, jadi indentasi kanan PERAN
+ * yang sama dengan cadangan rel dibuang. `table3col` (Manual 000) dan moda B: tanpa cadangan,
+ * keluaran sama dengan `roleParagraphXml`.
+ */
+function partLedeXml(b: WrapperBuilder, lede: Inline): string {
+  const rf = roleFormat(b.ctx, "part.lede");
+  const para: ParaFormat = { ...(rf.para ?? {}) };
+  if (para.indRightTw !== undefined && para.indRightTw === railK2ReserveOf((k) => b.params[k])) delete para.indRightTw;
+  return paragraphXml(para, runsXml(inlineRuns(lede), { ...(rf.run ?? {}) }, b.params));
+}
+
 export const renderPartDivider: DocxBlockRenderer = (block, ctx) => {
   const part = contentOf<PartSpec>(block, "partDivider", isPartSpec);
   return build(ctx, block, "part", (b) => {
@@ -455,8 +549,9 @@ export const renderPartDivider: DocxBlockRenderer = (block, ctx) => {
     frontItemsXml(b, body);
     const label = hasText(part.label) ? part.label : textInline(defaultPartLabelText(part.id, b.lang));
     b.push(roleParagraphXml(b, "wrapper.kicker", label));
-    b.push(roleParagraphXml(b, "part.title", part.title));
-    if (hasText(part.lede)) b.push(roleParagraphXml(b, "part.lede", part.lede));
+    // FIX-H4: penanda sasaran PAGEREF daftar isi (hanya bila TOC turunan ada).
+    b.push(bookmarkParagraph(partTocTarget(ctx, part.id), roleParagraphXml(b, "part.title", part.title)));
+    if (hasText(part.lede)) b.push(partLedeXml(b, part.lede));
     if (part.showChapterList !== false && part.chapterKeys.length > 0) partChapterList(b, part);
     if (!part.body && spinePlaced(b, "pembatas")) {
       b.push(spineXml(b, { runs: [{ t: spineText(b), caps: true }] }));
@@ -495,7 +590,9 @@ export const renderAppendixOpener: DocxBlockRenderer = (block, ctx) => {
     const kicker = hasText(ch.kicker) ? ch.kicker : textInline(appendixOpenerKickerText(key, b.lang, b.params["appendix.kicker.pattern"]));
     b.push(roleParagraphXml(b, "chapter.kicker", kicker));
     if (rulePlaced(b, "atas judul bab")) b.push(datumRuleParagraphXml(b));
-    b.push(roleParagraphXml(b, "chapter.title", ch.title));
+    // FIX-H4: penanda sasaran PAGEREF daftar isi (kunci efektif sama dengan entri turunan).
+    const target = idx >= 0 ? chapterTocTargetOf(ctx, apps[idx], true) : undefined;
+    b.push(bookmarkParagraph(target, roleParagraphXml(b, "chapter.title", ch.title)));
   });
 };
 

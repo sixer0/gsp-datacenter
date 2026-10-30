@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Editor `roleFormats` templat (70 peran, 01_specs.md §5.6) sebagai formulir
+ * Editor `roleFormats` templat (76 peran, 01_specs.md §5.6 + D-355) sebagai formulir
  * terstruktur: paragraf (`para`), run (`run`, `labelRun`, `numberRun`,
  * `markerRun`) per medan; struktur bersarang (tab, garis tepi, arsir, glyph,
  * sel) lewat JSON tervalidasi. Kosong = diwarisi (resolusi §5.6).

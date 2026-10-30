@@ -14,6 +14,7 @@ import {
   type ListBlock,
   type MonoBlock,
   type NormBlock,
+  type ParaFormat,
   type ParagraphBlock,
   type ParagraphRole,
   type ProvenanceMark,
@@ -25,6 +26,7 @@ import {
   type SpacerBlock,
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
+import { railK2ReserveOf } from "../../docx/blocks/rail";
 import { datumRulePlaced } from "../../front/apparatus";
 import { appendixOpenerKickerText, chapterKickerText } from "../../front/texts";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
@@ -33,7 +35,7 @@ import { datumRuleHtml, isDevice, renderDevice } from "./device";
 import { attr, escapeHtml, finite } from "./escape";
 import { DEFAULT_MD_ROLES, hasInline, inlineHtml, runHtml, type HtmlRun } from "./inline";
 import { baseRun, semanticRuns, semanticTransform } from "./semantic";
-import { roleFormat, runStyle, classStyle } from "./style";
+import { mergePara, roleFormat, runStyle, classStyle } from "./style";
 
 // ── Paragraf ─────────────────────────────────────────────────────────────
 
@@ -112,6 +114,21 @@ export function railHtml(ctx: RenderContext, rail: readonly RailLine[]): string 
   return `<div class="${C.rail}" role="note">${lines.join("")}</div>`;
 }
 
+/**
+ * K2 rev B (FIX-R1, padanan DOCX `hostFormat`): pada perender `framePr` moda A,
+ * indentasi kanan PERAN yang sama dengan cadangan rel (gutter + rel) dibuang. Prosa
+ * tanpa rel jadi selebar teks penuh; inang sudah menyempit lewat grid `.st-railhost`
+ * (kolom teks + rel), sehingga margin peran tidak menyempitkannya dua kali. Format
+ * eksplisit blok tetap menang. `table3col` (Manual 000) dan moda B tidak berubah.
+ */
+function k2Format(ctx: RenderContext, role: RoleKey, ...explicit: ReadonlyArray<ParaFormat | undefined>): ParaFormat | undefined {
+  const merged = explicit.some((f) => f && typeof f === "object") ? mergePara(...explicit) : undefined;
+  if (merged?.indRightTw !== undefined) return merged;
+  const reserve = railK2ReserveOf((k) => ctx.tpl?.params?.[k]);
+  if (reserve === undefined || roleFormat(ctx, role).para?.indRightTw !== reserve) return merged;
+  return { ...merged, indRightTw: undefined };
+}
+
 /** Bungkus elemen inang dengan rel bila ada; alamat dipasang di pembungkus. */
 function withRail(ctx: RenderContext, inner: string, rail: unknown, address: string | null, blockId?: string): string {
   if (!Array.isArray(rail) || rail.length === 0) return inner;
@@ -130,7 +147,7 @@ export const renderParagraph: HtmlBlockRenderer = (block, ctx) => {
     {
       classes: [map.tag === "p" ? C.paragraph : C.heading, `${C.paragraph}--${b.role ?? "body"}`],
       role: map.role,
-      format: b.format,
+      format: k2Format(ctx, map.role, b.format),
       run: b.runDefaults,
       address: hasRail ? undefined : block.address,
       blockId: hasRail ? undefined : block.blockId,
@@ -170,7 +187,7 @@ export const renderList: HtmlBlockRenderer = (block, ctx) => {
     const li = el(
       ctx,
       hasRail ? "div" : "li",
-      { classes: [C.listItem], role, format: { ...b.format, ...item.format }, run: b.runDefaults, address: hasRail ? undefined : address },
+      { classes: [C.listItem], role, format: k2Format(ctx, role, { ...b.format, ...item.format }), run: b.runDefaults, address: hasRail ? undefined : address },
       content,
     );
     return hasRail ? `<li>${withRail(ctx, li, item.rail, address)}</li>` : li;
@@ -256,7 +273,7 @@ export const renderAssumptionInline: HtmlBlockRenderer = (block, ctx) => {
     {
       classes: [C.paragraph, C.assumption],
       role: "body.paragraph",
-      format: b.format,
+      format: k2Format(ctx, "body.paragraph", b.format),
       run: b.runDefaults,
       address: block.address,
       blockId: block.blockId,

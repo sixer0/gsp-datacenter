@@ -266,6 +266,8 @@ export interface ContentProjection {
   revisionNo: number;
   /** slotKey yang diproyeksikan (absen untuk dokumen penuh). */
   slot?: string;
+  /** FIX-S3: sectionType slot terpilih (absen untuk dokumen penuh); dasar bentuk kiriman R20. */
+  sectionType?: string;
   content: ProjectedContent;
 }
 
@@ -296,15 +298,16 @@ export async function projectContentDetailed(
       revisionNo: rev.revisionNo,
     });
   }
-  if (!q.chapter) return { ...base, slot: q.slot, content: (sections[q.slot!] as DocSectionPayload | undefined) ?? null };
+  if (!q.chapter) {
+    const sectionType = rows.sections.find((s) => s.slotKey === q.slot)?.sectionTypeKey;
+    return { ...base, slot: q.slot, sectionType, content: (sections[q.slot!] as DocSectionPayload | undefined) ?? null };
+  }
 
-  const candidates = rows.sections
-    .filter((s) => isRepeatableSectionType(s.sectionTypeKey) && (!q.slot || s.slotKey === q.slot))
-    .map((s) => s.slotKey);
-  for (const slotKey of candidates) {
+  const candidates = rows.sections.filter((s) => isRepeatableSectionType(s.sectionTypeKey) && (!q.slot || s.slotKey === q.slot));
+  for (const { slotKey, sectionTypeKey } of candidates) {
     const chapters = (sections[slotKey] as { chapters?: ChapterV2[] } | undefined)?.chapters ?? [];
     const hit = chapters.find((c) => c.key === q.chapter);
-    if (hit) return { ...base, slot: slotKey, content: hit };
+    if (hit) return { ...base, slot: slotKey, sectionType: sectionTypeKey, content: hit };
   }
   throw new StudioEngineError("ADDRESS_NOT_FOUND", `Bab "${q.chapter}" tidak ada pada revisi ${rev.revisionNo}`, {
     chapter: q.chapter,

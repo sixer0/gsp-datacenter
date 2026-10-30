@@ -50,7 +50,7 @@ describe.each(FIXTURES)('determinisme DOCX %s', (f) => {
 });
 
 describe('jangkar lintas sesi (log keputusan)', () => {
-  it('fixture tabel (tanpa figur) + templat pendamping = sha256 a4e6ff62... (D-256; jangkar D-112 dimutakhirkan SR-42)', async () => {
+  it('fixture tabel (tanpa figur) + templat pendamping = sha256 aeb65a3d... (D-256, FIX-HZ2; jangkar D-112 dimutakhirkan SR-42)', async () => {
     // D-112: "4 fixture: memo 7eff336b..., tables e9d08818..., ..." (render kanonik).
     // SR-42 (D-130 menjadwalkan pembaruan; file_requests.md:100). Rantai jangkar
     // diverifikasi per bagian ZIP terhadap arsip DOCX:
@@ -64,6 +64,9 @@ describe('jangkar lintas sesi (log keputusan)', () => {
     //     (margin dalam 25, atas/bawah 20 -> kolom 127 mm: tblW 7257 -> 7200, png garis datum
     //     sesuai lebar baru), format per tabel dibuang (lebar kolom, perataan, arsir; D-139).
     //     Sha = render_cli --template pendamping (a4e6ff6298e44be3), 3 render x 3 proses identik.
+    //   a4e6ff62 -> aeb65a3d (FIX-HZ2, D-326): hanya word/document.xml, 2 `wp:docPr` Datum Rule
+    //     (sampul + bab) ditandai dekoratif (name bermakna, descr="", adec:decorative); identik
+    //     setelah docPr dinetralkan, teks w:t identik (tests/parity/out/fixhz2/tables_{before,after}).
     // Fixture tabel tidak memuat figur, jadi FigureStore stub tidak memengaruhinya.
     const fixtureSha = sha256(readFileSync(path.join(FIXTURE_DIR, 'doc_nota_tables.json')));
     expect(fixtureSha, 'fixture doc_nota_tables.json berubah: ambil ulang jangkar dengan analisis selisih').toBe(TABLES_FIXTURE_SHA);
@@ -75,7 +78,7 @@ describe('jangkar lintas sesi (log keputusan)', () => {
     // Tiga render berurutan identik (determinisme), lalu jangkar.
     const shas = [await render(), await render(), await render()];
     expect(new Set(shas).size).toBe(1);
-    expect(shas[0].slice(0, 8)).toBe('a4e6ff62');
+    expect(shas[0].slice(0, 8)).toBe('aeb65a3d');
   }, 60_000);
 
   it('issueDate berbeda mengubah mtime ZIP (stempel waktu berasal dari dokumen, bukan jam)', async () => {

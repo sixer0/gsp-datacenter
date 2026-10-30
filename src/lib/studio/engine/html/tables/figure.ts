@@ -28,6 +28,7 @@ import type {
   SymbolSheetBlock,
 } from "../../../contract";
 import { docAssetBytes } from "../../bind";
+import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../front/alt-text";
 import { classDerivedWidth, rasterPlacedWidthMm } from "../../tokens/raster-width";
 import { symbolSheetSvg, type SymbolSheetOptions } from "../../symbols";
 import { artifactLabel, captionHtml, keyRowHtml, sourceParagraphHtml } from "./apparatus";
@@ -126,7 +127,7 @@ function resolveGraphic(block: NormBlock, fb: FigureBlock, ctx: RenderContext, l
       if (typeof blockH === "number" && blockH > 0) opts.heightMm = blockH;
       const sheets = symbolSheetSvg(fb.dialect, fb.cols, opts);
       const parts = sheets
-        .map((s, i) => svgHtml(s, ctx, block, `${prefix}-s${i}`, widthMm, undefined, `${aria} (${i + 1}/${sheets.length})`))
+        .map((s, i) => svgHtml(s, ctx, block, `${prefix}-s${i}`, widthMm, undefined, sheetAria(fb, ctx, label, i + 1, sheets.length)))
         .filter((s): s is string => !!s);
       if (parts.length > 0) return { html: parts.join(""), source: "symbols" };
     } catch (e) {
@@ -155,6 +156,29 @@ function resolveGraphic(block: NormBlock, fb: FigureBlock, ctx: RenderContext, l
   return { html: `<div class="st-figure-missing" style="${escText(style)}">${escText(`${labels(ctx).figureMissing}: ${label || fb.type}`)}</div>`, source: "missing" };
 }
 
+/**
+ * Teks alternatif figur (FIX-H8): SATU sumber dengan `wp:docPr` DOCX (`engine/front/alt-text`):
+ * label + caption + "Sumber: ..."; tanpa caption -> subjek dari jenis figur.
+ */
+function htmlAltInput(fb: FigureBlock, ctx: RenderContext, label: string): FigureAltInput {
+  let kindHint: string | undefined;
+  if (fb.type === "chart" && fb.spec && typeof fb.spec === "object" && "kind" in fb.spec && typeof fb.spec.kind === "string") kindHint = fb.spec.kind;
+  else if (fb.type === "symbolSheet") kindHint = fb.dialect;
+  else if (fb.type === "image") kindHint = ctx.snapshot?.doc?.assets?.[fb.asset]?.path;
+  return {
+    type: fb.type,
+    label,
+    caption: inlinePlain(fb.caption?.inline),
+    source: stripSourceLabel(inlinePlain(fb.source?.inline)),
+    language: ctx.snapshot?.doc?.meta?.language,
+    kindHint,
+  };
+}
+
+function sheetAria(fb: FigureBlock, ctx: RenderContext, label: string, index: number, count: number): string {
+  return figureAltText({ ...htmlAltInput(fb, ctx, label), sheet: { index, count } }).descr;
+}
+
 /** Renderer HtmlBlockRenderer untuk chart/diagram/image/symbolSheet. */
 export function renderFigureBlock(block: NormBlock, ctx: RenderContext): string {
   const fb = block.content as FigureBlock | null;
@@ -164,7 +188,7 @@ export function renderFigureBlock(block: NormBlock, ctx: RenderContext): string 
   }
   const common: FigureCommon = fb;
   const label = artifactLabel(block, ctx, common.caption);
-  const aria = [label, inlinePlain(common.caption?.inline)].filter(Boolean).join(" ");
+  const aria = figureAltText(htmlAltInput(fb, ctx, label)).descr;
   const g = resolveGraphic(block, fb, ctx, label, aria);
   const rf = role(ctx, "figure.paragraph");
   const graphicStyle = css(paraCss(common.paragraphFormat ?? rf.para).replace("white-space:pre-wrap", "white-space:normal"), "line-height:0");

@@ -46,6 +46,7 @@ function textDevice(env: BlockEnv, d: DeviceBlock, role: RoleKey): string {
 }
 
 function imageDevice(env: BlockEnv, d: DeviceBlock, role: RoleKey, defaultWidthMm: number, fallbackAsset?: string): string {
+  const decorative = d.device === "logo" ? "logo" : d.device === "datumRule" ? "datumRule" : "ornament";
   const rf = env.role(role, { lineTw: 240, lineRule: "auto" });
   const para = mergePara(rf.para, d.format);
   const widthMm = d.widthMm ?? defaultWidthMm;
@@ -55,7 +56,7 @@ function imageDevice(env: BlockEnv, d: DeviceBlock, role: RoleKey, defaultWidthM
   const docAsset = key ? env.ctx.snapshot.doc.assets?.[key] : undefined;
   let heightMm = img ? imageHeightMm(img, widthMm, d.heightMm) : undefined;
   if (heightMm === undefined && img && docAsset?.widthPx && docAsset.heightPx) heightMm = (widthMm * docAsset.heightPx) / docAsset.widthPx;
-  if (img && heightMm !== undefined) return env.para(para, inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {})));
+  if (img && heightMm !== undefined) return env.para(para, inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {}), decorative));
   if (img) env.warn(`device ${d.device}: tinggi gambar tidak diketahui (isi heightMm)`, "ASSET_TYPE_UNSUPPORTED");
   if (d.device === "datumRule") {
     env.warn(`device datumRule memakai cadangan garis bawah paragraf (aset "${key ?? "-"}")`);

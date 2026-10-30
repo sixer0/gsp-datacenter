@@ -137,3 +137,27 @@
 | DL-1 datum_lint | test-expert | a0dc559eb7626c7dc |
 | SR-45 lanjutan multipart | test-expert | a974d1cafdf836cde |
 | FIX-F (penutup review akhir) | coder-execution | aafe0ee945eb3311a |
+
+## Batch Hermes (2026-10-30, D-322)
+| Baris | Agen | ID |
+|---|---|---|
+| FIX-H1 | coder-execution | ab563e57e1fb40f09 |
+| FIX-H2 | coder-execution | a54ff02baeec8f575 |
+| FIX-H4 | coder-execution | ab3a3e4c98336f278 |
+| FIX-H6 | coder-execution | a776ad8b514c7a792 |
+| FIX-H7 | coder-execution | a8d63f9e48611af5f |
+| FIX-H8 | coder-execution | af9d6d46fd728232b |
+| FIX-HZ1 | coder-execution | ad0866ed859d325c5 |
+| FIX-HZ2 | coder-execution | aae5c489533e0143d |
+| FIX-HZ3 | coder-execution | aabdfe58fcceac4f7 |
+| FIX-HR1 | coder-execution | ab347fc7103dd8734 |
+| FIX-HR2 | coder-execution | a362fc6b82974d336 |
+| FIX-HR3 | coder-execution | a499d1fbb29e6c60a |
+
+## Tindak lanjut uji ulang Hermes (2026-10-30, D-342)
+| Baris | Agen | ID |
+|---|---|---|
+| FIX-R1 | coder-execution | a3990f4e9a43cf0a2 |
+| FIX-T2 | coder-execution | a70debc8fe1502831 |
+| FIX-S3 | coder-execution | afd07adb3a42331b1 |
+| FIX-CLI | coder-execution | ad7881c52515527d6 |

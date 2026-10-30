@@ -29,6 +29,7 @@ import { inlineRuns, runsXmlWith, runXmlWith } from "./runs";
 import { applySemanticRuns } from "./semantic";
 import type { Inline, Run } from "../../../contract";
 import { paragraph } from "./xml";
+import { resolveRailLayout } from "./rail";
 
 export interface MediaItem {
   name: string;
@@ -181,19 +182,8 @@ export class BlockEnv {
   }
 
   rail(): RailLayout {
-    const rendererParam = this.param("render.rail.renderer");
-    const renderer = rendererParam === "table3col" ? "table3col" : "framePr";
-    const raw = this.param("render.rail.colsTw");
-    let colsTw = Array.isArray(raw) && raw.every(isNum) && raw.length > 0 ? (raw as number[]).map(Math.round) : undefined;
-    if (!colsTw) {
-      const text = this.requiredNum("grid.textColumnMm");
-      const gutter = this.num("grid.gutterMm") ?? 6;
-      const rail = this.num("grid.evidenceRailMm") ?? 32;
-      colsTw = this.param("layout.railMode") === "B" ? [mmToTw(text + gutter + rail)] : [mmToTw(text), mmToTw(gutter), mmToTw(rail)];
-    }
-    // `auto` tanpa konteks sitasi = susunan moda A (D-37); B bila diminta atau kolom rel tunggal.
-    const mode = this.param("layout.railMode") === "B" || colsTw.length < 3 ? "B" : "A";
-    return { mode, renderer, colsTw };
+    // Sumber tunggal tata rel (FIX-R1): resolver murni dipakai juga oleh assert G-RAIL-3 perakit.
+    return resolveRailLayout((k) => this.param(k), () => this.requiredNum("grid.textColumnMm"));
   }
 
   /**

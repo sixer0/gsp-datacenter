@@ -10,6 +10,10 @@
  * implementasi nyata; ganti dengan impor langsung bila tipe SR-15 sudah final.
  *
  * Berkas khusus server (menarik Prisma lewat services/render).
+ *
+ * FIX-HR2 (D-332 C1): `assertRenderTarget` (baca DB kedua yang menyalin pencarian
+ * `prepareScopeRender`) dihapus bersama gerbang PDF di route; 404 kini selalu
+ * datang dari `renderScope`.
  */
 import * as renderService from "@/lib/studio/services/render";
 import type { RenderScopeFn } from "./handler";
@@ -18,3 +22,4 @@ export function resolveRenderScope(): RenderScopeFn | null {
   const fn = (renderService as unknown as Record<string, unknown>).renderScope;
   return typeof fn === "function" ? (fn as RenderScopeFn) : null;
 }
+

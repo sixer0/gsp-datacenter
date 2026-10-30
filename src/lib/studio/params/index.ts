@@ -4,7 +4,8 @@
  * 37 petunjuk tergambar galeri: 31 IP-41c + 3 axis P-13/P-14/S-01 FIX-A + 3 axis S-02/S-03/S-04
  * FIX-A2, registry/charts.ts), semua `origin: "catalog"`.
  * Parameter kontrak (`origin: "contract"`) dihitung terpisah (D-24 butir 1): renderer
- * R-01..R-37 + R-59..R-64 (RQ-8) + R-65 (FIX-FIG D-257) = 44 dan struktur R-38..R-58 = 21 (params/structure.ts). Total 787.
+ * R-01..R-37 + R-59..R-64 (RQ-8) + R-65 (FIX-FIG D-257) + R-66 (FIX-TL `toc.levels`, D-351/D-352) = 45
+ * dan struktur R-38..R-58 = 21 (params/structure.ts). Total 788.
  *
  * Setiap ParamDef diberi `scope` (registry/slots.ts PARAM_SCOPE) dan `surface`
  * (registry/essentials.ts PARAM_SURFACE) di sini, satu sumber (SR-01 §13.5).
@@ -31,7 +32,7 @@ export * from "./render";
 export * from "./structure";
 
 export const CATALOG_PARAM_COUNT = 722;
-export const RENDER_PARAM_COUNT = 44;
+export const RENDER_PARAM_COUNT = 45;
 export const STRUCTURE_PARAM_COUNT = 21;
 export const ALL_PARAM_COUNT = CATALOG_PARAM_COUNT + RENDER_PARAM_COUNT + STRUCTURE_PARAM_COUNT;
 

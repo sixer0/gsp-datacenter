@@ -212,7 +212,8 @@ function htmlTexts(html: string): FrontTexts {
       kicker: roleTexts(toc, 'front.kicker')[0],
       title: roleTexts(toc, 'toc.title')[0],
       note: roleTexts(toc, 'toc.note')[0],
-      labels: [...toc.matchAll(/data-role="toc\.(?:chapter|part)Label"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => decode(m[1].replace(/<[^>]+>/g, '')).trim()),
+      // FIX-TL (D-351/D-352): entri section memakai peran toc.sectionLabel (lampiran toc.appendixLabel bila disetel templat).
+      labels: [...toc.matchAll(/data-role="toc\.(?:chapter|part|section|appendix)Label"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => decode(m[1].replace(/<[^>]+>/g, '')).trim()),
     },
     // Kicker/label konten (bukan teks bawaan) tidak bisa dikenali di DOCX: bandingkan yang berpola bawaan.
     partLists: roleTexts(parts, 'part.chapterNo').filter((t) => KICK.test(t)),
@@ -247,7 +248,8 @@ describe('paritas teks bawaan pembungkus DOCX = HTML (F-055)', () => {
     expect(html.cs.headings).toEqual(['A · Riwayat revisi', 'B · Rantai verifikasi', 'C · Pernyataan metode', 'D · Distribusi terkendali']);
     expect(html.toc.kicker).toBe('Daftar Isi');
     expect(html.toc.title).toBeUndefined();
-    expect(html.toc.labels).toEqual(['Bagian I', 'Bab 1', 'Bab 2', 'Bagian II', 'Bab 3', 'Lampiran A']);
+    // FIX-T2 (D-342 S2): TOC turunan bawaan memuat section (kedalaman 2).
+    expect(html.toc.labels).toEqual(['Bagian I', 'Bab 1', '1.1', '1.2', 'Bab 2', '2.1', 'Bagian II', 'Bab 3', '3.1', 'Lampiran A', 'A.1']);
     expect(html.kickers).toEqual(['BAB 1', 'BAB 2', 'BAB 3', 'Lampiran A']);
   }, 120_000);
 
@@ -258,7 +260,8 @@ describe('paritas teks bawaan pembungkus DOCX = HTML (F-055)', () => {
     expect(html.cs.headings).toEqual(['A · Revision history', 'B · Verification chain', 'C · Method statement', 'D · Controlled distribution']);
     expect(html.toc.kicker).toBe('Contents');
     // Label bagian fixture = konten ("Bagian I"); label bab/lampiran = teks bawaan EN.
-    expect(html.toc.labels).toEqual(['Bagian I', 'Chapter 1', 'Chapter 2', 'Bagian II', 'Chapter 3', 'Appendix A']);
+    // FIX-T2 (D-342 S2): TOC turunan bawaan memuat section (kedalaman 2).
+    expect(html.toc.labels).toEqual(['Bagian I', 'Chapter 1', '1.1', '1.2', 'Chapter 2', '2.1', 'Bagian II', 'Chapter 3', '3.1', 'Appendix A', 'A.1']);
     // O-1: kicker bab EN = "CHAPTER {n}" di kedua format.
     expect(html.kickers).toEqual(['CHAPTER 1', 'CHAPTER 2', 'CHAPTER 3', 'Appendix A']);
   }, 120_000);
@@ -300,7 +303,8 @@ describe('paritas teks bawaan pembungkus DOCX = HTML (F-055)', () => {
     expect(html.cs.title).toBe(doc.meta.title);
     expect(html.cs.headings).toEqual(['A · Rantai verifikasi', 'B · Pernyataan metode', 'C · Distribusi terkendali']);
     expect(html.toc).toMatchObject({ kicker: 'Daftar Isi', title: 'Peta Isi', note: 'Catatan daftar isi uji.' });
-    expect(html.toc.labels).toEqual(['Bagian I', 'Pembuka', 'Bab 2', 'Bagian II', 'Bab 3', 'Lampiran A']);
+    // FIX-T2 (D-342 S2): TOC turunan bawaan memuat section (kedalaman 2).
+    expect(html.toc.labels).toEqual(['Bagian I', 'Pembuka', '1.1', '1.2', 'Bab 2', '2.1', 'Bagian II', 'Bab 3', '3.1', 'Lampiran A', 'A.1']);
     expect(html.partLists).toEqual(['Bab 2', 'Bab 3']);
     expect(roleTexts(rawHtml, 'part.chapterNo')).toEqual(['Pembuka', 'Bab 2', 'Bab 3']);
     expect(roleTexts(rawHtml, 'chapter.kicker')[0]).toBe('Pembuka');

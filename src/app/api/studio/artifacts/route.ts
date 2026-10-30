@@ -8,7 +8,10 @@
  *      `hermesTaskId`; `take` 1..200 (default 50).
  * POST `ArtifactCreateRequest` (JSON, atau multipart `request`/`spec` + `file`
  *      untuk aset raster) -> validasi -> baris `StudioArtifact` -> render S51
- *      -> 201 `{ artifact, outputs, job, errors, lint? }`. Otorisasi templat
+ *      -> 201 `{ artifact, outputs, job, errors, partial, failedFormats, lint? }`
+ *      + header `X-Studio-Render-Status: <status job>` (FIX-H1, D-322: job
+ *      PARTIAL tidak boleh terbaca sukses polos; 201 dipertahankan karena baris
+ *      artefak sudah dibuat). Otorisasi templat
  *      (403) dan gerbang dokumen inline (422) berjalan di `prepareArtifact`
  *      dengan `caller` sebelum baris dibuat (INT-U, F-048).
  *
@@ -22,7 +25,7 @@ import { requireSession } from "@/lib/require-session";
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { STUDIO_ARTIFACT_KINDS, type StudioArtifactKind } from "@/lib/studio/contract/enums";
 import type { ValidationIssue } from "@/lib/studio/contract/types/api";
-import { assertRenderCapacity, renderArtifact } from "@/lib/studio/services/render";
+import { assertRenderCapacity, renderArtifact, renderOutcomeMarker, renderStatusHeaders } from "@/lib/studio/services/render";
 import { assertMissionRefs } from "@/lib/studio/services/storage";
 import { toArtifactListItem, toArtifactSummary } from "./_lib/dto";
 import { apiLog, checkRenderRate, failure, issue, json, NO_STORE, reqCtx, schemaInvalid } from "@/lib/studio/http";
@@ -131,13 +134,14 @@ export async function POST(req: NextRequest) {
 
     const outcome = await renderArtifact(row.id, prepared.formats, caller);
     const fresh = (await prisma.studioArtifact.findUnique({ where: { id: row.id } })) ?? row;
+    const marker = renderOutcomeMarker(outcome.job, outcome.outputs, outcome.errors);
     if (outcome.job.status !== "SUCCEEDED") {
       apiLog({
         ...ctx,
         level: "warn",
         message: `artifact render ${outcome.job.status}`,
         code: outcome.errors[0]?.code ?? "RENDER_INCOMPLETE",
-        context: { artifactId: row.id, jobId: outcome.job.id, errorCodes: outcome.errors.map((x) => x.code) },
+        context: { artifactId: row.id, jobId: outcome.job.id, errorCodes: outcome.errors.map((x) => x.code), failedFormats: marker.failedFormats },
       });
     }
     return json(
@@ -146,11 +150,12 @@ export async function POST(req: NextRequest) {
         outputs: outcome.outputs,
         job: outcome.job,
         errors: outcome.errors,
+        ...marker,
         ...(outcome.lint ? { lint: outcome.lint } : {}),
       },
       201,
       ctx,
-      NO_STORE,
+      { ...NO_STORE, ...renderStatusHeaders(outcome.job) },
     );
   } catch (e) {
     return failure(e, ctx, {

@@ -15,8 +15,9 @@ import { SLOT_STATE_LABEL, SLOT_STATE_TONE, actorLabel, formatDateTime, slotLabe
 import { useNotice } from "@/components/studio/shared/notice";
 import { errorMessages } from "@/components/studio/shared/error-messages";
 import { renderDocument } from "./doc-api";
-import { missingSummaryText } from "./doc-model";
+import { missingSummaryText, type RenderResponse } from "./doc-model";
 import { useDocPage } from "./doc-context";
+import { outcomeOf, pdfNotReadyOf, type RenderOutcomeInput } from "./render-card-outcome";
 
 function initials(by: string): string {
   const parts = by.split(/[-_.\s]+/).filter(Boolean);
@@ -57,25 +58,41 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 export { copyToClipboard };
 
-/** "Buat draf bagian ini" (W6): draf PDF bertanda DRAF; galat ditampilkan inline. */
+/** Teks notifikasi hasil draf (FIX-HZ1: hasil sebagian dalam bahasa awam). */
+export function draftNotice(label: string, res: RenderOutcomeInput): { message: string; tone: "warn" | "success" } {
+  const o = outcomeOf(res);
+  if (o.failed) return { message: `Draf ${label} gagal dibuat${o.text ? `: ${o.text}` : ""}`, tone: "warn" };
+  if (o.partial) return { message: `Draf ${label}: ${o.text}`, tone: "warn" };
+  return { message: `Draf ${label}: berkas siap`, tone: "success" };
+}
+
+/**
+ * "Buat draf bagian ini" (W6): draf PDF bertanda DRAF; galat ditampilkan inline.
+ * FIX-HZ1 (D-325): 503 PDF tahap preflight -> alasan + penyebab awam dan tombol
+ * "Buat draf Word" (permintaan tanpa PDF tidak terhalang mesin PDF).
+ */
 function DraftButton({ scope, keyName, label }: { scope: "slot" | "chapter"; keyName: string; label: string }) {
   const { id, navigate, refreshAll } = useDocPage();
   const { notify } = useNotice();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  async function run() {
+  const [pdfCauses, setPdfCauses] = useState<string[] | null>(null);
+  async function run(formats: Array<"pdf" | "docx"> = ["pdf"]) {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setPdfCauses(null);
     try {
-      const r = await renderDocument(id, { scope, key: keyName, formats: ["pdf"] });
-      notify({
-        message: r.job.status === "FAILED" ? `Draf ${label} gagal dibuat` : `Draf ${label}: berkas siap`,
-        tone: r.job.status === "FAILED" ? "warn" : "success",
-        action: { label: "Lihat berkas", onClick: () => navigate({ tab: "berkas" }) },
-      });
+      const r: RenderResponse & Pick<RenderOutcomeInput, "partial" | "failedFormats"> = await renderDocument(id, { scope, key: keyName, formats });
+      notify({ ...draftNotice(label, r), action: { label: "Lihat berkas", onClick: () => navigate({ tab: "berkas" }) } });
       refreshAll();
     } catch (e) {
+      const pdf = pdfNotReadyOf(e);
+      if (pdf) {
+        setError(`${pdf.title}. ${pdf.body}`);
+        setPdfCauses(pdf.causes);
+        return;
+      }
       const m = errorMessages(e);
       setError(`${m.title}. ${m.body}`);
     } finally {
@@ -88,9 +105,21 @@ function DraftButton({ scope, keyName, label }: { scope: "slot" | "chapter"; key
         {busy ? "Draf sedang dibuat…" : "Buat draf bagian ini"}
       </Button>
       {error && (
-        <p role="alert" className="text-[12px] text-[var(--down)]">
-          {error}
-        </p>
+        <div role="alert" className="space-y-1 text-[12px]">
+          <p className="text-[var(--down)]">{error}</p>
+          {pdfCauses && pdfCauses.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-4 text-[var(--text-2)]">
+              {pdfCauses.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+          {pdfCauses && (
+            <Button size="sm" onClick={() => void run(["docx"])} ariaDisabled={busy} className="whitespace-nowrap">
+              {busy ? "Draf sedang dibuat…" : "Buat draf tanpa PDF (Word)"}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

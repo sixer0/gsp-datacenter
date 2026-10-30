@@ -36,6 +36,16 @@ export {
   type SnapshotRecomposer,
 } from "./snapshot";
 export {
+  CHAPTER_SUBMIT_TO,
+  CONTENT_SHAPES,
+  SLOT_SUBMIT_TO,
+  SUBMISSION_EDIT_HINTS,
+  toSubmissionShape,
+  type ContentShape,
+  type SubmissionShape,
+  type SubmissionShapeOptions,
+} from "./submission";
+export {
   adaptLegacySnapshot,
   adaptorPidMismatches,
   checkLegacyReconstruction,

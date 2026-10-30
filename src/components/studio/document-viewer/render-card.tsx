@@ -14,6 +14,11 @@
  *   saat tab terlihat.
  * - 409 DOCUMENT_INCOMPLETE (balapan): pesan awam + rel diperbarui. 429/503:
  *   hitung mundur dari Retry-After.
+ * - FIX-HZ1 (D-325): 503 PDF_ENGINE_UNAVAILABLE tahap preflight (server menolak
+ *   sebelum pekerjaan dibuat) -> alasan + penyebab awam dan tombol "Buat tanpa PDF"
+ *   memakai `suggestedFormats` server (tidak menunggu hitung mundur, karena permintaan
+ *   tanpa PDF tidak terhalang). Hasil sebagian (`partial`, `failedFormats`) -> kalimat
+ *   awam format mana yang belum berhasil (`render-card-outcome.ts`).
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { FileCheck2, FileClock, Loader2, RefreshCw } from "lucide-react";
@@ -27,10 +32,9 @@ import { FORMAT_LABEL } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { useCooldown } from "@/components/studio/shared/use-cooldown";
 import { renderDocument } from "./doc-api";
-import { incompleteReportOf, missingLabel, type RenderJobScoped } from "./doc-model";
+import { incompleteReportOf, missingLabel, type RenderResponse } from "./doc-model";
 import { useDocPage } from "./doc-context";
-
-type DocFormat = "pdf" | "docx" | "html";
+import { outcomeOf, pdfNotReadyOf, type DocFormat, type PdfNotReadyView, type RenderOutcomeInput } from "./render-card-outcome";
 const FORMAT_CHOICES: Array<{ id: DocFormat; label: string; code: StudioOutputFormat }> = [
   { id: "pdf", label: "PDF", code: "PDF" },
   { id: "docx", label: "Word", code: "DOCX" },
@@ -69,12 +73,19 @@ function draftOptions(report: CompletenessReportV2 | null): DraftOption[] {
   return out;
 }
 
-function jobProblems(job: RenderJobScoped): string[] {
+/** Respons R17 + penanda hasil sebagian FIX-H1 (opsional untuk server lama). */
+type RenderResult = RenderResponse & Pick<RenderOutcomeInput, "partial" | "failedFormats">;
+
+function jobProblems(res: RenderResult): string[] {
   const out: string[] = [];
-  for (const e of job.errors ?? []) {
-    const fmt = e.format ? FORMAT_LABEL[e.format] ?? e.format : null;
+  const outcome = outcomeOf(res);
+  if (outcome.text) out.push(outcome.text);
+  for (const e of res.job.errors ?? []) {
     if (e.code === "PDF_ENGINE_UNAVAILABLE") out.push("Mesin cetak PDF sedang tidak siap.");
-    else out.push(fmt ? `${fmt} gagal dibuat.` : "Sebagian berkas gagal dibuat.");
+    else if (!outcome.text) {
+      const fmt = e.format ? FORMAT_LABEL[e.format] ?? e.format : null;
+      out.push(fmt ? `${fmt} gagal dibuat.` : "Sebagian berkas gagal dibuat.");
+    }
   }
   return [...new Set(out)];
 }
@@ -88,7 +99,8 @@ export function RenderCard() {
   const [showMissing, setShowMissing] = useState(false);
   const [error, setError] = useState<{ title: string; body: string; retryable: boolean; code: string } | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
-  const [lastJob, setLastJob] = useState<RenderJobScoped | null>(null);
+  const [lastJob, setLastJob] = useState<RenderResponse["job"] | null>(null);
+  const [pdfBlock, setPdfBlock] = useState<{ view: PdfNotReadyView; withoutPdf: (() => void) | null } | null>(null);
   const cooldown = useCooldown();
   const reasonId = useId();
   const missingId = useId();
@@ -120,18 +132,20 @@ export function RenderCard() {
     return () => window.clearTimeout(timer);
   }, [lastJob, refreshAll]);
 
-  async function run(kind: "full" | "draft", body: Parameters<typeof renderDocument>[1], label: string) {
-    if (busy || cooldown.secondsLeft > 0) return;
+  async function run(kind: "full" | "draft", body: Parameters<typeof renderDocument>[1], label: string, bypassCooldown = false) {
+    if (busy || (!bypassCooldown && cooldown.secondsLeft > 0)) return;
     setBusy(kind);
     setError(null);
     setProblems([]);
+    setPdfBlock(null);
     announce("Berkas sedang dibuat");
     try {
-      const res = await renderDocument(id, body);
+      const res: RenderResult = await renderDocument(id, body);
       setLastJob(res.job);
       setRaceReport(null);
       cooldown.reset();
-      const probs = jobProblems(res.job);
+      const probs = jobProblems(res);
+      const outcome = outcomeOf(res);
       setProblems(probs);
       if (res.job.status === "FAILED") {
         setError({ title: "Berkas gagal dibuat", body: probs.join(" ") || "Coba lagi. Bila berulang, hubungi admin.", retryable: true, code: res.job.errorCode ?? "FAILED" });
@@ -140,13 +154,33 @@ export function RenderCard() {
         notify({ message: `${label}: berkas sedang dibuat`, tone: "info" });
       } else {
         notify({
-          message: res.job.status === "PARTIAL" ? `${label}: sebagian berkas siap` : `${label}: berkas siap`,
-          tone: res.job.status === "PARTIAL" ? "warn" : "success",
+          message: outcome.partial
+            ? `${label}: sebagian berkas siap${outcome.failedNames.length ? ` (${outcome.failedNames.join(", ")} belum berhasil)` : ""}`
+            : `${label}: berkas siap`,
+          tone: outcome.partial ? "warn" : "success",
           action: { label: "Lihat berkas", onClick: () => navigate({ tab: "berkas" }) },
         });
       }
       refreshAll();
     } catch (e) {
+      const pdf = pdfNotReadyOf(e);
+      if (pdf) {
+        // FIX-HZ1: server menolak PDF sebelum pekerjaan dibuat; tawarkan format lain.
+        const suggested = kind === "draft" ? (["docx"] as DocFormat[]) : pdf.suggestedFormats;
+        const withoutPdf =
+          suggested.length > 0
+            ? () => {
+                if (kind === "full") setFormats((s) => ({ ...s, pdf: false }));
+                void run(kind, { ...body, formats: suggested }, label, true);
+              }
+            : null;
+        setPdfBlock({ view: pdf, withoutPdf });
+        setError({ title: pdf.title, body: pdf.body, retryable: true, code: pdf.technical.code });
+        cooldown.arm();
+        if (pdf.retryAfterSec) cooldown.holdFor(pdf.retryAfterSec);
+        announce(pdf.title);
+        return;
+      }
       const incomplete = isStudioApiError(e) && e.code === "DOCUMENT_INCOMPLETE" ? incompleteReportOf(e.details) : null;
       if (incomplete) {
         setRaceReport(incomplete);
@@ -298,7 +332,8 @@ export function RenderCard() {
 
       {problems.length > 0 && !error && (
         <p className="mt-2 text-[12.5px] text-[var(--warn)]">
-          {problems.join(" ")} Berkas lain tetap tersedia di tab Berkas.
+          {problems.join(" ")}
+          {problems.some((p) => p.includes("tab Berkas")) ? "" : " Berkas lain tetap tersedia di tab Berkas."}
         </p>
       )}
 
@@ -306,6 +341,19 @@ export function RenderCard() {
         <div role="alert" className="mt-3 space-y-1.5 text-[12.5px]">
           <p className="font-medium text-[var(--down)]">{error.title}</p>
           <p className="text-[var(--text-2)]">{error.body}</p>
+          {pdfBlock && pdfBlock.view.causes.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-5 text-[var(--text-2)]">
+              {pdfBlock.view.causes.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+          {pdfBlock?.withoutPdf && pdfBlock.view.suggestLabel && (
+            <Button size="sm" variant="primary" onClick={pdfBlock.withoutPdf} ariaDisabled={!!busy} className="whitespace-nowrap">
+              <FileCheck2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+              {busy ? "Berkas sedang dibuat…" : pdfBlock.view.suggestLabel}
+            </Button>
+          )}
           {error.retryable && lastAttempt.current && !cooldown.exhausted && (
             <Button
               size="sm"
@@ -320,7 +368,13 @@ export function RenderCard() {
             </Button>
           )}
           {error.retryable && cooldown.exhausted && <p className="text-[var(--text-2)]">Masih gagal. Muat ulang halaman atau hubungi admin.</p>}
-          <InfoTeknis items={{ Kode: error.code, Pekerjaan: lastJob?.id }} />
+          <InfoTeknis
+            items={{
+              Kode: error.code,
+              Pekerjaan: lastJob?.id,
+              ...(pdfBlock ? { Penyebab: pdfBlock.view.technical.causeCodes, Diperiksa: pdfBlock.view.technical.checkedAt } : {}),
+            }}
+          />
         </div>
       )}
 

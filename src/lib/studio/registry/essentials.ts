@@ -97,6 +97,8 @@ export const PARAM_SURFACE_LISTS: Readonly<Record<ParamSurface, readonly string[
     ...ids("R-", [59, 62]),
     // FIX-FIG (D-257): resolusi gambar raster aturan ukuran asli K-2.
     ...ids("R-", 65),
+    // FIX-TL (D-351/D-352): kedalaman daftar isi `toc.levels`, pola R-59/R-60 (lanjutan ADMIN).
+    ...ids("R-", 66),
   ],
   derived: [
     ...ids("P3-", 4, 6, 7, 8, 11, 16, 19, 21),

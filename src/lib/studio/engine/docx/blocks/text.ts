@@ -23,7 +23,7 @@ import type {
 } from "../../../contract";
 import type { BlockEnv } from "./env";
 import { mergePara } from "./props";
-import { railHostIndentTw, withRail, type HostVariant } from "./rail";
+import { railHostIndentTw, railK2ReserveOf, withRail, type HostVariant } from "./rail";
 import { el } from "./xml";
 
 /** Bawaan struktural per peran (di bawah turunan katalog; lihat env.ts). */
@@ -105,6 +105,9 @@ export function paragraphRoleKey(role: ParagraphRole | undefined, env: BlockEnv)
  * Format paragraf inang dan run dasar untuk satu varian rel.
  * `table`: isi sel prosa memakai peran `rail.prose` bila templat menulisnya,
  * selain itu format peran tanpa indentasi kanan (sel sudah selebar kolom teks).
+ * `plain` pada moda K2 (A + `framePr`, FIX-R1): indentasi kanan PERAN yang sama
+ * dengan cadangan rel dibuang, sehingga prosa tanpa provenans selebar teks penuh
+ * (K2 rev B); format eksplisit blok tetap menang dan diperiksa G-RAIL-3.
  */
 export function hostFormat(
   env: BlockEnv,
@@ -121,6 +124,7 @@ export function hostFormat(
     else delete para.indRightTw;
     if (env.templateHas("rail.prose", "run")) run = env.role("rail.prose").run ?? run;
   }
+  if (variant === "plain" && para.indRightTw !== undefined && para.indRightTw === railK2ReserveOf((k) => env.param(k))) delete para.indRightTw;
   for (const f of explicit) para = mergePara(para, f);
   if (variant === "framePr" && !explicit.some((f) => f?.indRightTw !== undefined)) para.indRightTw = railHostIndentTw(env);
   return { para, run: env.mergeRun(run, runDefaults), markerRun: rf.markerRun };

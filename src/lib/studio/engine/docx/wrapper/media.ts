@@ -19,6 +19,9 @@ import type { AssetRef, DocxFragment, Hex, RenderContext } from "../../../contra
 import { StudioEngineError } from "../../../contract/errors";
 import { getStudioEnv, isPathInside } from "../../../contract/env";
 import { docAssetBytes } from "../../bind";
+import { decorativeDocPrXml, type DecorativeKind } from "../blocks/media";
+
+export type { DecorativeKind };
 import { pNum } from "./formats";
 import { DRAWING_NS, escapeXml, mmToEmu } from "./xml";
 
@@ -317,15 +320,25 @@ export function loadDatumRule(
 /**
  * Run gambar inline. `docPrId` harus unik per dokumen; pemanggil memberi
  * nilai deterministik dari ordinal blok (perakit S20 boleh menomori ulang).
+ * Gambar pembungkus selalu aparatus (logo sampul, Datum Rule): `wp:docPr`
+ * ditandai dekoratif dengan nama bermakna dari `decorative` (FIX-HZ2, D-326).
  */
-export function inlineImageRunXml(i: { relId: string; name: string; widthMm: number; heightMm: number; docPrId: number }): string {
+export function inlineImageRunXml(i: {
+  relId: string;
+  name: string;
+  widthMm: number;
+  heightMm: number;
+  docPrId: number;
+  decorative?: DecorativeKind;
+  lang?: "ID" | "EN";
+}): string {
   const cx = mmToEmu(i.widthMm);
   const cy = mmToEmu(i.heightMm);
   const n = escapeXml(i.name);
   return (
     `<w:r><w:drawing><wp:inline xmlns:wp="${DRAWING_NS.wp}" distT="0" distB="0" distL="0" distR="0">` +
     `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>` +
-    `<wp:docPr id="${i.docPrId}" name="Picture ${i.docPrId}"/>` +
+    decorativeDocPrXml(i.docPrId, i.decorative ?? "ornament", i.lang ?? "ID", DRAWING_NS.a) +
     `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="${DRAWING_NS.a}" noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
     `<a:graphic xmlns:a="${DRAWING_NS.a}"><a:graphicData uri="${DRAWING_NS.pic}">` +
     `<pic:pic xmlns:pic="${DRAWING_NS.pic}"><pic:nvPicPr><pic:cNvPr id="0" name="${n}"/><pic:cNvPicPr/></pic:nvPicPr>` +

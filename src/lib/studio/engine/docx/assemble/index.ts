@@ -68,6 +68,7 @@ import { computeNumbering } from "./numbering";
 import { planUnits, scopePlans, tocModeFor, type UnitPlan } from "./units";
 import { documentXml, sectionHolderPPrInner } from "./xml";
 import { pPrInner } from "../blocks/props";
+import { assertRailK2, resolveRailLayout } from "../blocks/rail";
 import { paragraph } from "../blocks/xml";
 
 export { computeNumbering, resolveChapterKeys, type NumberingIssue, type NumberingResult } from "./numbering";
@@ -374,8 +375,22 @@ export async function assembleDocxDetailed(ctx: RenderContext, opts: AssembleDoc
     return xml;
   };
 
+  // G-RAIL-3 rev B (K2, FIX-R1): unit alir badan diperiksa sesudah dirender; unit muka
+  // (sampul, lembar kendali, daftar isi, pembatas bagian) bukan prosa badan.
+  // FIX-TQ (D-359, review SR-56e E5): pelanggaran pada snapshot `studio.norm/v1` dilaporkan
+  // (log warn + contoh), render dilanjutkan. Kontrak v1 mengizinkan `format` eksplisit di
+  // konten (mis. Manual 000 rev 1), satu-satunya jalur data yang dapat memicu gerbang, dan
+  // revisi lama tetap dapat dirender ulang (D-06). Snapshot v2 konten-saja (D-139) tidak
+  // membawa format tampilan, jadi pelanggaran di sana = cacat mesin -> tetap gagal keras.
+  const railGateSkip = new Set(["cover", "controlSheet", "toc", "part"]);
+  let railHosts = 0;
+  let railChips = 0;
+  let railChecked = 0;
+  let railReported = 0;
+
   plans.forEach((plan, i) => {
     const uctx = unitCtxs[i];
+    const unitStart = body.length;
     if (plan.placeholder) {
       ctx.log({
         level: "info",
@@ -409,6 +424,31 @@ export async function assembleDocxDetailed(ctx: RenderContext, opts: AssembleDoc
       const spacer = autoSpacerRole(uctx, plan.unit.kind, block, plan.blocks[bi + 1], xml);
       if (spacer) body += paragraph(pPrInner(resolveRoleFormat(uctx.tpl, spacer).para ?? {}), "");
     }
+    if (!railGateSkip.has(plan.unit.kind)) {
+      const params = uctx.tpl.params;
+      let gate: ReturnType<typeof assertRailK2>;
+      try {
+        gate = assertRailK2(body.slice(unitStart), resolveRailLayout((k) => params[k], () => 0), plan.unit.key);
+      } catch (e) {
+        if (v2 || !(e instanceof StudioEngineError) || e.code !== "BY_CONSTRUCTION_FAILED") throw e;
+        railReported += 1;
+        const d = (e.details ?? {}) as { narrowed?: unknown; orphans?: unknown };
+        const sample = [...(Array.isArray(d.narrowed) ? d.narrowed : []), ...(Array.isArray(d.orphans) ? d.orphans : [])]
+          .map((t) => JSON.stringify(String(t).slice(0, 60)))
+          .join(", ");
+        ctx.log({
+          level: "warn",
+          code: "RAIL_K2_LEGACY_V1",
+          address: plan.unit.key,
+          message: `${e.message} [snapshot studio.norm/v1: format eksplisit konten lama; dilaporkan, render dilanjutkan]${sample ? ` contoh: ${sample}` : ""}`,
+        });
+      }
+      if (gate) {
+        railChecked += 1;
+        railHosts += gate.hosts;
+        railChips += gate.chips;
+      }
+    }
     const last = i === plans.length - 1;
     if (breakPerUnit && !last) {
       const holder = resolveRoleFormat(uctx.tpl, "unit.sectionHolder");
@@ -416,6 +456,12 @@ export async function assembleDocxDetailed(ctx: RenderContext, opts: AssembleDoc
     }
   });
   body += keep[keep.length - 1].sectPr;
+  if (railChecked > 0) {
+    ctx.log({ level: "info", message: `G-RAIL-3 rev B (K2) lulus: ${railChecked} unit, ${railHosts} inang, ${railChips} chip, nol prosa tanpa chip menyempit` });
+  }
+  if (railReported > 0) {
+    ctx.log({ level: "warn", code: "RAIL_K2_LEGACY_V1", message: `G-RAIL-3 rev B (K2): ${railReported} unit snapshot v1 dilaporkan (tidak gagal keras); rincian per unit di entri sebelumnya` });
+  }
 
   const drawings = renumberDrawingIds(body);
   const docXml = documentXml(drawings.xml);

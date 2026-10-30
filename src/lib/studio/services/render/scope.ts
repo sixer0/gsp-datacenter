@@ -12,6 +12,8 @@
  *      422 SLOT_UNKNOWN) SEBELUM job dibuat;
  *   4. nilai efektif per slot (SR-06 `resolveSlotsForVersion`) -> `RenderContext.slots`
  *      (snapshot v2 saja; v1 tanpa peta = jalur lama);
+ *   4b. FIX-H1: format efektif memuat PDF dan render-env tidak siap -> 503
+ *      `PDF_ENGINE_UNAVAILABLE` (`details.stage: "preflight"`) tanpa job;
  *   5. antrean berbatas (`renderGate`, 503 RENDER_QUEUE_FULL, D-134/D-135) ->
  *      job DB (kolom `scopeKind`/`scopeKey`) -> `renderSnapshot` (IP-43a, D-155);
  *   6. serah ke penyimpanan: render penuh ke `rev-<n>/`, draf ke
@@ -53,6 +55,7 @@ import { asAnySnapshot, errorCodeOf, errorMessageOf, handOff } from "./common";
 import { db } from "./db";
 import { createRenderJob, finalStatus, finishRenderJob, releaseRenderJob, renderJobToDto, scopeColumns, type RenderJobHandle } from "./job";
 import { draftScopeDir, normalizeFormats, type DraftScopeLayout } from "./naming";
+import { assertPdfRenderReady } from "./preflight";
 import { pureRequestedFormats, renderSnapshot } from "./pure/render";
 import { applyRenderScope } from "./pure/scope";
 
@@ -248,6 +251,9 @@ export function scopeRelDir(plan: Pick<ScopeRenderPlan, "document" | "revision" 
 export async function renderScope(caller: StudioCaller, documentId: string, req: RenderScopeRequest): Promise<RenderScopeResult> {
   const client = await db();
   const plan = await prepareScopeRender(client, documentId, req);
+  // FIX-H1 (D-322): PDF diminta (eksplisit atau bawaan snapshot) + render-env tidak siap
+  // -> 503 PDF_ENGINE_UNAVAILABLE tahap preflight SEBELUM antrean dan job dibuat.
+  await assertPdfRenderReady(pureRequestedFormats(plan.formats.length > 0 ? plan.formats : undefined, plan.snapshot));
   return renderGate().run(() => runScopeJob(client, caller, plan));
 }
 

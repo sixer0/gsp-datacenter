@@ -8,6 +8,11 @@
  * `wp`/`a`/`pic`/`r` dideklarasikan lokal di fragmen agar tidak bergantung
  * pada akar dokumen. Id `wp:docPr` deterministik per blok (ordinal x 100 + n);
  * perakit boleh menomori ulang berurutan.
+ *
+ * FIX-HZ2 (D-326, WCAG 1.1.1): semua gambar modul ini adalah aparatus (logo
+ * sampul, Datum Rule), bukan isi; `wp:docPr` ditandai dekoratif menurut praktik
+ * Office (`descr=""` + ekstensi `adec:decorative val="1"`) dengan nama objek
+ * bermakna. Gambar isi (figur) memakai `engine/front/alt-text` (FIX-H8).
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -26,6 +31,48 @@ const NS_WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDr
 const NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const NS_PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+// ── Gambar dekoratif (FIX-HZ2) ───────────────────────────────────────────
+
+/** URI ekstensi Office "tandai sebagai dekoratif" (Word/PowerPoint 365, MS-ODRAWXML). */
+export const DECORATIVE_EXT_URI = "{C183D7F6-B498-43B3-948B-1728B52AA6E4}";
+export const NS_ADEC = "http://schemas.microsoft.com/office/drawing/2017/decorative";
+
+/** Jenis aparatus gambar; menentukan nama objek `wp:docPr`. */
+export type DecorativeKind = "logo" | "datumRule" | "chapterDatumRule" | "ornament";
+
+const DECORATIVE_NAMES: Readonly<Record<"ID" | "EN", Readonly<Record<DecorativeKind, string>>>> = {
+  ID: {
+    logo: "Logo sampul (dekoratif)",
+    datumRule: "Datum Rule (dekoratif)",
+    chapterDatumRule: "Datum Rule bab (dekoratif)",
+    ornament: "Ornamen aparatus (dekoratif)",
+  },
+  EN: {
+    logo: "Cover logo (decorative)",
+    datumRule: "Datum Rule (decorative)",
+    chapterDatumRule: "Chapter Datum Rule (decorative)",
+    ornament: "Apparatus ornament (decorative)",
+  },
+};
+
+export function decorativeName(kind: DecorativeKind, lang: "ID" | "EN" = "ID"): string {
+  return DECORATIVE_NAMES[lang][kind];
+}
+
+/**
+ * `wp:docPr` gambar dekoratif: nama bermakna, `descr=""` (pembaca layar
+ * melewatinya) dan `a:extLst` berisi `adec:decorative val="1"` (bentuk yang
+ * ditulis Word saat "Mark as decorative"; pembaca tanpa dukungan mengabaikan
+ * ekstensi). `nsA` = namespace DrawingML utama (dideklarasikan lokal).
+ */
+export function decorativeDocPrXml(id: number, kind: DecorativeKind, lang: "ID" | "EN" = "ID", nsA: string = NS_A): string {
+  return (
+    `<wp:docPr id="${id}" name="${escapeXml(decorativeName(kind, lang))}" descr="">` +
+    `<a:extLst xmlns:a="${nsA}"><a:ext uri="${DECORATIVE_EXT_URI}"><adec:decorative xmlns:adec="${NS_ADEC}" val="1"/></a:ext></a:extLst>` +
+    `</wp:docPr>`
+  );
+}
 
 export interface LoadedImage {
   name: string;
@@ -103,19 +150,23 @@ export function imageHeightMm(img: LoadedImage, widthMm: number, heightMm?: numb
   return undefined;
 }
 
-/** Run `w:drawing` berisi `wp:inline` untuk gambar yang sudah didaftarkan ke env. */
-export function inlineDrawingRun(env: BlockEnv, img: LoadedImage, widthMm: number, heightMm: number, rPr = ""): string {
+/**
+ * Run `w:drawing` berisi `wp:inline` untuk gambar yang sudah didaftarkan ke env.
+ * Selalu dekoratif (aparatus); `kind` memberi nama objek.
+ */
+export function inlineDrawingRun(env: BlockEnv, img: LoadedImage, widthMm: number, heightMm: number, rPr = "", kind: DecorativeKind = "ornament"): string {
   env.addMedia({ name: img.name, data: img.data, contentType: img.contentType });
   const id = env.nextDrawingId();
   const cx = int(widthMm * EMU_PER_MM);
   const cy = int(heightMm * EMU_PER_MM);
   const name = escapeXml(img.name);
+  const lang = env.ctx.snapshot.doc.meta.language === "EN" ? "EN" : "ID";
   return (
     `<w:r>${rPr}<w:drawing>` +
     `<wp:inline xmlns:wp="${NS_WP}" distT="0" distB="0" distL="0" distR="0">` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
     `<wp:effectExtent l="0" t="0" r="0" b="0"/>` +
-    `<wp:docPr id="${id}" name="Picture ${id}"/>` +
+    decorativeDocPrXml(id, kind, lang) +
     `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="${NS_A}" noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
     `<a:graphic xmlns:a="${NS_A}"><a:graphicData uri="${NS_PIC}">` +
     `<pic:pic xmlns:pic="${NS_PIC}">` +

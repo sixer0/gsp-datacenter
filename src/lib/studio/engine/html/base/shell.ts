@@ -20,6 +20,7 @@
 import type { DocMeta, ResolvedTemplate } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { railModeFor } from "../../tokens";
+import { railK2ReserveOf } from "../../docx/blocks/rail";
 import { buildTokenCss, fontStack, typeSpec } from "./css";
 import { cssString } from "./fonts";
 import { esc, registerCellParts, registerFieldValue, registerHtml, runningHeadHtml, runningHeadText, type RunningHeadText } from "./markup";
@@ -260,6 +261,15 @@ export function assertFontsCss(css: string): void {
   }
 }
 
+/**
+ * K2 rev B (FIX-R1, padanan DOCX `assertRailK2`): pada moda A dengan perender `framePr`
+ * prosa tanpa rel selebar teks penuh; hanya inang (`.st-railhost`, grid kolom teks + rel)
+ * yang menyempit. Menimpa batas `max-width:var(--col)` moda A lama. Tidak dipancarkan
+ * untuk `table3col` (Manual 000) maupun moda B.
+ */
+const RAIL_K2_CSS =
+  "body.st-rail-k2.st-rail-a :is(.st-p,.st-list,.st-aside,.st-monoblock,.st-asm,.st-section-heading):not(.st-railhost *){max-width:none}";
+
 export interface HtmlShellInput {
   tpl: ResolvedTemplate;
   meta: DocMeta;
@@ -292,13 +302,14 @@ export function buildHtmlShell(i: HtmlShellInput): string {
     `<meta name="studio:classification" content="${esc(meta.classification)}">`,
     `<meta name="studio:issue-date" content="${esc(meta.issueDate)}">`,
   ].join("");
-  const flags = ["st-doc", `st-rail-${rail === "B" ? "b" : "a"}`, i.previewLabel ? "st-preview" : ""].filter(Boolean);
+  const k2 = rail === "A" && railK2ReserveOf((k) => tpl.params[k]) !== undefined;
+  const flags = ["st-doc", `st-rail-${rail === "B" ? "b" : "a"}`, k2 ? "st-rail-k2" : "", i.previewLabel ? "st-preview" : ""].filter(Boolean);
   return (
     `<!DOCTYPE html>\n` +
     `<html lang="${en ? "en" : "id"}"><head>${metaTags}<title>${esc(title)}</title>\n` +
     `<style data-studio="fonts">\n${i.fontsCss}\n</style>\n` +
     `<style data-studio="tokens">\n${buildTokenCss(tpl)}</style>\n` +
-    `<style data-studio="pages">\n${pageFurnitureCss(tpl, meta, units, sheets)}\n</style>\n` +
+    `<style data-studio="pages">\n${pageFurnitureCss(tpl, meta, units, sheets)}${k2 ? `\n${RAIL_K2_CSS}` : ""}\n</style>\n` +
     `</head>\n<body class="${flags.join(" ")}" data-rail-mode="${rail}">${label}\n${body}\n</body></html>\n`
   );
 }

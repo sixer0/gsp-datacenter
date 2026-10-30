@@ -57,6 +57,75 @@ Peta route rinci: `docs/API-REFERENCE.md` seksi 12. Setiap contoh JSON permintaa
 
 Simpan `document.id`, `revision.revisionNo`, dan header `x-correlation-id` di catatan misi.
 
+### 1.1 Alur cepat untuk agen pengguna (mis. Hermes)
+
+Urutan yang teruji untuk agen yang menulis naskah per bab dalam Markdown. Setiap panggilan membawa
+header `x-internal-secret` dan `agentId` di badan ([seksi 2](#2-autentikasi-agent)). Kuota per identitas:
+importer 60 per menit ([seksi 5.6](#56-dari-markdown-importer-resmi-mdv1)), validasi R08 120 per 60 detik
+([seksi 5.5](#55-uji-kiriman-tanpa-menyimpan-r08)), kiriman/PATCH/render 30 per 60 detik bersama
+([seksi 13](#13-batas)); `429` membawa `Retry-After`.
+
+1. **Markdown per bab ke JSON.** `POST /api/studio/import/markdown` dengan
+   `{ markdown, chapterKey, target, ... }` (atau CLI `scripts/studio/md2chapter.ts`). Bentuk
+   `target`: untuk dokumen misi yang BELUM ada, `{ "mission": { "folder": "<folder misi>" },
+   "docKey": "<kunci dokumen>" }` ditambah `template: { slug }` dan `meta: { title }` (wajib; tanpa
+   keduanya kiriman pertama ditolak `400 META_REQUIRED_FOR_CREATE`); setelah dokumen ada,
+   `{ "documentId": "<id>" }` saja. Contoh badan importer untuk bab pertama dokumen baru:
+
+   <!-- studio:validate import-markdown -->
+   ```json
+   {
+     "markdown": "# 1. Ringkasan\n\n## Tentang Dokumen Ini\n\n<!-- role: identity -->\nLaporan survei ini disusun Tim Survei GSP untuk manajer aset GI Cikupa; jangkar terukurnya indeks kesiapan Gardu C 64 persen.\n",
+     "chapterKey": "1",
+     "agentId": "gsp-analis-01",
+     "target": { "mission": { "folder": "2026-10-30_misi_b" }, "docKey": "laporan-survei" },
+     "template": { "slug": "datum-gsp" },
+     "meta": { "title": "Laporan Survei Gardu Induk Cikupa" }
+   }
+   ```
+
+   CLI setara: `npx tsx scripts/studio/md2chapter.ts bab1.md --key 1 --mission 2026-10-30_misi_b
+   --doc-key laporan-survei --template datum-gsp --doc-title "Laporan Survei Gardu Induk Cikupa"
+   --submission` (`--template <slug[@versi]>`, `--doc-title` = judul DOKUMEN; `--title` tetap judul
+   bab). `--mission` tanpa `--doc-key` dan tanpa `--template` menghasilkan amplop yang ditolak
+   `400 DOC_TARGET_AMBIGUOUS`. Bab berikutnya cukup `--doc-id <id>`. Hasilnya
+   `submission` siap kirim plus laporan `warnings`/`dropped` (seksi 5.6). Nyatakan peran retoris
+   di Markdown dengan komentar sebaris tepat sebelum paragrafnya (`<!-- role: identity -->`,
+   `<!-- role: closingAction -->`) dan rel bukti dengan penanda awal paragraf (`[TERUKUR]`,
+   `[SUMBER: x]`); JSON hasil tidak perlu disunting manual (seksi 4.2, 5.6).
+2. **Uji tanpa menyimpan.** `POST /api/studio/validate` dengan `submission` yang sama, atau
+   importer dengan `?validate=1`. Perbaiki isu `BY_CONSTRUCTION_FAILED` (mis. tabel tanpa baris
+   `Sumber:`) sebelum mengirim (seksi 5.5).
+3. **Kirim bab paralel.** Kirim bab pertama dulu (amplop dengan `target.mission` + `template` +
+   `meta.title`) untuk membuat dokumen; simpan `document.id` dari respons, lalu kirim bab lain
+   paralel dengan `target: { documentId }`, satu `POST /api/studio/chapters` per bab.
+4. **Isi slot halaman depan.** `POST /api/studio/slots` untuk `cover` (kolofon, identitas),
+   `controlSheet`, `signature`, `references` (seksi 5.4 dan 5.7).
+5. **Render.** `POST /api/studio/documents/[id]/render`: draf `scope: "chapter"` kapan saja;
+   `scope: "document"` setelah `completeness.fullRenderAllowed: true`. Periksa `partial` dan
+   `failedFormats`, bukan hanya kode HTTP; `503 PDF_ENGINE_UNAVAILABLE` berarti ulangi dengan
+   `details.suggestedFormats` (seksi 8).
+6. **Unduh dan cocokkan sha.** `GET /api/studio/files/{id}` untuk setiap `outputs[].url`;
+   bandingkan header `X-Studio-Sha256` dengan `outputs[].sha256`. Studio tidak menulis ke folder
+   misi di disk bersama; unduhan inilah satu-satunya jalur berkas.
+7. **Revisi per pid.** Ubah paragraf lewat `PATCH .../paragraphs/[pid]`. Setelah ada PATCH, kiriman
+   ulang bab tanpa `baseRevisionNo` terbaru ditolak `409 SCOPE_CONFLICT`
+   (`reason: PATCHED_PIDS_OVERWRITTEN`) agar suntingan tidak hilang (seksi 5.3).
+8. **Op struktur.** `PATCH /api/studio/documents/[id]/structure` memakai badan op biasa TANPA
+   `$schema` dan TANPA `target` (dokumen ada di path): `op`, `baseRevisionNo`, `change`, plus medan
+   op itu (seksi 9.4). Contoh mengubah judul dokumen:
+
+   <!-- studio:validate structure-patch -->
+   ```json
+   {
+     "op": "setMeta",
+     "baseRevisionNo": 5,
+     "agentId": "gsp-analis-01",
+     "meta": { "title": "Laporan Survei Gardu Induk Cikupa Triwulan III" },
+     "change": { "what": "Perbarui judul dokumen", "why": "Cakupan dipersempit ke triwulan III", "impact": "Sampul dan kepala halaman" }
+   }
+   ```
+
 ---
 
 ## 2. Autentikasi agent
@@ -112,6 +181,31 @@ Kerangka bawaan `datum-gsp` (urutan slot dokumen):
 Untuk tier `NOTA`, slot 1-4 tidak aktif. Dokumen mematok satu versi templat saat dibuat; perubahan
 templat sesudahnya tidak memengaruhi dokumen itu (D-153).
 
+Sejak 2026-10-30, `datum-gsp` versi 3 mencetak rel bukti (`rail`) sebagai chip di kolom margin
+(bingkai `framePr`, house style rev B), dan daftar isi otomatis memuat nomor halaman (rujukan
+halaman ke setiap judul bab, bagian, lampiran, dan section; terisi saat PDF dibuat dan saat DOCX
+dibuka di Word). Kedalaman daftar isi = parameter templat lanjutan `toc.levels` (diatur ADMIN, cakupan slot `toc`;
+bawaan 2: bab, bagian, lampiran, dan section; 1 = tanpa section; 3 dicadangkan). Agen tidak
+mengirim parameter ini. Dokumen yang dibuat sebelum itu tetap di versi patokannya. Untuk memindahkannya, kirim op
+struktur `templateVersion`:
+
+`PATCH /api/studio/documents/[id]/structure`
+
+<!-- studio:validate structure-patch -->
+```json
+{
+  "op": "templateVersion",
+  "versionNo": 3,
+  "baseRevisionNo": 11,
+  "agentId": "gsp-analis-01",
+  "change": { "what": "Pindah ke datum-gsp v3", "why": "Rel bukti chip margin dan daftar isi bernomor halaman", "impact": "Tampilan seluruh dokumen; isi tidak berubah" }
+}
+```
+
+Respons `200 { revision, completeness }`. Versi templat yang lebih baru tidak pernah dipasang
+diam-diam. Bila versi templat dokumen saat ini terbatas, `templateVersion` ditolak `403 FORBIDDEN`
+untuk pemanggil selain ADMIN.
+
 ---
 
 ## 4. Bentuk isi v2
@@ -151,7 +245,7 @@ Teks (`Inline`) memakai tepat satu dari:
 
 | Blok (`type`) | Medan isi |
 |---|---|
-| `paragraph` | teks; `role`: `body` (bawaan), `lede`, `note`, `subheading` |
+| `paragraph` | teks; `role?` (seksi 4.2: `body` bawaan, `lede`, `note`, `subheading`, `identity`, `anchor`, `pivot`, `closingAction`); `rail?` (rel bukti, seksi 4.2) |
 | `list` | `ordered`, `items[]` |
 | `table` (dan 10 jenis tabel lain) | `caption?`, `columns[]` `{ role: text/numeral/id/unit/glyph, unit? }`, `rows[]` `{ kind: header/body/group/total, cells[] }`, `source?` |
 | `image` | `asset` (kunci `assets` atau `sha256:<64 heks>`), `caption`, `source` (wajib) |
@@ -295,6 +389,61 @@ gambar bersumber:
         { "type": "image", "asset": "sha256:c14cc4c48a5e9c2b04a2bb79a2cc8a5e32ed40638edfa0213d576176162406f2",
           "caption": { "text": "Panel kendali Gardu C setelah pembersihan." },
           "source": { "text": "Foto lapangan 2026-10-21", "provenance": ["TERUKUR"] } } ] } ]
+  }
+}
+```
+
+### 4.2 Peran paragraf dan rel bukti
+
+Medan `role` paragraf menyatakan makna, bukan tampilan. Delapan nilai diterima (`PARAGRAPH_ROLES_V2`
+di skema `common/v2`):
+
+| `role` | Makna | Dibaca oleh |
+|---|---|---|
+| `body` (bawaan) | prosa biasa | lint bahasa |
+| `lede` | paragraf pembuka bab atau bagian | lint bahasa |
+| `note` | catatan | lint bahasa |
+| `subheading` | subjudul di dalam section | penomoran tidak berlaku |
+| `identity` | blok identitas halaman pertama: jenis dokumen, penyusun, kebutuhan, satu jangkar terukur | gerbang D17 (di halaman depan atau bab pertama) |
+| `closingAction` | paragraf penutup yang memuat aksi dan penerimanya | gerbang D18 (di mana pun) |
+| `anchor` | paragraf jangkar (klaim terukur utama) | dihitung sebagai prosa; tidak ada gerbang yang mewajibkannya |
+| `pivot` | paragraf titik balik argumen | dihitung sebagai prosa; tidak ada gerbang yang mewajibkannya |
+
+Keempat peran retoris (`identity`, `anchor`, `pivot`, `closingAction`) dicetak sama dengan `body`.
+Peran halaman depan (`kicker`, `title`, `standfirst`, dan sejenisnya) ditolak di blok
+(`checkId: "DISPLAY_FIELD"`).
+
+Medan `rail` (paragraf dan butir daftar) membawa rel bukti: daftar baris
+`{ kind: "mark" | "source" | "note", mark?, text? | runs? }`. `kind: "mark"` + `mark` (`TERUKUR`,
+`DITURUNKAN`, `PEMASOK`, `ASUMSI`) menandai provenans; `kind: "source"` menyebut sumber; `kind: "note"`
+catatan pendek. Bentuk cetaknya milik templat: `datum-gsp` versi 3 ke atas mencetak rel sebagai
+chip di kolom margin (bingkai `framePr`, sesuai house style rev B). Hanya paragraf yang membawa
+chip (inang) menyempit untuk memberi ruang kolom margin; prosa tanpa rel tetap selebar kolom teks.
+Mesin menolak merender bila ada paragraf menyempit tanpa chip atau chip tanpa inang (cek G-RAIL-3
+rev B), jadi bentuk ini dijamin tanpa tindakan agen. Templat yang mematikan rel
+(`device.evidenceRail.enabled = false`) mencetak baris rel di bawah paragraf. Agen hanya mengisi
+baris rel.
+
+Contoh bab dengan paragraf identitas, rel bukti, dan paragraf penutup beraksi:
+
+<!-- studio:validate studio.chapter/v2 -->
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-analis-01",
+  "target": { "documentId": "cmw1doc8k2p4x7q9z3" },
+  "chapter": {
+    "key": "1",
+    "title": { "text": "Ringkasan" },
+    "sections": [
+      { "title": { "text": "Tentang Dokumen Ini" }, "blocks": [
+        { "type": "paragraph", "role": "identity",
+          "text": "Laporan survei ini disusun Tim Survei GSP untuk manajer aset GI Cikupa sebagai dasar jadwal pemeliharaan; jangkar terukurnya indeks kesiapan Gardu C 64 persen pada 2026-10-20." },
+        { "type": "paragraph", "role": "anchor",
+          "text": "Gardu C berada 6 poin di bawah sasaran 70 persen.",
+          "rail": [ { "kind": "mark", "mark": "TERUKUR" }, { "kind": "source", "text": "Rekap pemeliharaan Q3 2026" } ] },
+        { "type": "paragraph", "role": "closingAction",
+          "text": "Manajer aset GI Cikupa menyetujui jadwal pembersihan terminal PMT-2 paling lambat 2026-11-15." } ] } ]
   }
 }
 ```
@@ -477,6 +626,47 @@ revisi berikutnya, dan `changeScope: "chapter:3"`.
 - `baseRevisionNo` opsional di kiriman bab dan slot. Tanpa nilai itu penulis terakhir untuk bab
   yang sama menang. Dengan nilai itu, bab yang sama yang berubah sejak revisi tersebut ditolak
   `409 SCOPE_CONFLICT`; bab lain digabung (`rebased: true`).
+- **Kiriman ulang tidak menimpa suntingan PATCH diam-diam.** Bila paragraf di bab atau slot itu
+  sudah disunting lewat PATCH (per pid atau alamat) atau kunci babnya diganti op struktur
+  `renumberChapters` (R14) setelah kiriman terakhir lingkup itu, kiriman ulang lewat `/chapters`,
+  `/slots`, atau kiriman dokumen bertarget (`/documents` dengan `target.documentId`) tanpa
+  `baseRevisionNo` terbaru ditolak `409 SCOPE_CONFLICT` dengan
+  `details.reason = "PATCHED_PIDS_OVERWRITTEN"`; tidak ada yang disimpan. Bab lain tidak terpengaruh,
+  dan kiriman identik tetap `200 unchanged`.
+
+Contoh respons (dokumen `cmw1doc8k2p4x7q9z3`, paragraf 4.1.2 disunting di revisi 3):
+
+<!-- studio:response -->
+```json
+{
+  "error": "Kiriman akan menimpa 1 pid yang disunting lewat PATCH setelah revisi 2 (p-d1g5j8n3mq (4.1.2) rev 3); baca isi terkini lewat GET /api/studio/documents/cmw1doc8k2p4x7q9z3/content, gabungkan, lalu kirim ulang dengan baseRevisionNo 3",
+  "code": "SCOPE_CONFLICT",
+  "details": {
+    "scope": "chapter:4", "reason": "PATCHED_PIDS_OVERWRITTEN",
+    "baseRevisionNo": null, "referenceRevisionNo": 2, "latestRevisionNo": 3,
+    "changedInRevisionNo": 3, "changedBy": "agent:gsp-analis-02",
+    "overwrittenPids": [ { "pid": "p-d1g5j8n3mq", "address": "4.1.2", "editedInRevision": 3, "editedBy": "agent:gsp-analis-02" } ],
+    "readContent": "GET /api/studio/documents/cmw1doc8k2p4x7q9z3/content",
+    "forwardToController": "Kiriman belum disimpan: 1 paragraf (4.1.2) sudah disunting setelah kiriman terakhir bagian ini, dan kiriman ini akan menghapus suntingan tersebut. Baca isi terkini lewat GET /api/studio/documents/cmw1doc8k2p4x7q9z3/content, gabungkan perubahan Anda dengan isi itu, lalu kirim ulang dengan baseRevisionNo 3."
+  }
+}
+```
+
+Alur pulih:
+
+1. `GET /api/studio/documents/[id]/content?slot=content&chapter=4&shape=submission`. Respons
+   `{ document, revisionNo, slot, shape, submitTo, submission, editHints }`: `submission` adalah
+   badan `studio.chapter/v2` lengkap (`target.documentId`, `slot`, `baseRevisionNo` = revisi yang
+   dibaca, `id` pid di bab, section, dan blok) yang dapat dikirim apa adanya ke `submitTo`
+   (`POST /api/studio/chapters`; slot tak-berulang memakai `?slot=<slotKey>&shape=submission` dan
+   `POST /api/studio/slots`). Tanpa `shape` = bentuk isi lama.
+2. Ubah `submission`: pertahankan `id` blok yang ada; blok baru tanpa `id`. Paragraf memakai `text`
+   ATAU `runs`, tidak keduanya: saat mengganti isi paragraf yang semula `runs` dengan `text` (atau
+   sebaliknya), hapus medan yang lama, karena keduanya sekaligus ditolak `400 SCHEMA_INVALID`.
+3. Kirim ke `submitTo` → `201` dengan pid tetap (tanpa ubahan → `200 unchanged`).
+
+R08 (`POST /api/studio/validate`) menerapkan aturan yang sama: payload lama menghasilkan
+`valid: false` dengan isu `SCOPE_CONFLICT` yang `details`-nya identik dengan respons di atas.
 
 ### 5.4 Mengisi slot halaman depan
 
@@ -550,6 +740,41 @@ Respons `201 SubmitResultV2` dengan `slot: { slotKey, pid?, sha256, address }` (
   `meta`; kirim payload `cover` hanya untuk baris yang memang isi (`titleLines`, `standfirst`,
   `scopeLine`).
 
+Bentuk payload sampul (`CoverPayloadV2`; semua medan opsional kecuali `type`):
+
+| Medan | Isi |
+|---|---|
+| `tagline` | baris pembuka di atas judul |
+| `titleLines` | 1..4 baris judul (bawaan: `meta.title`) |
+| `standfirst`, `scopeLine`, `addressLine` | paragraf pengantar, baris cakupan, baris alamat |
+| `control` | baris blok kendali, tiap baris tepat 4 sel teks |
+| `colophon` | `{ left, right }` teks kolofon; mengaktifkan perangkat cap terbit dan kolofon (gerbang D16) |
+| `identityString` | kalimat identitas dokumen (memenuhi gerbang D17) |
+
+Skema lengkap setiap payload ada di registri: `GET /api/studio/registry?kind=schema&schemaId=common/v2`
+lalu cari `$defs.CoverPayloadV2` (juga `ControlSheetPayloadV2`, `SignaturePayloadV2`,
+`SourceRegisterPayloadV2`); `GET /api/studio/registry?kind=slots` memuat aturan slot. Nilai
+`schemaId` untuk agen: `studio.doc/v2`, `studio.chapter/v2`, `studio.slot/v2`, dan `common/v2` (definisi
+bersama `$defs`); `schemaId` lain yang salah dijawab `400` dengan daftar nilai sah.
+
+Contoh sampul untuk dokumen TERBIT:
+
+<!-- studio:validate studio.slot/v2 -->
+```json
+{
+  "$schema": "studio.slot/v2",
+  "agentId": "gsp-analis-03",
+  "target": { "documentId": "cmw1doc8k2p4x7q9z3" },
+  "slot": "cover",
+  "payload": {
+    "type": "cover",
+    "standfirst": { "text": "Kondisi peralatan GI Cikupa per Oktober 2026 dan rencana pemeliharaan." },
+    "colophon": { "left": { "text": "Tim Survei GSP" }, "right": { "text": "Terbitan A, 2026-10-23" } },
+    "identityString": { "text": "Laporan survei untuk manajer aset GI Cikupa; jangkar: indeks kesiapan Gardu C 64 persen." }
+  }
+}
+```
+
 ### 5.5 Uji kiriman tanpa menyimpan (R08)
 
 `POST /api/studio/validate` menerima badan yang sama persis dengan `/documents`, `/chapters`, atau
@@ -569,6 +794,138 @@ Respons selalu `200`, kecuali `401` (tanpa autentikasi), `403` (templat terbatas
 
 `?preview=html` menambah `previewHtml` (dokumen tergabung, bertanda draf bila belum lengkap).
 Pakai R08 sebelum kiriman besar atau bila ragu apakah bab akan lolos gerbang.
+
+Isu yang berasal dari galat layanan membawa `details` apa adanya, identik dengan galat kiriman
+nyata (mis. `SCOPE_CONFLICT` dengan `reason` dan `overwrittenPids`, atau daftar `checkId`
+by-construction).
+
+### 5.6 Dari Markdown: importer resmi (`md/v1`)
+
+`POST /api/studio/import/markdown` mengubah satu bab Markdown menjadi `studio.chapter/v2`
+konten-saja. Route ini hanya mengubah: tidak menyimpan, tidak merender.
+
+Badan: `{ markdown, chapterKey, title?, agentId?, target?, template?, meta?, slot? }`. Respons
+`200 { chapter, submission?, report: { importer: "md/v1", warnings, dropped, mapping }, validation }`.
+`submission` (amplop siap `POST /api/studio/chapters`) hanya ada bila `target` diberikan;
+`template`, `meta`, dan `slot` hanya sah bersama `target`. `?validate=1` (wajib `target`)
+menjalankan dry-run R08 atas `submission` dan menambah `dryRun { ran, valid, issues, lint?,
+completenessPreview?, submitPreview? }`; isu galat layanan di `dryRun.issues` membawa `details` apa
+adanya, termasuk `overwrittenPids` (seksi 5.3), sama dengan R08.
+
+Batas dan kuota importer:
+
+| Batas | Nilai | Galat |
+|---|---|---|
+| Panggilan per identitas | bawaan 60 per 60 detik (kuota impor sendiri; `?validate=1` juga dihitung di kuota validasi R08) | `429 RATE_LIMITED` + `Retry-After` |
+| Badan permintaan | 4 MiB | `413 PAYLOAD_TOO_LARGE` |
+| Panjang `markdown` | 1.000.000 karakter | `413`, `details.reason = "MD_TOO_LONG"` |
+| Baris per bab | 200.000 | `413`, `details.reason = "MD_TOO_MANY_LINES"` |
+| Blok per bab | 50.000 | `413`, `details.reason = "MD_TOO_MANY_BLOCKS"` |
+| Kolom per tabel Markdown | 100 (kontrak sendiri tetap 1..20 kolom) | `413`, `details.reason = "MD_TABLE_TOO_WIDE"` |
+
+Galat lain: `400 SCHEMA_INVALID` (badan, markdown kosong, tanpa judul), `422 CHAPTER_KEY_INVALID`,
+`415`, `401`, `403` (dry-run templat terbatas). Bab yang melewati batas dipecah per bab atau per
+bagian; jangan mengulang tanpa mengubah masukan.
+
+CLI setara (keluaran byte-identik dengan endpoint, tanpa jaringan):
+
+```bash
+# bab pertama dokumen baru (membuat dokumen)
+npx tsx scripts/studio/md2chapter.ts bab1.md --key 1 --mission 2026-10-30_misi_b --doc-key laporan-survei \
+  --template datum-gsp --doc-title "Laporan Survei Gardu Induk Cikupa" --submission > bab1.json
+# bab berikutnya ke dokumen yang sudah ada
+npx tsx scripts/studio/md2chapter.ts bab4.md --key 4 --doc-id cmw1doc8k2p4x7q9z3 --submission > bab4.json
+```
+
+Kode keluar 0 = sah, 1 = tidak sah menurut validator v2, 2 = galat pemakaian.
+
+| Markdown | Hasil |
+|---|---|
+| `#` pertama | judul bab; nomor seperti `4.`, `BAB 4` dibuang (`dropped NUMBERING`) |
+| `##` | section; teks sebelum `##` pertama menjadi `intro` bab |
+| `###` (dan lebih dalam) | paragraf `role: "subheading"` |
+| paragraf | `paragraph` |
+| komentar sebaris sendiri `<!-- role: closingAction -->` TEPAT sebelum paragraf | `role` paragraf itu (nilai seksi 4.2, peka huruf); komentar tidak tampil di penampil Markdown dan tidak menjadi teks |
+| penanda di AWAL paragraf: `[TERUKUR]`, `[DITURUNKAN]`, `[PEMASOK]`, `[ASUMSI]`, `[SUMBER: x]`, `[CATATAN: x]` | baris `rail` (penanda di tengah kalimat tetap teks) |
+| daftar `-` atau `1.` | `list` (`ordered`); sarang diratakan |
+| tabel GFM + `Tabel n.m. Judul` + `Sumber: x [TERUKUR]` | `table` dengan `caption`, `source`, `provenance`; kolom angka = peran `numeral`; perataan dibuang |
+| `![caption](sha256:<heks> "Sumber: x")` sendirian | `image` (unggah aset dulu, seksi 10) |
+| blok kode berpagar | `monoBlock` |
+| kutipan `>`; `> [!DOCTRINE]`, `[!STORY]`, `[!QUICKCHECK]`, `[!IFINDOUBT]` | `aside` dengan varian itu |
+| HTML, `---`, front matter, coretan, `[FIGUR: ...]` | dibuang dan dicatat di `dropped`/`warnings` |
+
+Resep untuk penanda bukti Hermes yang tidak punya padanan satu-satu (tulis ulang penandanya di
+Markdown sebelum impor, jangan menunggu importer menebak):
+
+| Penanda Hermes | Tulis sebagai | Alasan |
+|---|---|---|
+| `[ASSESSED]` untuk penilaian kualitatif | `[ASUMSI]` ditambah landasannya: `[SUMBER: x]` atau `[CATATAN: dasar penilaian]` | penilaian tanpa ukuran = asumsi yang dinyatakan; landasan membuatnya dapat diperiksa |
+| `[ASSESSED]` untuk angka hasil hitungan yang terlihat di naskah | `[DITURUNKAN]` (tampilkan masukan dan hitungannya) | angka yang diturunkan dari data lain |
+| `[EXECUTED-DOC]` | `[SUMBER: <dokumen yang dieksekusi>]` (baris rel `kind: "source"`) | menyebut sumber, bukan jenis provenans baru |
+| `[GSP-STATEMENT]` | `[CATATAN: Pernyataan GSP: ...]` (baris rel `kind: "note"` berprefiks tetap) | pernyataan pihak sendiri sebagai catatan, bukan ukuran |
+
+Penanda rel non-kontrak: `[PUBLIC-SOURCE]` dipetakan ke `TERUKUR` dan `[VENDOR]` ke `PEMASOK`
+(peringatan `MARK_ALIAS`); penanda lain (mis. `[ASSESSED]`, `[EXECUTED-DOC]`) TIDAK ditebak,
+tetap teks, dengan peringatan `UNMAPPED_MARKER`. Peran yang tidak dikenal memicu `ROLE_UNKNOWN`,
+komentar peran yang tidak langsung diikuti paragraf memicu `ROLE_MARKER_UNATTACHED`, dan komentar
+peran di dalam paragraf memicu `ROLE_MARKER_INLINE`; ketiganya diabaikan, tidak ditebak. Tabel bercaption tanpa
+baris `Sumber:` memicu peringatan `TABLE_SOURCE_MISSING` karena kiriman nyata akan ditolak gerbang
+DATUM-10.
+
+Contoh Markdown yang dikonversi tanpa isu:
+
+<!-- studio:md chapterKey=4 -->
+```markdown
+# 4. Kinerja Pemeliharaan
+
+Bab ini merangkum capaian pemeliharaan triwulan III 2026.
+
+## 4.1 Capaian terhadap Sasaran
+
+[TERUKUR] [SUMBER: Rekap pemeliharaan Q3 2026] Gardu C mencapai indeks kesiapan 64 persen, di bawah sasaran 70 persen.
+
+Tabel 4.1. Indeks kesiapan per gardu.
+
+| Gardu | Indeks (%) |
+|---|---|
+| A | 78 |
+| C | 64 |
+
+Sumber: Rekap pemeliharaan Q3 2026 [TERUKUR]
+
+### Tindak lanjut
+
+- Bersihkan terminal PMT-2.
+- Uji ulang tahanan isolasi.
+
+<!-- role: closingAction -->
+Manajer aset GI Cikupa menyetujui jadwal pembersihan terminal PMT-2 paling lambat 2026-11-15.
+```
+
+### 5.7 Memenuhi gerbang D16, D17, D18
+
+Ketiga cek ini menilai status rilis (mode report: tidak menahan kiriman maupun berkas, tetapi
+`releaseStatus` FAIL bila gagal). Berlaku untuk tier TERBIT dan SERAH.
+
+| Cek | Menagih | Cara memenuhi |
+|---|---|---|
+| D16 | section/perangkat wajib tier menurut `sectionPlan` templat | slot wajib dinilai lewat kelengkapan; perangkat halaman (kepala berjalan, blok register, pita segel, string punggung, Datum Rule) dipasang templat; cap terbit dan kolofon (`issueStampColophon`) butuh `colophon` di payload `cover`; rel bukti (`evidenceRail`, wajib di SERAH profil kanonik) butuh minimal satu baris `rail` |
+| D17 | blok identitas halaman pertama | `identityString` di payload `cover`, ATAU paragraf `role: "identity"` di halaman depan atau bab pertama |
+| D18 | paragraf penutup dengan aksi dan penerima | paragraf `role: "closingAction"` di bab mana pun |
+
+D16 menilai `evidenceRail` NOT_APPLICABLE beralasan (tidak dihitung hadir maupun wajib) HANYA bila
+`device.evidenceRail.enabled = false` berasal dari lapis yang dikendalikan ADMIN: preset gaya,
+templat terbatas, atau kunci lanjutan (kunci ini lapis lanjutan; pengguna biasa tidak dapat
+menulisnya). Templat atau dokumen yang dibuat pengguna biasa tidak dapat lolos gerbang dengan
+mematikan rel. Bila rel menyala, tier yang mewajibkan rel tanpa satu pun baris `rail` = FAIL. D17 dan D18 tidak dijalankan
+(NOT_RUN) bila templat mematikan `doc.identityStatement.required` atau
+`doc.closing.actionAndRecipient.required`.
+
+Contoh lengkap: sampul seksi 5.4 (kolofon + `identityString`) ditambah bab seksi 4.2
+(`identity`, `rail`, `closingAction`). Daftar kunci wajib per tier ada di templat
+(`GET /api/studio/templates/[id]`, `sectionPlan`); profil DATUM kanonik TERBIT mewajibkan
+`cover`, `controlSheet`, `toc`, `chapter`, `runningHead`, `registerBlock`, `sealBand`,
+`spineString`, `datumRule`, `issueStampColophon`.
 
 ---
 
@@ -803,8 +1160,55 @@ Render penuh:
 ```
 
 `key` wajib untuk `chapter`/`slot` dan dilarang untuk `document`. `formats` ⊆ `docx`, `pdf`,
-`html`; `figures` ⊆ `svg`, `png`; `revisionNo` opsional (bawaan terbaru). Respons `200
-{ job: { ..., scope, draft }, outputs, completeness }`.
+`html` (tanpa `formats` = bawaan templat, biasanya DOCX + PDF + HTML); `figures` ⊆ `svg`, `png`;
+`revisionNo` opsional (bawaan terbaru). Respons `200 { job: { ..., scope, draft }, outputs,
+completeness, partial, failedFormats, errors }` dengan header `X-Studio-Render-Status`
+(`SUCCEEDED`, `PARTIAL`, atau `FAILED`).
+
+**Periksa `partial`, bukan hanya kode HTTP.** Hasil sebagian tetap `200`: `partial: true` berarti job
+`PARTIAL`, `failedFormats` (huruf besar seperti `job.formats`, mis. `["PDF"]`) menyebut format
+yang tidak jadi, dan `errors` memuat kode tiap kegagalan. Berkas yang jadi tetap ada di `outputs`.
+Penanda yang sama ada di render ulang revisi (`POST .../revisions`, `200`) dan artefak mandiri
+(`POST /api/studio/artifacts`, `201`).
+
+### 8.0 PDF tidak siap: gagal cepat 503
+
+Bila `formats` memuat `pdf` (eksplisit, atau bawaan templat) dan mesin PDF server belum siap,
+render ditolak SEBELUM job dibuat: `503 PDF_ENGINE_UNAVAILABLE` dengan header `Retry-After: 300`.
+Isi dokumen tidak berubah dan tidak ada job.
+
+<!-- studio:response -->
+```json
+{
+  "error": "Mesin PDF di server belum siap, jadi permintaan render ditolak sebelum job dibuat; isi dokumen tidak berubah",
+  "code": "PDF_ENGINE_UNAVAILABLE",
+  "details": {
+    "stage": "preflight", "jobCreated": false,
+    "reason": "Mesin PDF di server belum siap, jadi PDF tidak bisa dibuat sekarang. Tidak ada job render yang dibuat dan isi dokumen tidak berubah. Kirim ulang tanpa pdf di formats untuk mendapat DOCX/HTML sekarang, atau coba lagi setelah mesin PDF siap.",
+    "causes": [ { "code": "FONTS_NOT_LOADED_IN_SESSION",
+      "message": "Fon per-pengguna (17 berkas fon) sudah terpasang tetapi belum dimuat di sesi Windows yang menjalankan server; operator perlu keluar lalu masuk kembali (sign out/sign in) sesi Windows itu.", "count": 17 } ],
+    "retryable": true, "requiresOperatorAction": true, "retryAfterSec": 300,
+    "requestedFormats": ["docx", "pdf", "html"], "suggestedFormats": ["docx", "html"],
+    "statusEndpoint": "GET /api/studio/render-env", "checkedAt": "2026-10-30T02:14:05.000Z"
+  }
+}
+```
+
+Tindakan agen: kirim ulang dengan `"formats": details.suggestedFormats` untuk mendapat DOCX/HTML
+sekarang, lalu minta PDF lagi setelah `GET /api/studio/render-env` melaporkan `ready: true`. Bila
+`requiresOperatorAction: true`, teruskan `details.causes[].message` ke controller atau operator;
+mengulang tanpa perubahan di server tidak membantu. Kode penyebab lain:
+`FONTS_NOT_REGISTERED`, `FONT_FILES_MISSING`, `FONT_FILES_CHANGED`, `FONT_FILES_UNREADABLE`,
+`FONT_REGISTRY_UNREADABLE`, `SESSION_FONT_CHECK_FAILED`, `PDF_ENGINE_MISSING`,
+`PDF_ENGINE_VERSION`, `RENDER_ENV_MANIFEST`, `READINESS_CHECK_FAILED`, `OTHER`.
+
+Urutan galat render lengkap: `401` (autentikasi) → `400 SCHEMA_INVALID` (badan) → `429 RATE_LIMITED`
+(laju) → `503 RENDER_QUEUE_FULL` (antrean penuh) → `404` (dokumen, revisi, atau kunci bab tidak ada)
+→ `409 DOCUMENT_INCOMPLETE` atau `422` (mis. `SLOT_UNKNOWN`) → `503 PDF_ENGINE_UNAVAILABLE`
+preflight, sama untuk `formats` apa pun (eksplisit, huruf besar atau kecil, maupun bawaan). Jadi
+`503` preflight hanya muncul untuk permintaan yang sasarannya sah dan boleh dirender; `503
+RENDER_QUEUE_FULL` dapat muncul lebih awal. Render ulang revisi (`POST .../revisions`) memakai urutan yang sama. Artefak
+mandiri (`POST /api/studio/artifacts`) tidak memakai gerbang PDF ini.
 
 ### 8.1 E3b: render penuh ditolak
 
@@ -1050,6 +1454,13 @@ Dua cara:
 Lebar dan resolusi cetak gambar diputuskan templat. Agen tidak mengirim `widthMm`, `widthClass`,
 atau `dpi`.
 
+**Nama dan teks alternatif figur berasal dari `caption`.** DOCX memberi setiap gambar, chart, dan
+diagram nama "Gambar n.m — caption" (maks 80 karakter) dan deskripsi label + caption + sumber;
+HTML memakai teks yang sama untuk `alt`. Tulis caption yang bermakna; figur tanpa caption hanya
+mendapat label jenis (mis. "Grafik P-01"). Logo sampul dan Datum Rule ditandai dekoratif oleh
+mesin (tanpa teks alternatif); agen tidak perlu menandainya. Chart batang P-01 atau P-11 dengan
+paling banyak 3 batang diberi tinggi plot minimum 32 mm secara otomatis.
+
 ---
 
 ## 11. Alamat dan pid
@@ -1082,7 +1493,10 @@ Di URL, alamat dan pid dienkode `encodeURIComponent` (`Tabel 3.1/2.2` menjadi `T
 
 ## 12. Kode galat dan tindakan agen
 
-Bentuk galat: `{ "error": "<pesan Indonesia yang menyebut perbaikan>", "code": "<KODE>", "details": ... }`.
+Bentuk galat: `{ "error": "<pesan yang menyebut perbaikan>", "code": "<KODE>", "details": ... }`.
+Pesan galat yang dijelaskan di panduan ini (503 preflight, 404 `ROUTE_NOT_FOUND`, 409 penimpaan PATCH)
+berbahasa Indonesia; sebagian pesan validasi teknis masih berbahasa Inggris. Teks awam yang siap
+diteruskan selalu ada di `details.reason`, `details.forwardToController`, atau `hint`.
 Galat validasi: `details[] = { pointer, keyword, message, checkId? }`. Galat 500 tidak memuat stack
 trace; laporkan `x-correlation-id`.
 
@@ -1104,10 +1518,12 @@ trace; laporkan `x-correlation-id`.
 | 403 | `PRESET_READONLY` | mengubah preset gaya tanpa hak ADMIN | buat templat dari preset, bukan mengubah preset |
 | 403 | `PATH_OUTSIDE_ROOT` | penjaga traversal berkas | laporkan ke operator |
 | 404 | `DOCUMENT_NOT_FOUND`, `REVISION_NOT_FOUND`, `TEMPLATE_NOT_FOUND`, `ARTIFACT_NOT_FOUND`, `FILE_NOT_FOUND` | id, revisi, slug, atau sha tidak ada | cek ulang id dari respons sebelumnya; templat: `GET /templates` |
+| 404 | `ROUTE_NOT_FOUND` | path `/api/studio/*` tidak ada (mis. `POST /api/studio/documents/{id}/slots`); badan JSON `{ error, code, message, hint, correlationId, details: { method, path, suggestion? } }` + header `x-correlation-id` | ikuti `hint` (route dan bentuk badan yang benar); GET, POST, PUT, PATCH, DELETE, dan OPTIONS berbadan JSON, HEAD tanpa badan |
+| 405 | (tanpa badan) | metode salah pada route yang ada (mis. `GET /api/studio/slots`) | pakai metode di kolom Metode seksi 16 |
 | 404 | `ADDRESS_NOT_FOUND` | alamat atau kunci bab tidak ada di revisi itu | muat ulang pohon revisi terkini |
 | 404 | `MISSION_REF_NOT_FOUND` | `agentRequestId`/`hermesTaskId` tidak ada | kirim tanpa medan itu atau dengan id yang benar |
 | 404 | `PID_NOT_FOUND` | pid tidak dikenal atau pensiun (`details.retiredRevisionNo`) | baca `GET .../content` untuk pid terkini |
-| 409 | `SCOPE_CONFLICT` | lingkup yang sama (bab, slot, pid, struktur) berubah sejak `baseRevisionNo` | gabungkan dengan `details.currentContent`, kirim ulang dengan `changedInRevisionNo` |
+| 409 | `SCOPE_CONFLICT` | lingkup yang sama (bab, slot, pid, struktur) berubah sejak `baseRevisionNo`; atau `details.reason = "PATCHED_PIDS_OVERWRITTEN"`: kiriman akan menimpa pid yang disunting lewat PATCH (`details.overwrittenPids`) | gabungkan dengan `details.currentContent` (atau isi `GET .../content`), kirim ulang dengan `baseRevisionNo` = `details.latestRevisionNo` / `changedInRevisionNo` (seksi 5.3) |
 | 409 | `DOCUMENT_INCOMPLETE` | render penuh pada revisi INCOMPLETE | teruskan `details.forwardToController`; render `chapter`/`slot` tetap boleh |
 | 409 | `META_CONFLICT` | medan `meta` yang sudah terisi di dokumen dikirim dengan nilai lain (medan kosong diisi tanpa galat) | buang medan itu dari kiriman; ubah lewat `setMeta` |
 | 409 | `TEMPLATE_MISMATCH` | dokumen ada dengan templat atau versi lain | buang `template` dari kiriman atau pakai slug dokumen |
@@ -1116,7 +1532,7 @@ trace; laporkan `x-correlation-id`.
 | 409 | `RENDER_IN_PROGRESS` | render revisi itu masih berjalan | tunggu lalu ulang dengan jeda (bawah) |
 | 409 | `TEMPLATE_SLUG_EXISTS`, `VERSION_CONFLICT` | slug templat ada / versi dasar usang | pengguna templat: pilih slug lain / baca versi terbaru lalu ulang |
 | 410 | `FILE_MISSING_ON_DISK` | baris ada, berkas hilang | render ulang revisi (`POST .../revisions`) |
-| 413 | `PAYLOAD_TOO_LARGE` | badan JSON > 5 MiB | unggah aset lewat `POST /api/studio/assets`, rujuk `sha256:` |
+| 413 | `PAYLOAD_TOO_LARGE` | badan JSON > 5 MiB; importer Markdown: badan > 4 MiB atau `details.reason` `MD_TOO_LONG`, `MD_TOO_MANY_LINES`, `MD_TOO_MANY_BLOCKS`, `MD_TABLE_TOO_WIDE` (seksi 5.6) | kiriman: unggah aset lewat `POST /api/studio/assets`, rujuk `sha256:`; importer: pecah bab atau bagian |
 | 413 | `ASSET_TOO_LARGE` | aset > 20 MiB, sisi > 20.000 px, atau > 80 MP | perkecil gambar |
 | 415 | `ASSET_TYPE_UNSUPPORTED` | isi bukan PNG/JPEG | konversi ke PNG/JPEG |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` badan bukan JSON | kirim `Content-Type: application/json` |
@@ -1141,11 +1557,12 @@ trace; laporkan `x-correlation-id`.
 | 422 | `CHART_KIND_UNKNOWN` | kode chart tidak ada | pilih dari `GET /registry?kind=charts` |
 | 422 | `DATUM-31` | diagram berupa Mermaid | tulis ulang sebagai `spec` simpul dan penghubung |
 | 422 | `DATUM-39` | resolusi gambar terlalu kecil untuk templat | kirim gambar lebih besar |
-| 429 | `RATE_LIMITED` | batas laju per identitas terlampaui: kiriman, PATCH, render, render ulang, artefak, dan validate `?preview=html` berbagi bawaan 30 per 60 detik (kiriman dihitung walau tidak merender); unggah aset 60 per menit; atau kuota byte aset 24 jam habis | tunggu `Retry-After` detik, lalu ulang sekali; untuk banyak bab, beri jeda antar kiriman |
+| 429 | `RATE_LIMITED` | batas laju per identitas terlampaui: kiriman, PATCH, render, render ulang, artefak, dan validate `?preview=html` berbagi bawaan 30 per 60 detik (kiriman dihitung walau tidak merender); validate R08 punya kuota tersendiri 120 per 60 detik; importer Markdown 60 per 60 detik (`?validate=1` juga kuota validate); unggah aset 60 per menit; atau kuota byte aset 24 jam habis | tunggu `Retry-After` detik, lalu ulang sekali; untuk banyak bab, beri jeda antar kiriman |
 | 500 | `PDF_CONVERT_FAILED`, `HTML_RENDER_FAILED`, `RENDER_FAILED`, `STORAGE_ROOT_FORBIDDEN`, `STORAGE_WRITE_FAILED` pada render | galat render atau penyimpanan berkas keluaran | isi sudah tersimpan: render ulang; bila berulang laporkan `x-correlation-id` |
 | 500 | `STORAGE_WRITE_FAILED` pada unggah aset atau kiriman ber-`assets` (`details.reason = "insufficient_disk_space"`) | ruang disk server kurang | aset dan kiriman TIDAK tersimpan; jangan mengulang, laporkan ke operator dengan `x-correlation-id` |
 | 503 | `RENDER_QUEUE_FULL` | antrean render penuh | tunggu `Retry-After` lalu ulang render; kiriman isi tidak terpengaruh |
-| 503 | `PDF_ENGINE_UNAVAILABLE`, `BROWSER_UNAVAILABLE` | mesin PDF/Chromium tidak siap | jangan kirim ulang isi; render ulang setelah `GET /render-env` siap |
+| 503 | `PDF_ENGINE_UNAVAILABLE` (`details.stage = "preflight"`, `jobCreated: false`) | `formats` memuat pdf saat mesin PDF belum siap; tidak ada job (seksi 8.0) | render ulang dengan `details.suggestedFormats`; minta PDF lagi setelah `GET /render-env` siap; `requiresOperatorAction` = teruskan `causes[].message` |
+| 503 | `PDF_ENGINE_UNAVAILABLE` (tanpa `stage`), `BROWSER_UNAVAILABLE` | mesin PDF/Chromium gagal di tengah | jangan kirim ulang isi; render ulang setelah `GET /render-env` siap |
 | 504 | `RENDER_TIMEOUT` | render melewati batas waktu | render ulang lingkup lebih kecil (bab) atau ulang dengan jeda |
 
 Lint rilis (`SLOT_CONTENT_MISSING`, `CONTENT_CHAPTER_GAP`, `SCHEMA_V1_ADAPTED`,
@@ -1255,6 +1672,7 @@ pernah dikirim agen:
 | `render.toc.note` | teks, atau null (bawaan) | catatan di bawah tabel daftar isi; null = tanpa catatan |
 | `image.widthClass` | `text` (bawaan) atau `full` | lebar SEMUA gambar dalam dokumen: kolom teks atau bentang penuh |
 | `symbolSheet.widthClass` | `text` (bawaan) atau `full` | lebar SEMUA lembar simbol dalam dokumen |
+| `toc.levels` | bilangan bulat 1..3 (bawaan 2) | kedalaman daftar isi turunan: 1 = bab, bagian, lampiran; 2 = ditambah section (peran format `toc.section*`: indentasi tingkat 2, huruf 1 pt lebih kecil); 3 dicadangkan (entri sama dengan 2, kecuali medan Word `\o "1-3"`). Entri lampiran memakai peran `toc.appendix*` hanya bila templat menyetelnya, selain itu peran bab. Daftar isi eksplisit (Manual 000) tidak terpengaruh |
 | `image.rasterDpi` | bilangan bulat 150..600 (bawaan 150 = lantai mutu raster DATUM-39) | gambar raster tidak diperbesar melewati ukuran aslinya pada resolusi ini (lebar asli = piksel / dpi); kelas lebar gambar menjadi batas atas |
 | `chart.kind.<KODE>.axis` (mis. P-04, P-05, P-06, P-11, P-13, P-14, S-01..S-04; daftar lengkap `GET /api/studio/registry?kind=params`) | `[min, maks]`, atau null (bawaan, domain dari data) | domain sumbu nilai yang dicetak untuk jenis chart itu |
 
@@ -1281,7 +1699,9 @@ internal), `400 PARAM_CLASS_T_READONLY` (kunci turunan), `403 PRESET_READONLY` (
 
 ## 16. Peta route
 
-Rincian permintaan, respons, dan galat: `docs/API-REFERENCE.md` seksi 12.
+Rincian permintaan, respons, dan galat: `docs/API-REFERENCE.md` seksi 12. Metode di luar kolom
+Metode = `405` (tanpa badan); path yang tidak ada = `404 ROUTE_NOT_FOUND` berbadan JSON dengan `hint`
+(HEAD: 404 tanpa badan).
 
 | ID | Metode | Path | Dipakai untuk |
 |---|---|---|---|
@@ -1305,3 +1725,4 @@ Rincian permintaan, respons, dan galat: `docs/API-REFERENCE.md` seksi 12.
 | R18 | GET, POST | `/api/studio/assets` | unggah dan baca aset |
 | R19 | GET, POST | `/api/studio/templates/[id]/skeleton` | baca kerangka + kenop esensial slot; simpan kerangka = versi templat baru (pengguna templat) |
 | R20 | GET | `/api/studio/documents/[id]/content` | isi bentuk v2 + pid |
+| - | POST | `/api/studio/import/markdown` | Markdown satu bab → `studio.chapter/v2` (tanpa menyimpan; `?validate=1` = dry-run R08) |

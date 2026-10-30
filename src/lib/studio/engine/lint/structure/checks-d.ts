@@ -13,9 +13,12 @@ import type {
 } from "../../../contract";
 import { BindDefect, Register, auditRetired, auditText, checkResult } from "../../bind";
 import { CHART_BY_CODE } from "../../../registry/charts";
+import { ESSENTIAL_KNOBS } from "../../../registry/essentials";
 import { isSlotSectionType } from "../../../registry/slots";
+import { PARAMS_BY_KEY } from "../../../params";
 import { columnRoles } from "./checks-a";
 import { findings, notRun, pBool, pNum, pStrList, pTierBool, type CheckOutcome, type Finding, type StructCtx } from "./context";
+import { releasedBlockingChecks } from "./enforcement";
 import { findTerbilangPairs, hasDate, parseDatumNumber, sentenceCount, timesWithoutZone } from "./text";
 import { blockText, cellText, isFigureType, isTableType, textOf, type WalkItem } from "./walk";
 import { isWrongRightTable } from "../scan/walk";
@@ -510,6 +513,71 @@ function presetsBySlotV2(ctx: StructCtx): Map<string, Map<string, Set<string>>> 
   return out;
 }
 
+/** Sakelar rel bukti (P4S-07, kelas B). */
+export const EVIDENCE_RAIL_ENABLED_KEY = "device.evidenceRail.enabled";
+
+/**
+ * true bila USER (pemanggil bukan ADMIN) dapat menulis kunci parameter lewat
+ * jalur mana pun: lapis `essential` (templat R01/R02, kerangka, draf validasi;
+ * `checkTemplateWrite`) atau kenop esensial yang memetakan kunci itu (termasuk
+ * kenop `medan`, D-170/D-171). Lapis `advanced`/`internal` = hanya ADMIN (403
+ * PARAM_SURFACE_FORBIDDEN, D-163 T-1); `derived` = hanya sematan ADMIN pada
+ * preset (D-182). Kunci yang tidak dikenal registri atau tanpa lapis dianggap
+ * dapat ditulis USER (gagal tertutup). Dibaca saat dipanggil agar mengikuti
+ * registri.
+ */
+export function isUserWritableParam(key: string): boolean {
+  const def = PARAMS_BY_KEY.get(key);
+  if (!def || def.surface === undefined || def.surface === "essential") return true;
+  return ESSENTIAL_KNOBS.some((k) => k.keys.includes(key));
+}
+
+/** Asal nilai `device.evidenceRail.enabled = false` untuk D16 (FIX-HR3). */
+export interface RailOffAuthority {
+  /** true = hanya ADMIN/harness yang dapat menghasilkan nilai ini: pengecualian rel sah. */
+  adminControlled: boolean;
+  /** Asal nilai (NOT_APPLICABLE) atau alasan pengecualian ditolak (FAIL). */
+  reason: string;
+}
+
+/**
+ * D-332 C3: rel bukti yang dimatikan hanya membuat syarat rel D16
+ * NOT_APPLICABLE bila nilainya berasal dari lapis yang dikendalikan ADMIN.
+ * Lint hanya melihat parameter terselesaikan, jadi asal dibuktikan lewat dua
+ * jalan yang dapat diperiksa dari parameter itu sendiri:
+ *  1. kunci tidak dapat ditulis USER (`isUserWritableParam` = false). Nilainya
+ *     hanya dapat berasal dari preset/templat yang disimpan ADMIN (termasuk
+ *     yang diwarisi templat USER lewat `baseVersionId`), impor profil server,
+ *     atau override dokumen. Override dokumen hanya diterapkan untuk pemanggil
+ *     tepercaya (`ingest.inlineFormat = allow`, KD-26; jalur v1 lama hanya
+ *     harness), dan render inline mengupas kunci non-esensial dari pemanggil
+ *     bukan ADMIN (`gateInlineDocOverrides`);
+ *  2. templat TERBATAS D-98 (profil efektif melepas cek penolak): ingest,
+ *     revisi, dan render-nya hanya untuk ADMIN/harness (`assertTemplateUsable`,
+ *     juga setelah override dokumen).
+ * Selain itu (kunci dapat ditulis USER pada templat terbuka) pengecualian
+ * ditolak. Asal preset tidak dapat dibedakan dari override USER pada parameter
+ * terselesaikan, maka kasus itu gagal tertutup.
+ */
+export function evidenceRailOffAuthority(ctx: Pick<StructCtx, "params" | "doc">): RailOffAuthority {
+  const key = EVIDENCE_RAIL_ENABLED_KEY;
+  const fromDoc = Object.prototype.hasOwnProperty.call(ctx.doc.overrides ?? {}, key);
+  if (!isUserWritableParam(key)) {
+    const layer = fromDoc ? "override dokumen pemanggil tepercaya (KD-26)" : "preset atau templat yang disimpan ADMINISTRATOR";
+    return { adminControlled: true, reason: `${layer}; kunci lapis lanjutan, hanya ADMINISTRATOR yang dapat mengubahnya` };
+  }
+  const released = releasedBlockingChecks({ params: ctx.params });
+  if (released.length > 0) {
+    return { adminControlled: true, reason: `templat terbatas D-98 (melepas ${released.join(", ")}), hanya dapat dipakai ADMINISTRATOR atau harness` };
+  }
+  return {
+    adminControlled: false,
+    reason:
+      `rel bukti dimatikan ${fromDoc ? "override dokumen" : "templat"} (${key} = false), tetapi kunci itu dapat diubah USER dan templat tidak terbatas D-98, ` +
+      "jadi syarat rel tetap berlaku: tambahkan baris rel pada paragraf bukti atau minta ADMINISTRATOR menyiapkan templat tanpa rel",
+  };
+}
+
 /**
  * D16 Section wajib per tier ada (mis. tabel rekonsiliasi SERAH).
  *
@@ -519,16 +587,44 @@ function presetsBySlotV2(ctx: StructCtx): Map<string, Map<string, Set<string>>> 
  * (`SLOT_FORBIDDEN_FOR_TIER`). D16 v2 tetap memeriksa section non-slot
  * (perangkat halaman dsb.) dan `requiredPresets` PER SLOT: preset wajib harus
  * ada pada blok di slot berulang aktif yang memuat jenis blok itu.
+ *
+ * Rel bukti (F5, FIX-HZ2/D-327): dinilai menurut yang DIRENDER. Bila templat
+ * mematikan rel (`device.evidenceRail.enabled = false`, P4S-07), mesin
+ * DOCX/HTML menulis baris rel moda B di bawah paragraf (FIX-H4), jadi
+ * `evidenceRail` tidak dihitung hadir maupun wajib: NOT_APPLICABLE beralasan
+ * di detail PASS (pemilihan moda mekanis, HS RAIL-1008). Rel menyala (bawaan)
+ * = tetap ketat: tier yang mewajibkan rel tanpa baris rel di konten = FAIL.
+ * Perangkat lain yang dimatikan templat TIDAK dikecualikan (FIX-SERAH).
+ *
+ * FIX-HR3 (D-332 C3): pengecualian itu hanya berlaku bila nilai `false` berasal
+ * dari lapis yang dikendalikan ADMIN (`evidenceRailOffAuthority`). Bila USER
+ * dapat mematikan rel sendiri, D16 tetap ketat dan pesan FAIL menjelaskan
+ * mengapa pengecualian ditolak (aturan rilis tidak dilonggarkan lewat parameter).
  */
 function d16(ctx: StructCtx): CheckOutcome {
   const plan = ctx.tpl.sectionPlan?.[ctx.tier];
   if (!plan) return notRun(`rencana section tier ${ctx.tier} tidak ada di templat ${ctx.tpl.templateId} v${ctx.tpl.versionNo}`);
   const { keys, presets } = presentSectionKeys(ctx);
   const v2 = ctx.v2;
+  const railOff = !pBool(ctx, EVIDENCE_RAIL_ENABLED_KEY, true);
+  const authority = railOff ? evidenceRailOffAuthority(ctx) : undefined;
+  const railExempt = authority?.adminControlled === true;
+  const railNotApplicable = (k: string) => railExempt && k === "evidenceRail";
+  // Rel dimatikan lapis yang dapat diubah USER: aturan tetap ketat, alasannya ikut di pesan FAIL.
+  const railWhy = (k: string) => (k === "evidenceRail" && authority && !authority.adminControlled ? `; ${authority.reason}` : "");
   const isSlotType = (k: string) => v2 !== undefined && isSlotSectionType(k);
   const f: Finding[] = [];
-  for (const k of plan.required) if (!isSlotType(k) && !keys.has(k)) f.push({ detail: `section wajib tier ${ctx.tier} "${k}" tidak ada (Tabel 3.2)` });
-  for (const k of plan.forbidden) if (!isSlotType(k) && keys.has(k)) f.push({ detail: `section "${k}" terlarang pada tier ${ctx.tier} (tidak aktif atau tidak dapat dirender)` });
+  for (const k of plan.required) {
+    if (!isSlotType(k) && !railNotApplicable(k) && !keys.has(k)) f.push({ detail: `section wajib tier ${ctx.tier} "${k}" tidak ada (Tabel 3.2)${railWhy(k)}` });
+  }
+  for (const k of plan.forbidden) {
+    if (!isSlotType(k) && !railNotApplicable(k) && keys.has(k)) f.push({ detail: `section "${k}" terlarang pada tier ${ctx.tier} (tidak aktif atau tidak dapat dirender)${railWhy(k)}` });
+  }
+  const railPlanned = plan.required.includes("evidenceRail") || plan.forbidden.includes("evidenceRail");
+  const railNote =
+    railExempt && railPlanned && authority
+      ? `; evidenceRail NOT_APPLICABLE: rel bukti dimatikan (${EVIDENCE_RAIL_ENABLED_KEY} = false, P4S-07) oleh ${authority.reason}; baris rel dirender moda B dan tidak dihitung hadir maupun wajib`
+      : "";
   const recon = pTierBool(ctx, "serah.reconciliationTable.required", (t) => t === "SERAH");
   const bySlot = v2 ? presetsBySlotV2(ctx) : undefined;
   const repeatableSlots = v2 ? v2.skeleton.slots.filter((s) => s.active && !s.omitted && s.repeatable).map((s) => s.slotKey) : [];
@@ -544,7 +640,8 @@ function d16(ctx: StructCtx): CheckOutcome {
     }
   }
   const scope = v2 ? "section non-slot" : "section";
-  return findings(f, `${plan.required.filter((k) => !isSlotType(k)).length} ${scope} wajib tier ${ctx.tier} ada; 0 section terlarang${v2 ? "; slot wajib dinilai SLOT_CONTENT_MISSING" : ""}`);
+  const counted = plan.required.filter((k) => !isSlotType(k) && !railNotApplicable(k)).length;
+  return findings(f, `${counted} ${scope} wajib tier ${ctx.tier} ada; 0 section terlarang${v2 ? "; slot wajib dinilai SLOT_CONTENT_MISSING" : ""}${railNote}`);
 }
 
 /** D17 Blok identitas halaman pertama ada. */

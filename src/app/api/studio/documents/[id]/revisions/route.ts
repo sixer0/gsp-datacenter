@@ -4,8 +4,12 @@
  * GET  -> 200 `{ revisions: RevisionSummary[] }` (terbaru lebih dulu).
  *      Diff opsional (aditif): `?from=a&to=b` -> `{ revisions, diff: RevisionDiff }`;
  *      `?to=b` saja -> diff terhadap `parentRevisionNo` revisi b.
- * POST `{ revisionNo, formats?, agentId? }` -> 200 `{ job, outputs, identical }`
- *      (render ulang revisi lama tanpa revisi baru; 409 RENDER_IN_PROGRESS dari layanan).
+ * POST `{ revisionNo, formats?, agentId? }` -> 200 `{ job, outputs, identical, partial,
+ *      failedFormats, errors }` + header `X-Studio-Render-Status` (render ulang revisi lama
+ *      tanpa revisi baru; 409 RENDER_IN_PROGRESS dari layanan). FIX-HZ1 (D-325): penanda
+ *      hasil sebagian sama dengan R17/R09; pdf diminta (eksplisit atau bawaan) + render-env
+ *      tidak siap -> 503 `PDF_ENGINE_UNAVAILABLE` `details.stage: "preflight"` + `Retry-After`
+ *      tanpa job, SETELAH 404 dokumen/revisi.
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
@@ -13,7 +17,15 @@ import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { STUDIO_OUTPUT_FORMATS, type StudioOutputFormat } from "@/lib/studio/contract/enums";
 import type { ValidationIssue } from "@/lib/studio/contract/types/api";
 import { diffRevisions, listRevisions, rerenderRevision } from "@/lib/studio/services/revisions";
-import { assertRenderCapacity, isQueueFullOutcome, renderQueueRetryAfterSec } from "@/lib/studio/services/render";
+import {
+  assertRenderCapacity,
+  isPdfPreflightRejection,
+  isQueueFullOutcome,
+  renderOutcomeMarker,
+  renderQueueRetryAfterSec,
+  renderStatusHeaders,
+  withRetryAfterHeader,
+} from "@/lib/studio/services/render";
 import { apiLog, checkRenderRate, failure, isPlausibleId, json, parsePosInt, readJsonObject, reject, reqCtx } from "@/lib/studio/http";
 import { API_LOG_SOURCE } from "../blocks/_lib/http";
 
@@ -124,15 +136,40 @@ export async function POST(req: NextRequest, { params }: Params) {
         retryAfterSec: renderQueueRetryAfterSec(),
       });
     }
+    const errors = result.job.errors ?? [];
+    const marker = renderOutcomeMarker(result.job, result.outputs, errors);
+    const incomplete = result.job.status !== "SUCCEEDED";
     apiLog({
       ...ctx,
-      level: "info",
-      message: "revision re-render requested",
+      level: incomplete ? "warn" : "info",
+      message: incomplete ? `revision re-render ${result.job.status}` : "revision re-render requested",
+      ...(incomplete ? { code: errors[0]?.code ?? "RENDER_INCOMPLETE" } : {}),
       status: 200,
-      context: { documentId: id, revisionNo, formats, jobId: result.job.id, identical: result.identical, requester: caller.requester },
+      context: {
+        documentId: id,
+        revisionNo,
+        formats,
+        jobId: result.job.id,
+        jobStatus: result.job.status,
+        identical: result.identical,
+        requester: caller.requester,
+        ...(incomplete ? { failedFormats: marker.failedFormats, errorCodes: errors.map((x) => x.code) } : {}),
+      },
     });
-    return json(result, 200, ctx);
+    return json({ ...result, ...marker, errors }, 200, ctx, renderStatusHeaders(result.job));
   } catch (e) {
+    if (isPdfPreflightRejection(e)) {
+      const d = e.details;
+      const res = reject(ctx, "PDF_ENGINE_UNAVAILABLE", e.message, d, {
+        documentId: id,
+        revisionNo,
+        formats,
+        stage: d.stage,
+        causeCodes: d.causes.map((c) => c.code),
+        checkedAt: d.checkedAt,
+      });
+      return withRetryAfterHeader(res, d.retryAfterSec);
+    }
     return failure(e, ctx, { context: { documentId: id, revisionNo, formats } });
   }
 }

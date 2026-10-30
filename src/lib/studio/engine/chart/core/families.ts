@@ -7,7 +7,7 @@
  * mengimpor helper inti tanpa ikut siklus impor dispatch.
  */
 import type { ChartRenderer, ChartRendererMap, StudioChartV1 } from "../../../contract";
-import { datumHeightMm, renderDatum } from "./datum";
+import { datumHeightMm, dcHeightMm, renderDatum } from "./datum";
 import { renderGallery } from "./gallery";
 import { CORE_FAMILY, type CoreCode, accentHintSeries, isCoreCode, prepareCore } from "./prepare";
 
@@ -45,12 +45,13 @@ export const chartCore: ChartRendererMap = {
 
 /**
  * Tinggi kanvas kode inti (mm). Gaya datum = `tinggi()` DC (spec.heightMm diabaikan
- * demi paritas CA, dilaporkan REPORT bila berbeda); gaya gallery = spec.heightMm atau
- * taksiran DC.
+ * demi paritas CA, dilaporkan REPORT bila berbeda) dengan badan minimum keluarga batang
+ * untuk n <= 3 kategori (FIX-H8, `datumHeightMm`); gaya gallery = spec.heightMm atau
+ * taksiran DC tanpa batas bawah (tidak berubah).
  */
 export function coreHeightMm(spec: StudioChartV1, code: CoreCode): number {
-  const est = datumHeightMm(spec, CORE_FAMILY[code]);
-  return (spec.style ?? "datum") === "gallery" ? (spec.heightMm ?? est) : est;
+  if ((spec.style ?? "datum") === "gallery") return spec.heightMm ?? dcHeightMm(spec, CORE_FAMILY[code]);
+  return datumHeightMm(spec, CORE_FAMILY[code]);
 }
 
 export { isCoreCode };

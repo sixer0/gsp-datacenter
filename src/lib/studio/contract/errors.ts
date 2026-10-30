@@ -90,6 +90,8 @@ export const STUDIO_ERROR_HTTP: Readonly<Record<StudioErrorCode, number>> = {
   ASSET_NOT_FOUND: 422,
   DOCUMENT_INCOMPLETE: 409,
   CHAPTER_KEY_INVALID: 422,
+  // FIX-HR2 (D-332 C9): path Studio tak dikenal (catch-all FIX-H6).
+  ROUTE_NOT_FOUND: 404,
 };
 
 /** Galat mesin/layanan bertipe kode; route memetakan ke HTTP lewat studioError. */

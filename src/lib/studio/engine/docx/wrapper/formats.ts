@@ -13,6 +13,7 @@ import type { Borders, Cell, Hex, ParaFormat, ParamMap, ParamValue, RenderContex
 import { StudioEngineError } from "../../../contract/errors";
 import { resolveRoleFormat } from "../../tokens";
 import { resolveUnitSetup } from "../package/section";
+import { isTocSectionRole, TOC_ROLE_PARENT, tocSectionIndentTw, tocSectionSize } from "./toc-refs";
 import { mmToTw } from "./xml";
 
 // ── Warna (research/07 RS; param color.* menimpa) ────────────────────────
@@ -138,6 +139,12 @@ export type WrapperRole =
   | "toc.chapterLabel"
   | "toc.chapterTitle"
   | "toc.chapterPage"
+  | "toc.sectionLabel"
+  | "toc.sectionTitle"
+  | "toc.sectionPage"
+  | "toc.appendixLabel"
+  | "toc.appendixTitle"
+  | "toc.appendixPage"
   | "part.chapterNo"
   | "part.chapterTitle"
   | "spacer.generic"
@@ -299,6 +306,16 @@ export function benchmarkRole(role: WrapperRole, p: ParamMap): WrapperRoleFormat
         run: mono(14, c.ink),
         cell: { borders: { bottom: ruleBottom }, marginsTw: { top: 62, left: 0, bottom: 62, right: 113 } },
       };
+    case "toc.sectionLabel":
+    case "toc.sectionTitle":
+    case "toc.sectionPage":
+    case "toc.appendixLabel":
+    case "toc.appendixTitle":
+    case "toc.appendixPage": {
+      // FIX-TL: tanpa nilai terukur benchmark; turunan dari peran bab (lihat `tocDerivedFormat`).
+      const parent = TOC_ROLE_PARENT[role] as WrapperRole;
+      return tocDerivedFormat(role, benchmarkRole(parent, p), p);
+    }
     case "part.chapterNo": // KT-16, RS37, TCP-13
       return {
         para: ex(0, 0, 220),
@@ -347,10 +364,41 @@ function mergePara(base: ParaFormat | undefined, over: ParaFormat | undefined): 
 }
 
 /**
+ * Gaya bawaan peran entri TOC turunan (FIX-TL, D-351/D-352) dari format peran bab:
+ * section = indentasi tingkat 2 (`tocSectionIndentTw`, label dan judul; halaman tidak)
+ * + run 1 pt lebih kecil (`tocSectionSize`); lampiran = format bab apa adanya.
+ */
+function tocDerivedFormat(role: WrapperRole, parent: WrapperRoleFormat, p: ParamMap): WrapperRoleFormat {
+  if (!isTocSectionRole(role as RoleKey)) return parent;
+  const out: WrapperRoleFormat = { ...parent };
+  if (role !== "toc.sectionPage") {
+    const indent = tocSectionIndentTw(p) + (parent.para?.indLeftTw ?? 0);
+    out.para = { ...(parent.para ?? {}), indLeftTw: indent };
+  }
+  const sz = tocSectionSize(parent.run?.szHalfPt);
+  if (parent.run && sz !== undefined) out.run = { ...parent.run, szHalfPt: sz };
+  return out;
+}
+
+/**
  * Format efektif satu peran: benchmark <- katalog (per atribut) <- templat
  * `roleFormats` (sub-objek utuh, semantik S11 D-37a).
+ * Peran entri TOC turunan (`toc.section*`, `toc.appendix*`; FIX-TL) mewarisi format
+ * EFEKTIF peran bab (termasuk `roleFormats` bab templat), diturunkan, lalu sub-objek
+ * yang disetel templat untuk peran itu sendiri menang utuh.
  */
 export function roleFormat(ctx: RenderContext, role: WrapperRole): WrapperRoleFormat {
+  const parent = TOC_ROLE_PARENT[role as RoleKey] as WrapperRole | undefined;
+  if (parent) {
+    const derived = tocDerivedFormat(role, roleFormat(ctx, parent), ctx.tpl.params);
+    const own = ctx.tpl.roleFormats[role as RoleKey];
+    if (!own) return derived;
+    const out: WrapperRoleFormat = { ...derived };
+    for (const k of Object.keys(own) as Array<keyof RoleFormat>) {
+      if (own[k] !== undefined) (out as Record<string, unknown>)[k] = own[k];
+    }
+    return out;
+  }
   const base = benchmarkRole(role, ctx.tpl.params);
   const resolved = resolveRoleFormat(ctx.tpl, role as RoleKey);
   const tplOwn = ctx.tpl.roleFormats[role as RoleKey];

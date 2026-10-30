@@ -94,6 +94,7 @@ export const HTML_BLOCK_CLASSES = {
   tocLabel: "st-toc-label",
   tocEntryTitle: "st-toc-entry-title",
   tocPage: "st-toc-page",
+  tocLink: "st-toc-link",
   part: "st-part",
   partKicker: "st-part-kicker",
   partTitle: "st-part-title",
@@ -141,5 +142,7 @@ export const HTML_BLOCKS_CSS = [
   `.${C.spine}[data-rotate="90"]{writing-mode:vertical-rl}`,
   `.${C.controlBlock},.${C.tocTable},.${C.signature},.${C.partChapters},.${C.fallbackTable}{border-collapse:collapse;table-layout:fixed}`,
   `.${C.colophon}{display:flex;justify-content:space-between}`,
+  // FIX-H4: entri daftar isi turunan = tautan jangkar internal; tampilan tetap milik peran sel.
+  `.${C.tocLink}{color:inherit;text-decoration:none}`,
   `.${C.field}:empty::before{content:"\\2007"}`,
 ].join("\n");

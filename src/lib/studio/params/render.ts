@@ -9,6 +9,7 @@
  * R-59..R-64 = delta RQ-8 (judul/catatan daftar isi DF-58; kelas lebar gambar dan
  * lembar simbol RK-10), nomor lanjut setelah R-58 karena structure.ts bukan berkas baris ini.
  * R-65 = delta FIX-FIG (D-257): resolusi gambar raster untuk aturan ukuran asli K-2 (D-242).
+ * R-66 = delta FIX-TL (D-351/D-352): kedalaman daftar isi turunan `toc.levels` (registri S03 paramRefs).
  *
  * SR-05 (KC-7, SR-01 PC-05/KD-25, D-158): R-09/R-10 tidak lagi membawa ukuran
  * halaman A4 tertanam; `pageSizeTw` adalah sub-medan turunan dari `page.sizeMm`
@@ -318,6 +319,19 @@ export const PARAMS_RENDER: readonly ParamDef[] = [
       "lebar kelas gambar (image.widthClass) menjadi batas atas. Bawaan 150 = lantai mutu raster DATUM-39 (nilai minimum). " +
       "Angka lebih besar membuat gambar beresolusi rendah tampil lebih kecil (lebih tajam); berlaku untuk dokumen konten v2",
   }),
+  // ── Delta FIX-TL (D-351/D-352; TOC turunan per section FIX-T2) ─────────
+  // Lapis lanjutan + cakupan section:toc = pola kenop daftar isi RQ-8 (R-59/R-60): keputusan gaya rumah
+  // milik ADMIN templat, bukan kenop awam (kenop esensial toc tetap 2: mode nomor halaman + pita segel).
+  r(66, "toc.levels", "Kedalaman daftar isi", "int", 2, {
+    range: { min: 1, max: 3, step: 1 },
+    source: "FIX-TL; registri S03 paramRefs toc.levels; FIX-T2 (D-351)",
+    namespace: "toc",
+    classNote:
+      "Tingkat entri daftar isi TURUNAN (entri konten kosong): 1 = bagian, bab, lampiran; 2 = tambah section " +
+      "(nomor + judul, peran toc.section*); 3 = cadangan tingkat berikut (kontrak belum punya unit struktur tingkat 3, " +
+      "entri turunan sama dengan 2, kerangka medan Word TOC \\o 1-3). Bawaan 2 = medan TOC \\o 1-2 mesin. " +
+      "Entri eksplisit konten (Manual 000) tidak terpengaruh",
+  }),
 ];
 
-export const PARAMS_RENDER_COUNT = 44;
+export const PARAMS_RENDER_COUNT = 45;

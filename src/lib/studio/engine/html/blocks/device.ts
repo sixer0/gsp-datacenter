@@ -94,6 +94,15 @@ function coverDatumRuleWidthMm(ctx: RenderContext, block: NormBlock): number {
 }
 
 /**
+ * Atribut gambar aparatus dekoratif (logo sampul; FIX-HZ2, D-326, WCAG 1.1.1):
+ * `alt=""` + `role="presentation"` sehingga pembaca layar melewatinya. Padanan
+ * DOCX: `wp:docPr descr=""` + `adec:decorative` (`engine/docx/blocks/media`).
+ * Gambar isi (figur) memakai alt dari `engine/front/alt-text` (FIX-H8).
+ * Ditulis literal karena `attr()` membuang nilai kosong.
+ */
+export const DECORATIVE_IMG_ATTRS = ' alt="" role="presentation"';
+
+/**
  * Datum Rule sebagai SVG inline (tanpa skrip): garis tebal `weightMm`, segmen
  * depan `frontSegmentMm` tiga kali lebih tebal, `ticks` tik sama jarak.
  */
@@ -162,12 +171,11 @@ export function renderDevice(block: NormBlock, ctx: RenderContext, d: DeviceBloc
       const size = [widthMm ? `width:${num(widthMm)}mm` : "", finite(d.heightMm, 1, 1000) ? `height:${num(d.heightMm as number)}mm` : ""]
         .filter(Boolean)
         .join(";");
-      const alt = d.text ? "" : "logo";
       return el(
         ctx,
         "div",
         { classes: [C.device, C.logo], role: "cover.logo", format: d.format },
-        `<img${attr("src", uri)}${attr("alt", alt)}${attr("style", size)}>`,
+        `<img${attr("src", uri)}${DECORATIVE_IMG_ATTRS}${attr("style", size)}>`,
       );
     }
     case "hairline":

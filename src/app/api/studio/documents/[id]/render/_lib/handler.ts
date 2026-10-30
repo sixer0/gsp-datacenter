@@ -6,7 +6,21 @@
  * (429 RATE_LIMITED, FIX-1/D-134) -> kapasitas antrean (503 RENDER_QUEUE_FULL,
  * D-134/D-135; keduanya membawa `Retry-After`) -> `renderScope` (SR-15).
  *
- * - 200 `{ job, outputs, completeness }`.
+ * Urutan galat sasaran SERAGAM apa pun `formats` (FIX-HR2, D-332 C1; sama dengan R07):
+ * 401 (sesi, `route.ts`) -> 404 DOCUMENT_NOT_FOUND / REVISION_NOT_FOUND -> 409
+ * DOCUMENT_INCOMPLETE (lingkup document) / 404 ADDRESS_NOT_FOUND / 422 SLOT_UNKNOWN
+ * -> 503 PDF_ENGINE_UNAVAILABLE tahap preflight. Satu gerbang saja, di `renderScope`
+ * sesudah `prepareScopeRender`; route tidak lagi menggerbang pdf eksplisit sendiri
+ * (dulu FIX-H1/FIX-HZ1: pdf eksplisit dapat menghasilkan 503 sebelum 409).
+ *
+ * - FIX-H1 (D-321 C1, D-322): format efektif (eksplisit atau bawaan snapshot) memuat
+ *   pdf dan render-env tidak siap -> 503 `PDF_ENGINE_UNAVAILABLE` + `Retry-After`,
+ *   `details` { stage: "preflight", jobCreated: false, reason, causes[], retryable,
+ *   requiresOperatorAction, retryAfterSec, requestedFormats, suggestedFormats,
+ *   statusEndpoint, checkedAt }; tidak ada job dibuat.
+ * - 200 `{ job, outputs, completeness, partial, failedFormats, errors }` + header
+ *   `X-Studio-Render-Status: <status job>`. `partial: true` = job PARTIAL;
+ *   `failedFormats` = format yang gagal (huruf besar seperti `job.formats`).
  * - Render penuh pada revisi INCOMPLETE: layanan melempar `DOCUMENT_INCOMPLETE`;
  *   route menegakkan bentuk §11.3 `{ completeness, allowedScopes, forwardToController }`
  *   apa pun bentuk `details` dari layanan (lihat `incompleteDetails`).
@@ -21,6 +35,12 @@ import type { StudioRenderScopeKind } from "@/lib/studio/contract/enums";
 import type { OutputFileDto, RenderJobDto, RenderJobError } from "@/lib/studio/contract/types/api";
 import type { CompletenessReportV2, StudioCaller } from "@/lib/studio/contract";
 import { apiLog, failure, isPlausibleId, isRecord, json, readJsonObject, reject, type ReqCtx } from "@/lib/studio/http";
+import {
+  isPdfPreflightRejection,
+  renderOutcomeMarker,
+  renderStatusHeaders,
+  withRetryAfterHeader,
+} from "@/lib/studio/services/render/preflight";
 import { parseRenderBody, type RenderScopeRequest } from "./request";
 
 export const RENDER_ROUTE = "/api/studio/documents/[id]/render";
@@ -98,6 +118,8 @@ export async function handleRenderPost(req: Request, rawId: string, ctx: ReqCtx,
     const limited = deps.checkRate(caller, ctx);
     if (limited) return limited;
     deps.assertCapacity();
+    // FIX-HR2 (D-332 C1): tanpa gerbang PDF di sini; `renderScope` menggerbang format
+    // efektif SESUDAH 404/409/422 sehingga urutan galat tidak bergantung pada `formats`.
     if (!deps.renderScope) throw new StudioNotImplemented("services/render.renderScope (SR-15)");
 
     let result: RenderScopeResult;
@@ -126,10 +148,14 @@ export async function handleRenderPost(req: Request, rawId: string, ctx: ReqCtx,
       }, logCtx);
     }
 
+    const errors = result.errors ?? [];
+    const marker = renderOutcomeMarker(result.job, result.outputs, errors);
+    const incomplete = result.job.status !== "SUCCEEDED";
     apiLog({
       ...ctx,
-      level: "info",
-      message: "scoped render requested",
+      level: incomplete ? "warn" : "info",
+      message: incomplete ? `scoped render ${result.job.status}` : "scoped render requested",
+      ...(incomplete ? { code: errors[0]?.code ?? "RENDER_INCOMPLETE" } : {}),
       status: 200,
       context: {
         ...logCtx,
@@ -138,10 +164,26 @@ export async function handleRenderPost(req: Request, rawId: string, ctx: ReqCtx,
         draft: result.job.draft,
         completeness: result.completeness?.status ?? null,
         requester: caller.requester,
+        ...(incomplete ? { failedFormats: marker.failedFormats, errorCodes: errors.map((x) => x.code) } : {}),
       },
     });
-    return json({ job: result.job, outputs: result.outputs, completeness: result.completeness }, 200, ctx);
+    return json(
+      { job: result.job, outputs: result.outputs, completeness: result.completeness, ...marker, errors },
+      200,
+      ctx,
+      renderStatusHeaders(result.job),
+    );
   } catch (e) {
+    if (isPdfPreflightRejection(e)) {
+      const d = e.details;
+      const res = reject(ctx, "PDF_ENGINE_UNAVAILABLE", e.message, d, {
+        ...logCtx,
+        stage: d.stage,
+        causeCodes: d.causes.map((c) => c.code),
+        checkedAt: d.checkedAt,
+      });
+      return withRetryAfterHeader(res, d.retryAfterSec);
+    }
     return failure(e, ctx, { op: "POST render", context: logCtx });
   }
 }

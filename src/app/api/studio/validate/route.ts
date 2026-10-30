@@ -86,7 +86,8 @@ import { resolveTemplate, resolveTemplateVersion, validateRoleFormats } from "@/
 import { apiLog, checkRenderRate, isRecord, json, readJsonBody, reqCtx, type ReqCtx } from "@/lib/studio/http";
 import { buildPreviewHtmlV2, versionSlots } from "./_shared/preview-v2";
 import { S55_BODY_OPTIONS, bodyAgentId, failFrom } from "./_shared/route-kit";
-import { DRAFT_POINTER, issuesFromEngineDetails, resolveDraftTemplate, type DraftTemplateResolved } from "./_shared/template-draft";
+import { issuesFromError } from "./_shared/error-issues";
+import { DRAFT_POINTER, resolveDraftTemplate, type DraftTemplateResolved } from "./_shared/template-draft";
 import { checkValidateRate } from "./_shared/validate-rate";
 import { asCompletenessReport, isV2SubmissionSchema, schemaRootOf, validateV2, type V2SubmissionSchema } from "./_shared/v2-kit";
 
@@ -127,19 +128,6 @@ type ValidateBody = ValidateResponse & {
 
 function isSchemaForm(b: Record<string, unknown>): b is { schemaId: string; spec: unknown; agentId?: unknown } {
   return typeof b.schemaId === "string" && "spec" in b && !("document" in b);
-}
-
-/** Masukan pengguna yang ditolak layanan (4xx) -> isu validasi. */
-function issuesFromError(err: StudioEngineError): ValidationIssue[] {
-  const d = err.details;
-  if (Array.isArray(d) && d.every((x) => isRecord(x) && typeof x.pointer === "string" && typeof x.message === "string")) {
-    return d as ValidationIssue[];
-  }
-  // Layanan templat/kerangka: `details.issues` (ParamIssue/ValidationIssue).
-  if (isRecord(d) && Array.isArray(d.issues) && d.issues.length > 0) return issuesFromEngineDetails(err, "");
-  const pointer = isRecord(d) && typeof d.pointer === "string" ? d.pointer : "";
-  const checkId = isRecord(d) && typeof d.checkId === "string" ? d.checkId : undefined;
-  return [{ pointer, keyword: err.code, message: err.message, ...(checkId ? { checkId } : {}) }];
 }
 
 function isUserError(err: unknown): err is StudioEngineError {

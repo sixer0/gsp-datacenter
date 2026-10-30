@@ -118,3 +118,4 @@ export { nextDocNumber, maxSequence, STUDIO_LOCK_DOCNO_PREFIX } from "./docnumbe
 export { setSubmitLogSink, SUBMIT_SOURCE, type SubmitLogEntry, type SubmitLogSink } from "./log";
 export { fillerOf } from "./meta";
 export { DRY_RUN_DOC_NUMBER, type SubmitDryRunResult, type SubmitPlan } from "./pipeline";
+export { assertNoPatchedOverwrite, findPatchedOverwrites, OVERWRITE_REASON, type OverwrittenPid } from "./overwrite";
