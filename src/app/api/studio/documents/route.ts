@@ -70,7 +70,7 @@ import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { ingestDocument } from "@/lib/studio/services/ingest";
 import { revisionCompleteness } from "@/lib/studio/services/render/scope";
 import { resolveExistingDocTarget, splitDocV2Targeting, type DocV2Targeting } from "@/lib/studio/services/submit";
-import { apiLog, checkRenderRate, isRecord, json, readJsonBody, reject, reqCtx, type ReqCtx } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, isRecord, json, readJsonBody, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { S55_BODY_OPTIONS, bodyAgentId, failFrom, toDocumentSummary, toRevisionSummary } from "../validate/_shared/route-kit";
 import { asCompletenessReport, schemaRootOf, v2SchemaError, validateV2 } from "../validate/_shared/v2-kit";
 
@@ -400,6 +400,12 @@ export async function POST(req: NextRequest) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE);
+  // FIX-R40-1 (QH-03): header kuota (bucket render) pada respons apa pun sesudah tagihan; 401 dan
+  // penolakan sebelum `checkRenderRate` tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => postDocument(req, ctx));
+}
+
+async function postDocument(req: NextRequest, ctx: ReqCtx): Promise<Response> {
   const body = await readJsonBody(req, ctx, S55_BODY_OPTIONS);
   if (!body.ok) return body.response;
 

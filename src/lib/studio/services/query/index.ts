@@ -28,4 +28,14 @@ export {
   type SearchCursor,
 } from "./filters";
 export { type QueryDb, type QueryOptions } from "./db";
-export { setQueryLogSink, QUERY_SOURCE, type QueryLogEntry, type QueryLogSink } from "./log";
+export {
+  setQueryLogSink,
+  logQueryRead,
+  readLogIdentity,
+  truncateForLog,
+  QUERY_SOURCE,
+  READ_LOG_VALUE_MAX,
+  type QueryLogEntry,
+  type QueryLogSink,
+  type QueryReadCaller,
+} from "./log";

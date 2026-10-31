@@ -1,13 +1,16 @@
 /**
  * CLI pemeriksa draf/checkpoint MD (DC-22, register 05 §11.3-§11.4).
  *
- *   npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--emit <n>] [--json]
+ *   npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json]
  *
  * Opsi:
  *   --remote <baseUrl>   setiap blok dikirim apa adanya ke R08 `POST /api/studio/validate` (dry-run,
  *                        tanpa tulis DB) dengan header `x-internal-secret` dari env `INTERNAL_API_SECRET`
  *                        (D-334); basis `<documentId>@rev<n>` dibandingkan dengan revisi terkini dokumen
  *                        (R05) -> peringatan DR-08 `DRAFT_BASIS_STALE`
+ *   --agent-id <id>      agentId bawaan dry-run (1..80 karakter), setara medan badan R23 `agentId`; dipakai
+ *                        untuk blok tanpa medan `agentId` (medan payload blok menang). Hanya bersama
+ *                        --remote. Tanpa opsi ini dan tanpa `agentId` blok: tanpa agentId (sama dengan R23)
  *   --emit <n>           cetak teks blok ke-n (1-based) persis seperti tertulis (byte-identik), untuk
  *                        dikirim apa adanya
  *   --json               cetak hasil T2-70 `DraftCheckResultV2` (bentuk respons R23)
@@ -38,7 +41,7 @@ import {
 } from "../../src/lib/studio/services/draft";
 import { isV2SubmissionSchema, validateV2 } from "../../src/app/api/studio/validate/_shared/v2-kit";
 
-const USAGE = "pemakaian: npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--emit <n>] [--json]";
+const USAGE = "pemakaian: npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json]";
 
 const HELP = [
   USAGE,
@@ -49,6 +52,8 @@ const HELP = [
   "  --remote <baseUrl>   periksa setiap blok di server lewat dry-run POST /api/studio/validate",
   "                       (tidak menyimpan apa pun); rahasia dibaca dari env INTERNAL_API_SECRET.",
   "                       Juga memeriksa apakah basis draf sudah tertinggal dari revisi terkini.",
+  "  --agent-id <id>      agentId bawaan dry-run untuk blok tanpa medan agentId (hanya bersama --remote);",
+  "                       sama dengan medan agentId badan POST /api/studio/drafts/check",
   "  --emit <n>           cetak isi blok ke-n persis seperti tertulis, mis. --emit 1 > blok1.json",
   "  --json               cetak hasil lengkap sebagai JSON",
   "  -h, --help           tampilkan bantuan ini",
@@ -101,6 +106,8 @@ export interface RemoteOptions {
   baseUrl: string;
   secret: string;
   fetchImpl?: FetchLike;
+  /** agentId bawaan dry-run (aturan bersama D-392, `services/draft/check.ts`). */
+  agentId?: string;
 }
 
 function normalizeBaseUrl(raw: string): string {
@@ -183,8 +190,8 @@ export async function checkDraftRemote(markdown: string, opts: RemoteOptions): P
   const o: RemoteOptions = { ...opts, baseUrl: normalizeBaseUrl(opts.baseUrl) };
   return completeDraftCheck(markdown, prepareDraftCheck(markdown), {
     currentRevisionNo: (documentId) => currentRevisionNo(documentId, o),
-    dryRun: (block) => dryRunBlock(block.text, o),
-  });
+    dryRun: (input) => dryRunBlock(input.text, o),
+  }, o.agentId);
 }
 
 // ── Keluaran ────────────────────────────────────────────────────────────
@@ -235,6 +242,7 @@ export function formatHuman(file: string, result: DraftCheckResultV2, remote: st
 export interface CliArgs {
   file: string;
   remote: string | null;
+  agentId: string | null;
   emit: number | null;
   json: boolean;
 }
@@ -242,18 +250,22 @@ export interface CliArgs {
 export function parseArgs(argv: readonly string[]): CliArgs | "help" {
   let file: string | null = null;
   let remote: string | null = null;
+  let agentId: string | null = null;
   let emit: number | null = null;
   let json = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") return "help";
     if (a === "--json") json = true;
-    else if (a === "--remote" || a === "--emit") {
+    else if (a === "--remote" || a === "--emit" || a === "--agent-id") {
       const v = argv[i + 1];
       if (v === undefined || v.startsWith("--")) throw new DraftCheckUsageError(`${a} memerlukan nilai`);
       i++;
       if (a === "--remote") remote = v;
-      else {
+      else if (a === "--agent-id") {
+        if (v.length < 1 || v.length > 80) throw new DraftCheckUsageError("--agent-id harus 1..80 karakter");
+        agentId = v;
+      } else {
         if (!/^[1-9][0-9]{0,5}$/.test(v)) throw new DraftCheckUsageError(`--emit memerlukan nomor blok bilangan bulat >= 1 (diberikan "${v}")`);
         emit = Number(v);
       }
@@ -263,7 +275,8 @@ export function parseArgs(argv: readonly string[]): CliArgs | "help" {
   }
   if (file === null) throw new DraftCheckUsageError("berkas <berkas.md> belum diberikan");
   if (emit !== null && (json || remote !== null)) throw new DraftCheckUsageError("--emit tidak dapat digabung dengan --json atau --remote");
-  return { file, remote, emit, json };
+  if (agentId !== null && remote === null) throw new DraftCheckUsageError("--agent-id hanya berlaku bersama --remote");
+  return { file, remote, agentId, emit, json };
 }
 
 export interface CliIo {
@@ -327,7 +340,7 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       return 2;
     }
     try {
-      result = await checkDraftRemote(markdown, { baseUrl: args.remote, secret, fetchImpl: io.fetchImpl });
+      result = await checkDraftRemote(markdown, { baseUrl: args.remote, secret, fetchImpl: io.fetchImpl, ...(args.agentId !== null ? { agentId: args.agentId } : {}) });
     } catch (e) {
       if (e instanceof DraftCheckUsageError) {
         io.stderr(`draft-check: ${e.message}\n`);

@@ -6,6 +6,7 @@ step: DC-02
 agent: data-analyst
 date: 2026-10-30
 status: complete
+amended: 2026-10-30 DC-33 (D-398); 2026-10-31 DOC-FIX-B (document-specialist; review DC-42 F-01, review kode DC-40 L1/L2, security DC-41 M-2/L-2/L-4/L-5/L-6; D-395, D-400, D-402, D-403, D-405, D-406, D-407)
 binding: D-139, D-322 (H3), D-334, D-341..D-349, D-354, D-361 (U-1..U-4 menimpa blueprint 07), D-21, D-247, D-324, D-347
 inputs: identification/07_document_contract_blueprint.md (§0-§4, baris DC-01..DC-48), research/10_contract_corpus_inventory.md (DC-01), identification/06_document_contract_original.md, identification/06_document_contract_translated.md, decisions/decisions.md, masterplan/01_specs.md, masterplan/03_structural_sections_specs.md, src/lib/studio/contract/**, src/lib/studio/registry/{slots,sections,charts}.ts, src/lib/studio/params/structure.ts, prisma/schema.prisma, prisma/migrations/20260927154000_add_ilsearchdoc/migration.sql, prisma/seed-studio.ts, src/lib/studio/http/rate-limit.ts, src/lib/studio/services/render/naming.ts, src/app/api/studio/files/[id]/route.ts, src/app/api/studio/documents/route.ts
 ---
@@ -74,7 +75,7 @@ Dokumen ini adalah **register nama tunggal** untuk fase document contract (baris
 | Register 01 | model M01-M09, rollback, larangan migrasi | `masterplan/01_specs.md:41-131, 133-138` |
 | 69 kode galat yang ada | cek bentrok | `L/contract/errors.ts:18-95` (dihitung: 36 + 4 + 1 + 3 + 24 + 1 = 69) |
 | Konstanta dan route | perluasan C16, C33, pola | `L/contract/env.ts:56-137`; `L/registry/slots.ts:25-34, 59-80` |
-| checkId v2 | perluasan E41 | `L/contract/enums.ts:430-439` |
+| checkId v2 | perluasan E41 | `L/contract/enums.ts:430-439` (sebelum DC-05); **Amandemen DC-33 (D-384):** sesudah DC-05 `SCHEMA_V2_CHECK_IDS` = `L/contract/enums.ts:436-452` (14 entri) |
 | Slot payload | perluasan T2-44 | `L/contract/types/v2/slot.ts:100-106` |
 | Registri section | pin 51, kelompok 29/7/15, catalogId S25-S29 | `L/registry/sections.ts:400-463, 646-649` |
 | Chart | kode tergambar dan `dataShape` | `L/registry/charts.ts:713-1093` |
@@ -133,7 +134,7 @@ Kolom jenis dan status bertipe TEXT (KD-29), bukan enum Prisma. Menambah jenis =
 | KD-35 | Enam kolom cermin di `StudioDocument` (MX09) untuk filter R21; M19-M21 per revisi untuk riwayat, butir, rujukan balik | Join M19 ke revisi terkini untuk semua filter | Preseden kolom cermin `completeness` (`schema.prisma:782`); filter R21 langsung berindeks |
 | KD-36 | Rujukan ke dokumen sasaran tanpa FK (string + validasi layanan saat tulis) | FK Restrict ke `StudioDocument` | FK lintas agregat menghalangi hapus dokumen uji; pola KD-02 01_specs (Restrict hanya lintas templat) |
 | KD-37 | Kolom `tsv` GENERATED pada `StudioDocBlock` dengan `left(..., C42)`, konfigurasi `simple`; tanpa indeks trigram di tahap 1 | Trigram juga (blueprint 07 KC-1 a) | Salinan penuh per revisi (03 §3.1 :145) membuat GIN trigram besar; batas ukuran nilai tsvector Postgres (hipotesis besarnya) dijaga potongan C42; trigram dapat ditambah migrasi berikut bila DC-39 menunjukkan kebutuhan (CQ-5) |
-| KD-38 | Bucket kuota baru `query` (R21, R22). Header kuota melaporkan satu bucket: yang sisanya terkecil sesudah panggilan | Daftar bucket berpisah koma | Satu angka lebih mudah diikuti agen; R08 `?preview=html` memakai dua bucket (03 §12 R08) |
+| KD-38 | Bucket kuota baru `query` (R21, R22). Header kuota melaporkan satu bucket: yang sisanya terkecil sesudah panggilan. Amandemen DOC-FIX-C (D-411, D-413): kunci per agen + plafon identitas (L-4) hanya berlaku pada bucket `render` dan `validate`, yang route-nya menagih sesudah membaca `agentId` badan; bucket `import` dan `query` selalu satu kunci per identitas (§9.6) | Daftar bucket berpisah koma | Satu angka lebih mudah diikuti agen; R08 `?preview=html` memakai dua bucket (03 §12 R08) |
 | KD-39 | Nama final dihitung saat baca dari baris `StudioOutputFile` + dokumen; tanpa kolom baru. Berkas artefak memakai `rev0` dan awalan C53 | Kolom `finalFileName` tersimpan | Semua masukan sudah ada (`schema.prisma:893-908`); blueprint 07 §1.2 butir 3 |
 | KD-40 | R10 mendapat metode HEAD dan `?name=`; verifikasi nama-saja lewat R21 `docNumber` yang menerima bentuk aman | Route verifikasi baru | Tanpa route tambahan; HEAD memeriksa tanpa mengunduh badan |
 | KD-41 | Dokumen ber-contractKind: bila `formats` dan `figures` R17 absen, format = C40 (HTML) | Bawaan mesin DOCX+PDF+HTML | `pure/render.ts:77`; PDF di DEV masih menunggu USER (D-322) sehingga bawaan lama memicu 503 preflight |
@@ -143,6 +144,8 @@ Kolom jenis dan status bertipe TEXT (KD-29), bukan enum Prisma. Menambah jenis =
 | KD-45 | U-3: tanpa penegakan. Pelaku = `StudioRevision.createdBy` dan `StudioDocSection.lastFilledBy` (sudah ada); metrik MU-1/MU-2 dari SQL baca-saja | Peringatan `CONTRACT_WRITER_CHANGED` (blueprint 07 U-3 a) | D-361 U-3 "jangan ditegakkan sekarang"; `agentId` hanya label (`auth.ts:16-19`, blueprint 07 §1.2 butir 6) |
 | KD-46 | Respons kiriman mendapat `warnings` opsional untuk peringatan non-penahan (pid pensiun) | Peringatan hanya di R08 | Agen yang tidak menjalankan R08 tetap melihat peringatan (blueprint 07 KC-3 a) |
 | KD-47 | `chart.custom` hanya pada `ChartV2` (bukan panel komposit); 9 kombinasi dipetakan ke perender yang ada | Panel juga; perender baru | Permukaan mesin minimal (blueprint 07 R11) |
+
+Amandemen DOC-FIX-B: (1) KD-37 dikukuhkan dan CQ-5 ditutup, trigram tidak diperlukan (D-400; rincian §19.4). (2) KD-43 diperhalus: R23 menagih max(1, jumlah blok dry-run), sehingga draf tanpa blok dry-run tetap ditagih satu unit (security DC-41 L-2, D-402, D-407; §9.3). (3) KD-38 diperluas: di semua bucket (dikoreksi Amandemen DOC-FIX-C, D-411/D-413: hanya `render` dan `validate`; lihat KD-38 dan §9.6), pemanggil yang mengirim `agentId` dikunci per identitas + `agentId` dengan plafon identitas, sedangkan pemanggil tanpa `agentId` tetap satu kunci per identitas (security DC-41 L-4, D-402, D-407; §9.6).
 
 ## 3. Tabel vonis D-139 untuk setiap medan baru
 
@@ -386,6 +389,8 @@ Penyertaan: `SlotPayloadV2` (union, `common.schema.ts:634`) dan `DocSectionPaylo
 
 Deteksi = pemetaan galat ajv per pointer/kata kunci, ditambah pemeriksaan murni pasca-ajv (tanggal kalender). Status HTTP tetap 400 `SCHEMA_INVALID`.
 
+Amandemen DC-33 (D-384): rujukan baris E41 di judul ini (`enums.ts:430-439`) adalah keadaan sebelum DC-05. Sesudah DC-05, `SCHEMA_V2_CHECK_IDS` berada di `L/contract/enums.ts:436-452`: 8 entri lama (:437-444) + CH-01..CH-06 (:446-451).
+
 | ID | checkId | Pemicu | Pointer contoh |
 |---|---|---|---|
 | CH-01 | `CONTRACT_ENUM` | nilai di luar E45, E46, E47, E48, E49 | `/payload/status`, `/payload/items/0/status`, `/payload/refs/0/rel` |
@@ -404,6 +409,8 @@ Deteksi = pemetaan galat ajv per pointer/kata kunci, ditambah pemeriksaan murni 
 
 Medan global yang sudah ada (mis. `color` DF-04, `layout` DF-19, `style` DF-47) tetap berlaku di objek baru (03 §5.1 :468).
 
+Amandemen DC-33 (D-367): DF-72 berlaku di empat lokasi lewat satu entri. Untuk itu `DisplayFieldLocationRule` (`L/contract/schema/v2/forbidden.ts:77-87`) mendapat medan opsional `alsoAt?: readonly string[]` (lokasi tambahan dengan aturan sama). DF-72 = `location: "ContractRecordPayloadV2"`, `alsoAt: ["ContractItemV2", "ContractEvidenceV2", "ContractRefV2"]` (`forbidden.ts:130-135`); pencocokan lokasi = `location` sama ATAU termasuk `alsoAt` (`forbidden.ts:479`). Hitungan DISPLAY_FIELD tetap 73 entri (DF-72 dihitung satu). Nama ini diterima controller di D-367 dan didefinisikan di sini.
+
 ### 5.6 Aturan semantik layanan dan urutan evaluasi
 
 Disisipkan ke urutan 03 §11.1 (:789-802):
@@ -417,6 +424,23 @@ Disisipkan ke urutan 03 §11.1 (:789-802):
 
 Dry-run R08 menjalankan langkah yang sama dalam transaksi READ ONLY (03 §12 R08) dan memuat peringatan di `submitPreview.warnings` (AM-08). `evidence[].ref` tidak pernah dibuka, dibaca, atau di-resolve oleh Studio (CA-11).
 
+Amandemen DOC-FIX-B (F-01 review DC-42, L2 review kode DC-40; D-374, D-395): tabel di atas digantikan oleh urutan yang dijalankan kode (FIX-C1). Dua koreksi: langkah 6b berjalan di dalam kunci dokumen, bukan "sebelum kunci"; dan EC28 menjadi langkah tersendiri sebelum I55, bukan bagian langkah 9.
+
+| Langkah | Tempat | Pemeriksaan | Hasil gagal |
+|---|---|---|---|
+| 2 (skema) | validator kontrak, murni, sebelum kunci | CH-01..CH-05, DF-72, DF-73 | 400 `SCHEMA_INVALID` |
+| 6 (gabung struktur) | `mergeSubmission`, di dalam kunci (`L/services/submit/pipeline.ts:840`) | struktur, pid §10, aset | 422 `PID_CONFLICT` / `ASSET_NOT_FOUND` dan isu struktur 03 §11.1 langkah 6-8 (mendahului 6b; struktural, diterima D-395) |
+| 6b (I54) | `checkContractSource`, di dalam kunci, sesudah gabung, sebelum langkah 7 (`pipeline.ts:869`) | `items[].key` unik; `status` anggota set jenis templat; medan CH atas dokumen tergabung (`checkContractRecord`) | 400 `SCHEMA_INVALID` (checkId CH) lebih dulu; 422 EC27 hanya bila tidak ada isu CH di payload mana pun (`summarizeContractChecks`, `L/services/ingest/by-construction.ts:257-267`, FIX-QB) |
+| 7 (lingkup) | di dalam kunci: cek idempoten (`:873`), FIX-H2 (`:894`), cek dasar §9.2 (`:921`) | 03 §11.1 langkah 7 | 200 `unchanged` / 409 `SCOPE_CONFLICT` |
+| 7a (compose) | `composeV2` (`pipeline.ts:926-939`); dilempar `L/engine/chart/core/custom.ts:59-63` | `chart.custom`: kombinasi `form` × bentuk data ada di CU-01..CU-09 (I68) | 422 EC28, pointer blok lewat `withChartCustomPointer` (D-382) |
+| 9a (I55) | gerbang async dalam transaksi (`assertByConstructionAsync`, `pipeline.ts:980`) | `refs[]` seperti baris 9a di atas | 422 EC25 / EC26; pid pensiun = CW-01 di `warnings` (KD-46) |
+| 9 (by-construction) | gerbang yang ada (`services/ingest/by-construction.ts`) | cek by-construction 03 §11.1 langkah 9 | 422 `BY_CONSTRUCTION_FAILED` dan kode langkah 9 lainnya |
+
+- Urutan sama di jalur sunting R16/R06/R14 (`L/services/revisions/v2/commit.ts:211` I54, `:215-228` compose, `:251` gerbang async), di R04 dokumen baru (`L/services/ingest/v2.ts:579` I54 sebelum compose), dan di dry-run R08. Kiriman yang memuat rujukan salah sekaligus `chart.custom` tak didukung menerima EC28 lebih dulu, bukan EC25/EC26.
+- Akibat I54 di dalam kunci: pada jalur buat dokumen, baris dokumen dan kunci nomor `studio-docno` sudah diambil sebelum penolakan 6b; transaksi dibatalkan sehingga tidak ada sisa tulis (L2). Pada jalur buat, 403 `FORBIDDEN` templat terbatas (`pipeline.ts:766`) mendahului 409 `META_CONFLICT` (`:769`) dan 409 `DOC_NUMBER_EXISTS` (`:778`) (perilaku teramati, dicatat review DC-42 F-01).
+- Cek lingkup R16/R14 (`L/services/revisions/v2/service.ts:256`, `:479`) mendahului I54 (`commit.ts:211`) tanpa efek pada hasil, karena R16/R06 tidak dapat menyentuh payload slot (`revisions/v2/ops.ts:98-101`) dan R14 tidak mengubah payload `record` (review kode DC-40 fokus 4, D-399).
+- Peringatan R08 (AM-08, FIX-QB, D-403): cabang bab/slot membawa CW-01 di `submitPreview.warnings`; cabang dokumen `studio.doc/v2` (dokumen baru dan dokumen yang ada) membawa CW-01 di medan TINGKAT ATAS `warnings` badan respons R08, hanya bila tidak kosong, dengan pointer relatif badan seperti isu (`ValidateBody.warnings`, `API/validate/_shared/dry-run.ts:69-73`, diisi `:255-257` dari `IngestResultV2.contractWarnings`; dokumen yang ada: `L/services/ingest/v2.ts:868` menyalin `dry.result.warnings`).
+
 ### 5.7 Proyeksi alamat, baris, dan teks
 
 | Baris M17 | Alamat | `type` | `textPlain` (urutan tetap, dipisah spasi, medan kosong dilewati) |
@@ -426,6 +450,7 @@ Dry-run R08 menjalankan langkah yang sama dalam transaksi READ ONLY (03 §12 R08
 
 - Identitas butir dicocokkan per `key` lintas revisi (KD-34): butir dengan `key` yang sama mewarisi pid; butir baru mendapat pid bangkitan (03 §10 C20-C22); butir yang hilang dipensiunkan (03 §10 "Pensiun").
 - `parseAddress` sudah menerima `F:<slotKey>/<n>` (03 AC-7), sehingga tata bahasa alamat tidak berubah.
+- Amandemen DOC-FIX-B (L1 review kode DC-40; D-383, D-391, D-399): format pid bangkitan butir baru berbeda per jalur dan dicatat sebagai perilaku diketahui, bukan cacat. Jalur kiriman/commit (R04 v2, R12, R13, R16, R06, R14) memakai `dbPidAllocator` (`L/services/structure/pid.ts:121-127`): pid acak `p-…`, memuat semua pid dokumen termasuk pensiun sehingga tidak ada pemakaian ulang. Compose tanpa allocator memakai pid deterministik dari alamat, `slot-record-<n>` (`L/services/compose/snapshot.ts:192-195`, `L/services/compose/pids.ts:52-55`); format ini hanya tersimpan lewat `persistAdaptedV1` (R04 v1), yang adaptornya tidak pernah mengisi `sections.record` (D-391). Pewarisan per `key` (`inheritItemPids`, `L/services/structure/rows.ts:219-237`) bekerja lintas kedua format. Dampak yang terlihat: pratinjau R08 dokumen baru dapat menampilkan pid butir yang tidak sama dengan pid hasil simpan. Agen memakai pid dari respons kiriman atau R05, bukan dari pratinjau dry-run dokumen baru.
 
 ### 5.8 Contoh valid (dipakai DC-05 ajv, DC-07, DC-33)
 
@@ -488,6 +513,8 @@ Nilai ukuran dan sha di contoh bersifat ilustratif.
 | `sourceRef` | `register 05 §6.1` |
 
 Pin: `SECTION_REGISTRY_COUNT` 51 → 52; `SECTION_REGISTRY_GROUP_COUNTS.DOCUMENT` 29 → 30 (AM-10).
+
+Amandemen DC-33 (D-371, D-384): baris `activeTiers` di atas ("semua tier") digantikan. Nilai di kode = `NONE` (`[]`, `L/registry/sections.ts:20`, `:480`). Alasan: `contractRecord` hanya hadir lewat kerangka EKSPLISIT templat ber-contractKind (SL-08), tidak pernah lewat rencana kanonik tier; opsi semua tier menambah slot `record` ke setiap templat non-kontrak dan melanggar CH-06. Aktivasi slot membaca `slot.tiers` templat, bukan `activeTiers` registri, sehingga kerangka eksplisit SL-08..SL-10 di tier NOTA diterima tanpa pengecualian (dibuktikan DC-10, D-376).
 
 ### 6.2 Jenis slot (perluasan C33 dan `SLOT_KINDS`, `slots.ts:25-80`)
 
@@ -711,8 +738,15 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 - Hanya dokumen dengan `contractKind` tidak null. Urutan `updatedAt DESC, id DESC`.
 - Parameter tak dikenal atau nilai tidak sah → 400 `SCHEMA_INVALID`, issue pointer `/query/<nama>`.
 - 200 `{ contracts: ContractSummaryV2[], nextCursor: string | null }`. T2-68 = `{ documentId, docNumber, title, kind, status, owner, taskRef, cardIds, dueOn, revisionNo, completeness: { status, missingRequired }, missionFolder, docKey, updatedAt, matchedItems?: Array<{ key, status, pid, title }> }` (`matchedItems` hanya bila `cardId` diisi; nilai kosong = `null`).
+- Amandemen DC-33 (D-370): `ContractSummaryV2.status` bertipe `AgentWorkReportStatus | null` (`L/contract/types/v2/contract.ts:115`), selaras §7.6: dokumen ber-contractKind yang slot `record`-nya kosong mempunyai kolom cermin status null.
 - Galat: 401; 400 `SCHEMA_INVALID`; 429 `RATE_LIMITED` (bucket `query`, `Retry-After`).
 - Bucket: `query` (QH-01).
+- Amandemen DOC-FIX-B (keputusan USER D-402 atas security DC-41 M-1/L-1; terpasang FIX-SEC D-407; FIX-QB D-403):
+  - Parameter baru `includeArchived`: `1` menyertakan dokumen terarsip; `0` atau tidak diisi = bawaan, dokumen `archived = true` DIKECUALIKAN; nilai lain → 400 `SCHEMA_INVALID` `/query/includeArchived` keyword `enum` (`L/services/query/filters.ts:109`, `:175-181`; `L/services/query/contracts.ts:84`, `:107`).
+  - Byte NUL (U+0000) di nilai teks parameter mana pun → 400 `SCHEMA_INVALID` `/query/<nama>` keyword `pattern`, sebelum tagihan dan tanpa header kuota (semula 500 dari Postgres 22021; `filters.ts:183-189`).
+  - Log baca: setiap 200 menulis satu entri `logQueryRead` (level info, `message: "query read"`) ke JSONL harian `<STUDIO_WORKSPACE_ROOT>/logs/query/query-YYYY-MM-DD.jsonl`: route, jenis pemanggil, identitas aman-log, `agentId` bila ada, nilai filter dipotong `READ_LOG_VALUE_MAX` = 64 karakter, jumlah hasil, ada-tidaknya halaman berikut, correlation id; isi hasil tidak dicatat (`L/services/query/log.ts:1-13`, `:89`; `API/contracts/route.ts:47`).
+  - Kebijakan baca lintas swarm (AS-2, semua pemanggil terautentikasi membaca semua dokumen) DITERIMA USER sebagai risiko tercatat (D-402).
+  - Bentuk aman `docNumber` di SQL kini `docNumberSafeSql`: batas potong = parameter C52 `FINAL_DOC_NUMBER_MAX` (bukan angka `80` keras) dan langkah 5 I61 (kosong → `DOC`) ikut diterapkan (`L/services/query/contracts.ts:51-53`, `:109`; paritas SQL = TS 14/14, D-403). Rumus SQL di tabel parameter di atas adalah bentuk sebelum FIX-QB.
 
 ### 9.2 R22 `GET /api/studio/search`
 
@@ -731,6 +765,7 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 - 200 `{ hits: SearchHitV2[], nextCursor: string | null, query: { q, config: "simple" } }`. T2-69 = `{ documentId, docNumber, title, kind: string | null, revisionNo, pid, address, slotKey, chapterKey: string | null, type, snippet, rank }`. `q` yang menjadi kueri kosong (hanya tanda baca) → `hits: []`.
 - Galat: 401; 400 `SCHEMA_INVALID` (`/query/q` kosong atau melebihi batas, `revisionNo` tanpa `documentId`, parameter tak dikenal); 429 `RATE_LIMITED` (bucket `query`).
 - Bucket: `query`.
+- Amandemen DOC-FIX-B (D-402, D-407): tiga aturan amandemen DOC-FIX-B §9.1 berlaku sama untuk R22. `includeArchived` (`0`/`1`, bawaan arsip dikecualikan) termasuk parameter sah (`L/services/query/filters.ts:110`); NUL di `q`, `mission`, atau parameter teks lain → 400 `SCHEMA_INVALID` `/query/<nama>` keyword `pattern`; setiap 200 menulis log baca `logQueryRead` dengan `q` dipotong 64 karakter (`API/search/route.ts:19-29`). Blok milik dokumen terarsip tidak muncul di `hits` tanpa `includeArchived=1`, juga bila `documentId` diisi (`L/services/query/search.ts:21`, `:60`).
 
 ### 9.3 R23 `POST /api/studio/drafts/check`
 
@@ -740,6 +775,7 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 - 200 selalu untuk masukan dalam batas: T2-70 (§11.4). Isu ekstraksi = isu DR, bukan status HTTP.
 - Bucket: `validate`, ditagih satu per blok berisi JSON sintaksis sah sebelum dry-run (KD-43); bila satu tagihan ditolak → 429 `RATE_LIMITED` tanpa dry-run apa pun.
 - Galat: 401; 400; 413; 415; 429.
+- Amandemen DOC-FIX-B (security DC-41 L-2, keputusan USER D-402, terpasang D-407): jumlah tagihan bucket `validate` per permintaan = max(1, jumlah blok yang di-dry-run) (`draftValidateCharges`, `L/services/draft/check.ts:78`; `API/drafts/check/route.ts:27`). Draf tanpa blok yang dapat di-dry-run tetap ditagih satu unit, sehingga respons 200-nya membawa header kuota (QH-03). Kalimat "ditagih satu per blok" di atas berlaku untuk draf berblok.
 
 ### 9.4 R03 `GET /api/studio/registry?kind=contracts`
 
@@ -756,6 +792,10 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 | R17 render, R07 POST, R05 GET | Setiap `OutputFileDto` memuat `finalFileName: string` (AM-09) |
 | R17 render | Dokumen ber-contractKind tanpa `formats` dan `figures` → format C40 (KD-41, AM-15) |
 
+Amandemen DC-33 (D-390): `OutputFileDto.finalFileName` WAJIB (`string`, bukan opsional; `L/contract/types/api.ts:266`). Mapper `finalFileNameOfRow` selalu menghasilkan string (dokumen: docNumber + revisi; artefak: `ART-…_rev0`); baris tanpa relasi pemilik dicatat `OUTPUT_FILE_OWNER_MISSING` lalu melempar `TypeError` (bukan nilai kosong). Semua pemanggil `toOutputFileDto` memuat include pemilik.
+
+Amandemen DC-33 (D-386, D-389): respons R16 PATCH, R06 PATCH, dan R14 PATCH mendapat medan opsional `warnings?: SubmitWarningV2[]` (hanya bila tidak kosong; diteruskan dari `CommitOutput.warnings` oleh `L/services/revisions/v2/service.ts:340`), selain `SubmitResultV2.warnings` dan R08 `submitPreview.warnings` (AM-08). Isinya peringatan kontrak non-penahan (CW-01 `CONTRACT_REF_PID_RETIRED`).
+
 ### 9.6 Header kuota (DC-19)
 
 | ID | Aturan |
@@ -768,6 +808,19 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 | QH-06 | Nilai = sisa kuota proses ini (limiter memori per proses, `rate-limit.ts:1-5`; RK-22); didokumentasikan di panduan DC-33 |
 
 Bucket `query`: C46 permintaan per C47 ms per identitas pemanggil (identitas sama dengan bucket validate, `validate-rate.ts:10`); env `STUDIO_QUERY_RATE_LIMIT` / `STUDIO_QUERY_RATE_WINDOW_MS`.
+
+Amandemen DOC-FIX-B (review kode DC-40 isu #1 dan #6, security DC-41 L-4; FIX-QA D-403, keputusan USER D-402, FIX-SEC D-407):
+- QH-01 diperluas. Bucket `render` juga ditagih R04 POST, R12, R13, R06 PATCH, R16 PATCH, dan R14 PATCH (`checkRenderRate`); keenam route kini dibungkus `withQuotaHeaders` sehingga 2xx dan 4xx sesudah tagihan membawa C48/C49 sesuai QH-03, bukan hanya 429 (`API/documents/route.ts:288`, `:338`, `:405`; `API/chapters/_shared/submit-kit.ts`; `API/documents/[id]/blocks/[address]/route.ts`; `API/documents/[id]/paragraphs/[pid]/route.ts`; `API/documents/[id]/structure/route.ts:107`, `:152`). Penolakan sebelum `checkRenderRate` (mis. 401, badan tidak sah) tetap tanpa header. Catatan "header hanya pada 429" untuk keenam route di dokumen lain adalah keadaan sebelum FIX-QA.
+- Satu helper tagihan untuk keempat bucket: `checkBucketRate(bucket, limiter, caller, ctx, message, logLabel?)` (`L/http/quota.ts:227-245`); identitas tunggal `quotaRateIdentity` (`quota.ts:60-71`).
+- Bucket per agen dan plafon identitas (L-4). Pemanggil tanpa `agentId` memakai satu kunci per identitas terautentikasi seperti sebelumnya (pemegang `x-internal-secret` = `<kind>:shared`). Pemanggil dengan `agentId` memakai kunci identitas + `agentId` (`quotaAgentRateIdentity`, `quota.ts:78-81`), sehingga agen yang berbagi satu rahasia punya sisa terpisah. Setiap tagihan per agen yang diizinkan juga menagih plafon identitas = F × batas bucket dalam jendela bucket yang sama; 429 karena plafon dicatat dengan `scope: "identityCeiling"` di log, dan header melaporkan sisa terkecil agen/plafon (QH-04). Karena `agentId` berasal dari badan dan dapat dipalsukan, plafon inilah yang menghentikan rotasi `agentId` sesudah F × batas permintaan per jendela.
+- Env baru `STUDIO_QUOTA_AGENT_CEILING_FACTOR` = F: bilangan bulat, bawaan 4; nilai tidak sah atau < 1 → bawaan; nilai > 64 dipotong ke 64 (`QUOTA_AGENT_CEILING_FACTOR_ENV`, `_DEFAULT`, `_MAX`, `quota.ts:49-52`, `:169-171`); dibaca setiap tagihan.
+- Ketelitian sisa plafon (diterima D-407): plafon disusun dari F slot kunci pada limiter yang sama, diisi bergiliran (`rate-limit.ts` tidak disentuh). Sisa plafon = F × sisa slot + slot yang belum tersentuh pada putaran itu; nilainya tepat bila jendela slot sejajar dan selisihnya < F bila tidak. Agen tidak boleh menganggap C48 sebagai hitungan pasti di dekat batas plafon.
+
+Amandemen DOC-FIX-C (review dokumen DC-42b temuan N-01; D-411, D-413): `checkBucketRate` memecah kunci per agen hanya bila pemanggil yang diteruskan route membawa `agentId` (`quota.ts:236`, `:240`). Karena itu butir "Bucket per agen" di atas berlaku per bucket, bukan untuk semua bucket:
+- `render`: per identitas + `agentId` dengan plafon identitas. Semua route menagih sesudah membaca `agentId` badan: R04 POST (`API/documents/route.ts:286-288`, `:329-338`), R12/R13 (`API/chapters/_shared/submit-kit.ts:142`, `:179`), R06 PATCH (`API/documents/[id]/blocks/[address]/route.ts:154-156`), R14 PATCH (`API/documents/[id]/structure/route.ts:146-152`), R16 PATCH (`API/documents/[id]/paragraphs/[pid]/route.ts:116-119`), R17 (`API/documents/[id]/render/_lib/handler.ts:122-123`), R07 POST (`API/documents/[id]/revisions/route.ts:130-132`), R09 POST (`API/artifacts/route.ts:106-108`), R08 `?preview=html` (`API/validate/route.ts:192`, `:199`).
+- `validate`: per identitas + `agentId` dengan plafon identitas: R08 (`API/validate/route.ts:192-194`), R23 (`API/drafts/check/route.ts:137-142`), import `?validate=1` (`API/import/markdown/route.ts:150`, `:159-161`).
+- `import`: selalu satu kunci per identitas. Route menagih sebelum badan dibaca, dengan pemanggil tanpa `agentId` (`API/import/markdown/route.ts:139-140`); dua agen yang berbagi satu rahasia berbagi kuota ini.
+- `query`: selalu satu kunci per identitas. R21/R22 adalah GET tanpa badan dan memanggil `getStudioCaller(req)` tanpa `agentId` (`API/contracts/route.ts:42-44`, `API/search/route.ts:45-47`); diterima D-411, plafon identitas tidak relevan karena tidak ada kunci per agen.
 
 ## 10. Nama berkas final (DC-17, DC-18, DC-20)
 
@@ -832,6 +885,10 @@ basis: cmvui0qun000qv11gtygb1mk9@rev3
 - `--emit <n>`: mencetak teks blok ke-n persis seperti tertulis (byte-identik), untuk dikirim apa adanya.
 - Kode keluar: `0` semua blok valid dan tanpa isu error; `1` ada isu error atau blok tidak valid; `2` galat pemakaian/berkas/jaringan.
 
+Amandemen DC-33 (D-393): CLI mendapat opsi `--agent-id <id>` (1..80 karakter, hanya bersama `--remote`; bentuk pemakaian `[--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json]`). Aturan tunggal di `L/services/draft/check.ts` untuk CLI dan R23: `agentId` efektif setiap blok = medan `agentId` payload blok bila ada, selain itu bawaan pemanggil (CLI `--agent-id` atau badan R23 `agentId`); tanpa keduanya = dry-run tanpa `agentId`; bila bawaan dipakai, `agentId` ditambahkan di akhir objek dry-run. Medan jam `completenessPreview.slots[].lastFilledAt` dan `at` mengikuti waktu dry-run sehingga TIDAK deterministik: kesamaan "`--json` identik dengan respons R23" (KS-8, AC-19) berlaku dengan medan jam itu disamarkan, `agentId` efektif sama, dan R23 dipanggil dengan rahasia internal (pemanggil bersesi cookie tercatat `user:<nama>`). Dibuktikan D-393 (diff 0 baris sesudah penyamaran) dan diulang DC-33 (contoh draf panduan seksi 17.9: CLI `--remote --json` = R23, medan jam disamarkan).
+
+Amandemen DOC-FIX-B, catatan keamanan CLI (security DC-41 M-2; RISIKO DITERIMA USER, D-402): `--remote` menerima URL `http:` maupun `https:` ke host apa pun (`scripts/studio/draft-check.ts:118-120`) dan memanggil `fetch` dengan header `x-internal-secret` serta perilaku redirect bawaan `follow` (`:125-126`). Akibatnya rahasia bersama `INTERNAL_API_SECRET` terkirim dalam teks polos bila host bukan loopback dan http dipakai, dan ikut diteruskan pada redirect lintas origin (dibuktikan DC-41 dengan nilai dummy). USER menerima risiko ini dengan dasar bahwa CLI hanya dipakai lokal oleh agen; tidak ada perubahan kode. Aturan pakai yang menyertai penerimaan risiko: arahkan `--remote` hanya ke HQ lokal (`http://127.0.0.1:<port>`) atau https internal yang dipercaya. Bila CLI kelak dipakai di luar mesin lokal, usulan DC-41 (`redirect: "manual"` + tolak http non-loopback) menjadi baris perbaikan baru, dan keputusan D-402 perlu ditinjau ulang.
+
 ### 11.4 Bentuk hasil (T2-70, T2-71)
 
 `DraftCheckResultV2 = { valid: boolean; header: { title: string | null; tujuan: string | null; langkahBerikut: string | null; basis: string | null }; issues: DraftIssueV2[]; blocks: DraftBlockResultV2[] }`
@@ -878,6 +935,11 @@ Cek bentrok: keempat nama tidak ada di `errors.ts:19-94` maupun `enums.ts` `STUD
 | CW-02 | `CONTRACT_STATUS_UNMAPPED` | generator | nilai status MD tanpa alias; `details.scope` = `record` \| `item`; teks tetap utuh |
 | CW-03 | `CONTRACT_HEADING_UNMAPPED` | generator | judul `##` tanpa alias; isinya menjadi bab tambahan kunci ≥ 6 |
 | CW-04 | `CONTRACT_FIELD_UNMAPPED` | generator | kunci kepala tanpa alias; baris `kunci: nilai` dipertahankan sebagai paragraf di bab 1 |
+
+Amandemen DOC-FIX-B (temuan uji DC35-F1, FIX-IMP D-405 dan D-406; KD-42 tidak menebak):
+- CW-02 mendapat `details.reason = "compound"` untuk nilai majemuk status laporan, vonis, atau status butir: beberapa alternatif dipisah `/`, `,`, `|`, `atau`/`or`, misalnya `PASS/FAIL`, `complete/blocked`, `todo,blocked` (`aliasTokenOf`, `L/services/import/contract/parse.ts:145-173`; pemanggil `L/services/import/contract/index.ts:198`, `:208`, `:258-260`, `:392-393`). Nilai tidak dipetakan dan teks utuh dipertahankan. Status laporan majemuk tanpa `--status` → kode keluar 3 (§16.6). Nilai berekor catatan tetap terpetakan (`FAIL (catatan)`, `complete | Giliran: …`). Sebelum FIX-IMP, nilai majemuk dipotong diam-diam ke token pertama (`PASS/FAIL` menjadi `PASS`), yang menyalahi KD-42.
+- CW-04 kini juga dipakai untuk medan `owner` dan `taskRef` yang majemuk (`DC-03/DC-04`, `coder/verifier`, `DC-03 | DC-04`) atau tidak cocok pola C36/C35: medan dibiarkan kosong, `details` = `{ scope: "record", field, key, value, reason }` dengan `reason` = `compound` \| `pattern`, dan baris sumber tetap menjadi teks di bab 1 (`patternValueOf`, `parse.ts:176-199`; `index.ts:218`, `:223`, `:269-272`). Aturan yang sama berlaku untuk kolom `owner` tabel butir: `details.scope = "item"`, `field: "owner"`, butir tetap masuk tanpa `owner`, tabel tetap utuh di teks bab (`index.ts:419`). Nilai berekor catatan (`t_xxx (catatan)`) tetap terpetakan (D-377 butir 2).
+- Alasan CW-04 dan bukan teks utuh: skema C35/C36 menolak `/`, `,`, dan spasi (`L/contract/env.ts:149`, `:151`). Tidak ada kode peringatan baru; E54 tetap CW-01..CW-04. Perubahan perilaku yang diterima D-406: nilai yang gagal pola dulu hanya dicatat sebagai catatan `FIELD_VALUE_INVALID`, kini menjadi peringatan CW-04 sehingga `--strict` menangkapnya (kode keluar 1).
 
 ### 13.3 Ringkasan hitungan
 
@@ -985,6 +1047,8 @@ Cek bentrok: keempat nama tidak ada di `errors.ts:19-94` maupun `enums.ts` `STUD
 | I68 | `resolveChartCustom(form: ChartCustomFormV2, dataShape: ChartDataShape): DrawnChartCode \| null` | `L/registry/charts.ts` (berkas ada) | DC-26 |
 
 Route baru: `API/contracts/route.ts` (DC-15), `API/search/route.ts` (DC-16), `API/drafts/check/route.ts` (DC-23). CLI: `scripts/studio/draft-check.ts` (DC-22), `scripts/studio/md2contract.ts` (DC-25).
+
+Amandemen DC-33 (D-377): hasil I64 bertambah medan `validation` dan menjadi `{ doc: StudioDocV2; report: …; validation: { valid: boolean; issues: ValidationIssue[] } }` (`ContractImportResult`, `L/services/import/contract/types.ts:111-116`). `validation` = hasil validator v2 repo (ajv bersama + `classifySchemaV2Errors`) atas `doc`, tanpa DB (`validateContractDoc`, `L/services/import/contract/index.ts:607-610`); dikembalikan juga pada hasil sukses. CLI DC-25 memakainya untuk kode keluar 1 (dokumen tidak sah) dan baris `valid=` di stderr.
 
 ## 16. Generator MD lama ke kontrak (DC-24, DC-25; U-4: hanya banding + draf)
 
@@ -1096,6 +1160,8 @@ Judul lain → CW-03, isinya menjadi bab tambahan berkunci 6, 7, … sesuai urut
 
 Kunci lain → CW-04. Semua id cocok C34 di 40 baris pertama → `cardIds` (unik, urut kemunculan).
 
+Amandemen DOC-FIX-B (D-406): kunci ber-alias yang mengisi `owner` atau `taskRef` (mis. GF-08, GF-09) tidak lagi dipotong ke token pertama. Nilai majemuk atau tidak cocok pola → medan kosong + CW-04 `reason` `compound` \| `pattern` (§13.2 amandemen DOC-FIX-B); baris sumber tetap teks di bab 1.
+
 ### 16.5 Alias status laporan (GS), status butir (GI), vonis (GV)
 
 | ID | Nilai MD (dicocokkan huruf kecil kecuali vonis) | Kode | Bukti |
@@ -1119,12 +1185,15 @@ Kunci lain → CW-04. Semua id cocok C34 di 40 baris pertama → `cardIds` (unik
 
 Sengaja tanpa alias (CW-02, tidak ditebak): `usulan`, `active`, `milik`, `lihat`, `relevan`, `prov`, `all` (K3 :628-640), `PARKED` (inv §5 :2088), `closed` (ambigu), vonis `SETUJU`, `SAH-`, `PARTIAL`, `ALL_OK`, `DONE` (:259-262, :649-652).
 
+Amandemen DOC-FIX-B (D-405): pencocokan GS/GI/GV berlaku untuk satu nilai. Nilai majemuk yang memuat beberapa alternatif (`PASS/FAIL`, `complete/blocked`, `done/blocked`, `todo,blocked`, `… atau …`) tidak dipetakan ke alternatif pertama, walaupun alternatif itu ber-alias; hasilnya CW-02 `reason: "compound"` (§13.2 amandemen DOC-FIX-B).
+
 ### 16.6 Tabel butir, CLI, keluaran
 
 - Tabel MD yang baris kepalanya memuat kolom {`id`, `kartu`, `card`, `key`} DAN kolom `status` → `items[]`. Alias kolom: `judul`/`title` → `title`; `assignee`/`owner`/`agen` → `owner`; `fase`/`phase` → `phase`; `dep`/`depends` → `dependsOn` (dipisah koma); `bukti`/`evidence` → `evidence[]` dengan `item` = kunci baris. Baris dengan status tanpa alias tidak dimasukkan ke `items[]` (CW-02 `scope: item`); tabel tetap utuh di teks bab.
 - Status laporan hilang atau tanpa alias: pakai `--status`; tanpa `--status` → keluar kode 3 (KD-42). `reportedAt` hilang: pakai `--reported-at`; tanpa itu → keluar kode 3.
 - CLI `npx tsx scripts/studio/md2contract.ts <berkas.md> --kind agentWorkReport [--mission <folder>] [--doc-key <key>] [--doc-number <nomor>] [--doc-title <judul>] [--status <kode>] [--reported-at <waktu>] [--entry <n|last>] [--strict] [--out <berkas.json>]`. Keluaran: satu `studio.doc/v2` (templat CK-01; `sections.record` + `sections.content.chapters` + `sections.references` bila ada) di stdout atau `--out`; laporan di stderr.
 - Kode keluar: `0` sukses; `1` ada peringatan dan `--strict`; `2` galat pemakaian/berkas; `3` nilai wajib hilang. Dua jalan pada masukan sama → byte-identik (tanpa cap waktu, urutan kunci tetap).
+- Amandemen DOC-FIX-C (FIX-CLI2, D-412; review dokumen DC-42b temuan N-02, D-413): unsur prosa yang dibuang importer (`mapping.prose[].dropped`, mis. `LIST_NESTING`, `THEMATIC_BREAK`) dilaporkan ke stderr per kode (jumlah, baris sumber, cuplikan) dengan `dropped=N` di ringkasan; stdout tidak berubah. Kode keluar `1` kini = ada peringatan pemetaan atau unsur dibuang dengan `--strict`, atau dokumen tidak sah menurut validator v2 (`scripts/studio/md2contract.ts:15`, `:22-27`).
 
 ## 17. Kasus uji yang dikunci
 
@@ -1250,6 +1319,10 @@ Jenis: **Tetap** (tanpa perubahan lingkup), **Berubah** (isi atau contoh bergant
 | RK-28 | `ts_headline` mahal pada blok panjang | Sedang / sedang | Subkueri berbatas (§8.1); DC-39 EXPLAIN |
 | RK-29 | Penulis kontrak ganda tanpa penegakan (U-3) | Sedang / sedang | MU-1/MU-2 di DC-46; aturan panduan DC-33 |
 
+Amandemen DOC-FIX-B, catatan rollout dan backlog (security DC-41 L-5 dan L-6; keputusan USER D-402 "dicatat sebagai catatan rollout/backlog"; tanpa perubahan kode):
+- L-5 (melengkapi RK-18): migrasi `20261030220000_add_studio_contract` menambah kolom `GENERATED ALWAYS … STORED` yang menulis ulang `StudioDocBlock` di bawah kunci ACCESS EXCLUSIVE, dan `CREATE INDEX` tanpa `CONCURRENTLY` memblokir tulis selama indeks dibangun (`prisma/migrations/20261030220000_add_studio_contract/migration.sql:146-151`). Skrip rollback §7.5 memuat DROP manual tanpa CASCADE. Daftar periksa rollout produksi: jendela pemeliharaan, backup sebelum `migrate deploy`, ukur durasi pada salinan data produksi, dan rollback hanya sesudah backup. Gladi `_uji` DC-38 lulus (D-396), tetapi durasi pada volume produksi belum diukur.
+- L-6 (bergantung AS-2): detail 422 EC25/EC26 mengungkap `currentRevisionNo` dan ada-tidaknya pid di dokumen sasaran (`L/services/contracts/refs.ts:84-90`, `:104-111`). Hari ini tidak ada kebocoran baru karena R04/R05 sudah terbaca semua pemanggil (AS-2). Bila kelak ada ACL baca per pemanggil, galat untuk dokumen yang tidak boleh dibaca diseragamkan menjadi `CONTRACT_REF_NOT_FOUND` tanpa `currentRevisionNo`; butir ini masuk backlog bersama perubahan ACL tersebut.
+
 ### 19.3 Metrik pemakaian U-3 (SQL baca-saja, DC-46)
 
 - **MU-1** revisi per pelaku per dokumen kontrak:
@@ -1267,6 +1340,8 @@ Tidak ada butir yang memerlukan keputusan USER. Butir untuk controller (wewenang
 | CQ-3 | Pemilik mapper `OutputFileDto` bersama | (a) DC-20 mendeklarasikan berkas ke klaim gelombang; (b) baris baru | **(a)** |
 | CQ-4 | Lingkup tambahan R10 (HEAD, `?name=`) dan `TemplateSummary.contractKind` di route templat | (a) DC-18 memegang R10; route templat menunggu baris temuan; (b) tunda keduanya | **(a)** untuk R10; `TemplateSummary.contractKind` cukup di tipe (DC-05) dan diisi saat ada baris |
 | CQ-5 | Indeks trigram (blueprint 07 KC-1 a) | (a) tunda sampai DC-39; (b) tambahkan sekarang | **(a)** (KD-37) |
+
+Amandemen DOC-FIX-B (D-400): CQ-5 DITUTUP, indeks trigram tidak diperlukan. DC-39 mengukur 15 kueri wakil: p95 terburuk R21 1,56 ms dan R22 7,18 ms di v21 (ambang CA-6 500 ms), serta R21 6,03 ms dan R22 90,05 ms pada data sintetis 10x di `_uji` (ambang 1000 ms). EXPLAIN memakai `StudioDocBlock_tsv_idx` pada 7/7 kueri R22 tanpa Seq Scan `StudioDocBlock`. I66 hanya memakai `tsv @@ websearch_to_tsquery`, sehingga `pg_trgm` tidak akan dipakai planner. KD-37 (tanpa trigram di tahap 1) tetap berlaku; evaluasi ulang hanya bila muncul kebutuhan pencarian substring, prefiks, atau salah ketik. Catatan pantau: perkiraan baris GIN oleh planner konstan (tsquery dari CTE), perlu diawasi di atas volume 10x.
 
 ### 19.5 Kriteria penerimaan register (diukur baris pemakai dan verifier)
 

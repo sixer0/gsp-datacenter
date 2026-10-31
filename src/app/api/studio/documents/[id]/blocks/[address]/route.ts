@@ -18,7 +18,7 @@ import { renderFieldIssue, schemaInvalidMessage } from "@/lib/studio/contract";
 import type { ChangeFields, PatchBlockInput, ValidationIssue } from "@/lib/studio/contract/types/api";
 import type { Cell, FlowItem } from "@/lib/studio/contract/types/doc";
 import { CHANGE_FIELD_MAX, getBlock, patchBlock } from "@/lib/studio/services/revisions";
-import { apiLog, checkRenderRate, failure, isPlainObject, isPlausibleId, json, parsePosInt, readJsonObject, reject, reqCtx } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, failure, isPlainObject, isPlausibleId, json, parsePosInt, readJsonObject, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { API_LOG_SOURCE, decodeAddressParam } from "../_lib/http";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +66,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE, API_LOG_SOURCE);
+  // FIX-R40-1 (QH-03): header kuota (bucket render) pada respons apa pun sesudah tagihan; 401 dan
+  // penolakan sebelum `checkRenderRate` tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => patchBlockRoute(req, params, ctx));
+}
+
+async function patchBlockRoute(req: NextRequest, params: Params["params"], ctx: ReqCtx): Promise<Response> {
   const { id, address: rawAddress } = await params;
 
   if (!isPlausibleId(id)) return reject(ctx, "DOCUMENT_NOT_FOUND", "Document not found");

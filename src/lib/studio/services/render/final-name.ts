@@ -12,6 +12,7 @@
  */
 import type { FinalFileNameParts, StudioOutputFormat } from "../../contract";
 import { FINAL_ARTIFACT_PREFIX, FINAL_DOC_NUMBER_MAX, FINAL_FILENAME_PATTERN } from "../../contract/env";
+import { isCalendarDay } from "../contracts/dates";
 import { FORMAT_EXT } from "./naming";
 
 export { FINAL_ARTIFACT_PREFIX, FINAL_DOC_NUMBER_MAX, FINAL_FILENAME_PATTERN };
@@ -39,12 +40,9 @@ export function formatFinalFileName(parts: FinalFileNameParts): string {
   return `${parts.docNumberSafe}_rev${parts.revisionNo}_${stamp}_${parts.sha8}.${parts.ext}`;
 }
 
-/** Tanggal kalender dan jam sah (tanpa detik kabisat); `false` bila tidak. */
+/** Tanggal kalender (`isCalendarDay`, FIX-R40-3) dan jam sah (tanpa detik kabisat); `false` bila tidak. */
 function validStamp(y: number, mo: number, d: number, h: number, mi: number, s: number): boolean {
-  if (h > 23 || mi > 59 || s > 59) return false;
-  const t = new Date(0);
-  t.setUTCFullYear(y, mo - 1, d);
-  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+  return h <= 23 && mi <= 59 && s <= 59 && isCalendarDay(y, mo, d);
 }
 
 /** I60 / FN-08: `null` bila tidak cocok C51 atau tanggal kalender tidak sah. */

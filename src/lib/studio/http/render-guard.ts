@@ -15,30 +15,22 @@
  *
  * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `render`, `./quota`);
  * 429 membawa header kuota, respons lain dipasang route lewat `applyQuotaHeaders`.
+ * FIX-R40-5: kunci, tagihan, dan 429 lewat helper bersama `checkBucketRate` (`./quota`).
  */
-import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
 import type { ReqCtx } from "./context";
-import { reject } from "./errors";
-import { applyQuotaHeaders, quotaRateIdentity, recordQuotaCharge } from "./quota";
+import { checkBucketRate, quotaRateIdentity, rateEnvInt } from "./quota";
 import { createFixedWindowLimiter, type FixedWindowLimiter } from "./rate-limit";
 
 export const RENDER_RATE_LIMIT_DEFAULT = 30;
 export const RENDER_RATE_WINDOW_MS_DEFAULT = 60_000;
 
-function envInt(name: string, fallback: number, min: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= min ? n : fallback;
-}
-
 let limiter: FixedWindowLimiter | null = null;
 
 function renderLimiter(): FixedWindowLimiter {
   limiter ??= createFixedWindowLimiter({
-    limit: envInt("STUDIO_RENDER_RATE_LIMIT", RENDER_RATE_LIMIT_DEFAULT, 1),
-    windowMs: envInt("STUDIO_RENDER_RATE_WINDOW_MS", RENDER_RATE_WINDOW_MS_DEFAULT, 1000),
+    limit: rateEnvInt("STUDIO_RENDER_RATE_LIMIT", RENDER_RATE_LIMIT_DEFAULT, 1),
+    windowMs: rateEnvInt("STUDIO_RENDER_RATE_WINDOW_MS", RENDER_RATE_WINDOW_MS_DEFAULT, 1000),
   });
   return limiter;
 }
@@ -54,24 +46,12 @@ export function renderRateIdentity(caller: Pick<StudioCaller, "kind" | "username
   return quotaRateIdentity(caller);
 }
 
-function rateKey(identity: string): string {
-  return createHash("sha256").update(`render\u0000${identity}`).digest("hex").slice(0, 32);
-}
-
 /**
  * Hitung satu permintaan render. `null` = diizinkan; selain itu respons 429
  * `RATE_LIMITED` (berisi `retryAfterSec`, header `Retry-After`) yang langsung
- * dikembalikan route.
+ * dikembalikan route. FIX-R40-5: lewat helper bersama `checkBucketRate` (tanpa label
+ * `limiter` di log, sama dengan perilaku sebelumnya).
  */
 export function checkRenderRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
-  const rl = renderLimiter().hit(rateKey(renderRateIdentity(caller)));
-  recordQuotaCharge(ctx, "render", rl);
-  if (rl.allowed) return null;
-  return applyQuotaHeaders(
-    reject(ctx, "RATE_LIMITED", "Too many render requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-      callerKind: caller.kind,
-      retryAfterSec: rl.retryAfterSec,
-    }),
-    ctx,
-  );
+  return checkBucketRate("render", renderLimiter(), caller, ctx, "Too many render requests; retry later");
 }

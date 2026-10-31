@@ -13,19 +13,22 @@
  *   --status <kode>       status laporan bila kepala laporan tidak memberinya (kode atau alias GS)
  *   --reported-at <t>     waktu laporan bila sumber tidak memuatnya (tanggal atau waktu ber-zona C37)
  *   --entry <n|last>      untuk berkas PHASE-REPORTS: entri ke-n (mulai 1) atau `last` (bawaan)
- *   --strict              keluar dengan kode 1 bila ada peringatan pemetaan
+ *   --strict              keluar dengan kode 1 bila ada peringatan pemetaan atau unsur yang dibuang
  *   --out <berkas.json>   tulis dokumen ke berkas, bukan ke stdout
  *
  * Status laporan dan waktu laporan tidak pernah ditebak (KD-42): bila sumber tidak memberi nilai
  * berpeta dan opsi tidak diberikan, CLI berhenti dengan kode 3 dan menyebut opsi yang harus diisi.
  *
  * Keluaran stdout (atau --out): satu `studio.doc/v2`, indentasi 2 spasi + LF; masukan dan opsi
- * sama = byte sama (tanpa cap waktu). Laporan pemetaan (peringatan CW-xx, bab, butir) ke stderr.
- * Kode keluar: 0 sukses; 1 ada peringatan dengan --strict, atau dokumen tidak sah menurut validator
- * v2; 2 galat pemakaian atau berkas; 3 nilai wajib hilang (status / waktu laporan).
+ * sama = byte sama (tanpa cap waktu). Laporan pemetaan (peringatan CW-xx, bab, butir) ke stderr;
+ * unsur yang dibuang importer prosa (`mapping.prose[].dropped`, mis. LIST_NESTING, THEMATIC_BREAK)
+ * dilaporkan ke stderr per kode (jumlah + baris sumber) dan ikut dihitung oleh --strict.
+ * Kode keluar: 0 sukses; 1 ada peringatan atau unsur dibuang dengan --strict, atau dokumen tidak sah
+ * menurut validator v2; 2 galat pemakaian atau berkas; 3 nilai wajib hilang (status / waktu laporan).
  * Hanya mengubah: tidak menyimpan ke Studio dan tidak membuka jaringan.
  */
 import fs from "node:fs";
+import type { MdImportDropped } from "../../src/lib/studio/services/import/types";
 import { CONTRACT_KINDS, type ContractKind } from "../../src/lib/studio/contract";
 import { StudioEngineError } from "../../src/lib/studio/contract/errors";
 import {
@@ -53,7 +56,7 @@ const HELP = [
   "  --status <kode>         status laporan bila kepala laporan tidak memberinya (kode atau alias)",
   "  --reported-at <waktu>   waktu laporan bila sumber tidak memuatnya, mis. 2026-10-30T10:00:00Z",
   "  --entry <n|last>        entri PHASE-REPORTS yang diimpor: nomor mulai 1, atau last (bawaan)",
-  "  --strict                keluar dengan kode 1 bila ada peringatan pemetaan",
+  "  --strict                keluar dengan kode 1 bila ada peringatan pemetaan atau unsur yang dibuang",
   "  --out <berkas.json>     tulis dokumen ke berkas, bukan ke stdout",
   "  -h, --help              tampilkan bantuan ini",
   "",
@@ -64,7 +67,7 @@ const HELP = [
   "  npx tsx scripts/studio/md2contract.ts LAPORAN-SELESAI.md --kind agentWorkReport \\",
   "    --reported-at 2026-10-30T10:00:00Z --mission 2026-10-22_kajian-gardu > laporan.json",
   "",
-  "Kode keluar: 0 sukses, 1 peringatan dengan --strict atau dokumen tidak sah, 2 galat pemakaian atau",
+  "Kode keluar: 0 sukses, 1 peringatan atau unsur dibuang dengan --strict, atau dokumen tidak sah, 2 galat pemakaian atau",
   "berkas, 3 nilai wajib hilang.",
 ].join("\n");
 
@@ -145,6 +148,26 @@ function printWarnings(report: ContractImportReport): void {
   if (w.length > 20) process.stderr.write(`  ... dan ${w.length - 20} peringatan lain\n`);
 }
 
+/** Seluruh unsur dibuang importer prosa (semua bab), urut baris sumber lalu kode. */
+function collectDropped(report: ContractImportReport): MdImportDropped[] {
+  return report.mapping.prose.flatMap((p) => p.dropped).sort((a, b) => a.line - b.line || a.code.localeCompare(b.code));
+}
+
+/** Unsur dibuang ke stderr, dikelompokkan per kode: jumlah + baris sumber (maks 10 baris per kode). */
+function printDropped(dropped: MdImportDropped[]): void {
+  if (dropped.length === 0) return;
+  process.stderr.write(`  unsur dibuang importer prosa: ${dropped.length}\n`);
+  const byCode = new Map<string, MdImportDropped[]>();
+  for (const d of dropped) byCode.set(d.code, [...(byCode.get(d.code) ?? []), d]);
+  for (const [code, list] of byCode) {
+    const lines = list.map((d) => (d.line === 0 ? "-" : String(d.line)));
+    const shown = lines.slice(0, 10).join(", ");
+    process.stderr.write(
+      `  dibuang ${code} x${list.length} baris ${shown}${lines.length > 10 ? `, ... (+${lines.length - 10})` : ""}: ${list[0].excerpt}\n`,
+    );
+  }
+}
+
 function main(): void {
   const { file, flags, strict } = parseArgs(process.argv.slice(2));
   const opts = optionsOf(flags);
@@ -188,18 +211,20 @@ function main(): void {
 
   const r = result.report;
   const m = r.mapping;
+  const dropped = collectDropped(r);
   process.stderr.write(
     `md2contract ${r.generator}: valid=${result.validation.valid} issues=${result.validation.issues.length} ` +
       `bentuk=${m.form} bab=${m.chapters.length} butir=${m.itemTables.reduce((n, t) => n + t.admitted, 0)} ` +
-      `warnings=${r.warnings.length} bab-wajib-kosong=${m.missingChapters.length}${out !== undefined ? ` out=${out}` : ""}\n`,
+      `warnings=${r.warnings.length} dropped=${dropped.length} bab-wajib-kosong=${m.missingChapters.length}${out !== undefined ? ` out=${out}` : ""}\n`,
   );
   printWarnings(r);
+  printDropped(dropped);
   if (!result.validation.valid) {
     for (const i of result.validation.issues.slice(0, 10)) process.stderr.write(`  ${i.pointer} ${i.keyword}: ${i.message}\n`);
     process.exit(1);
   }
-  if (strict && r.warnings.length > 0) {
-    process.stderr.write(`md2contract: --strict: ${r.warnings.length} peringatan pemetaan\n`);
+  if (strict && (r.warnings.length > 0 || dropped.length > 0)) {
+    process.stderr.write(`md2contract: --strict: ${r.warnings.length} peringatan pemetaan, ${dropped.length} unsur dibuang\n`);
     process.exit(1);
   }
 }

@@ -15,13 +15,18 @@
  * C48/C49 lewat `withQuotaHeaders` (QH-03).
  *
  * Kebijakan baca = R04 GET (register §9 / AS-2; dinilai DC-41). Tanpa tulis DB.
+ *
+ * FIX-SEC (D-402, M-1/L-1): dokumen terarsip dikecualikan secara bawaan, `?includeArchived=1`
+ * menyertakannya (`0` = bawaan, nilai lain 400); nilai ber-byte NUL (mis. `q=a%00b`) -> 400
+ * `SCHEMA_INVALID` sebelum tagihan; setiap 200 menulis log baca terstruktur (`logQueryRead`:
+ * `q` dan filter dipotong, jumlah hit, tanpa isi cuplikan).
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
 import { STUDIO_FTS_CONFIG } from "@/lib/studio/contract";
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { checkQueryRate, failure, json, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
-import { parseSearchQuery, searchBlocks } from "@/lib/studio/services/query";
+import { logQueryRead, parseSearchQuery, searchBlocks } from "@/lib/studio/services/query";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,6 +47,14 @@ async function getSearch(req: NextRequest, ctx: ReqCtx): Promise<Response> {
     const limited = checkQueryRate(caller, ctx);
     if (limited) return limited;
     const result = await searchBlocks(filter, { correlationId: ctx.correlationId });
+    logQueryRead({
+      correlationId: ctx.correlationId,
+      route: ROUTE,
+      caller,
+      filter,
+      resultCount: result.hits.length,
+      hasNextCursor: result.nextCursor !== null,
+    });
     return json({ ...result, query: { q: filter.q, config: STUDIO_FTS_CONFIG } }, 200, ctx);
   } catch (err) {
     return failure(err, ctx, { op: "GET search", context: { qLength: qLengthOf(req) }, exposeCorrelationId: true });

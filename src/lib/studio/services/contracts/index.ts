@@ -30,5 +30,6 @@ export {
   type ContractRefRow,
 } from "./project";
 export { contractItemTextPlain, contractRecordTextPlain } from "./text";
-export { contractDateToUtc, isContractDate, isContractReportedAt, reportedAtToUtc } from "./dates";
+export { contractDateToUtc, isCalendarDay, isContractDate, isContractReportedAt, reportedAtToUtc } from "./dates";
+export { summarizeContractChecks, type ContractCheckSummary, type ContractItemKeyDuplicate } from "./issues";
 export { setContractsLogSink, type ContractsLogEntry, type ContractsLogSink } from "./log";

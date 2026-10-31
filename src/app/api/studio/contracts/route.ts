@@ -14,12 +14,16 @@
  *
  * Kebijakan baca = R04 GET: semua pemanggil terautentikasi membaca semua dokumen
  * (register §9 / AS-2; dinilai DC-41). Tanpa tulis DB.
+ *
+ * FIX-SEC (D-402, M-1/L-1): dokumen terarsip dikecualikan secara bawaan, `?includeArchived=1`
+ * menyertakannya (`0` = bawaan, nilai lain 400); nilai ber-byte NUL -> 400 `SCHEMA_INVALID`;
+ * setiap 200 menulis log baca terstruktur (`logQueryRead`, JSONL `logs/query`).
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { checkQueryRate, failure, json, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
-import { parseContractQuery, queryContracts } from "@/lib/studio/services/query";
+import { logQueryRead, parseContractQuery, queryContracts } from "@/lib/studio/services/query";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,6 +44,14 @@ async function getContracts(req: NextRequest, ctx: ReqCtx): Promise<Response> {
     const limited = checkQueryRate(caller, ctx);
     if (limited) return limited;
     const result = await queryContracts(filter, { correlationId: ctx.correlationId });
+    logQueryRead({
+      correlationId: ctx.correlationId,
+      route: ROUTE,
+      caller,
+      filter,
+      resultCount: result.contracts.length,
+      hasNextCursor: result.nextCursor !== null,
+    });
     return json(result, 200, ctx);
   } catch (err) {
     return failure(err, ctx, { op: "GET contracts", exposeCorrelationId: true });

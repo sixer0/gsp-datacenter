@@ -163,13 +163,19 @@ describe('S87 M-03 — rate limit render per pemanggil dan antrean berbatas', ()
     render.renderRevision.mockResolvedValue({ job: fakeJob({ revisionId: 'rev-new' }), outputs: [], errors: [] });
     const post = async (auth: AuthKind, user?: string) =>
       postDocument(await req('/api/studio/documents', { auth, user, body: { agentId: `agen-${Math.random()}`, document: studioDoc() } }));
-    expect((await post('agent')).status).toBe(201);
-    expect((await post('agent')).status).toBe(201);
-    const third = await post('agent'); // agentId berbeda tidak membuka ember baru (L-02)
-    expect(third.status).toBe(429);
-    expect((await jsonOf(third)).code).toBe('RATE_LIMITED');
-    expect(Number(third.headers.get('retry-after'))).toBeGreaterThan(0);
-    expect((await post('user', 'lain')).status).toBe(201);
+    // FIX-SEC L-4 (D-402): agentId memecah bucket hanya di bawah plafon identitas; faktor 1 = plafon = batas.
+    process.env.STUDIO_QUOTA_AGENT_CEILING_FACTOR = '1';
+    try {
+      expect((await post('agent')).status).toBe(201);
+      expect((await post('agent')).status).toBe(201);
+      const third = await post('agent'); // rotasi agentId tidak menembus plafon identitas (L-02 / L-4)
+      expect(third.status).toBe(429);
+      expect((await jsonOf(third)).code).toBe('RATE_LIMITED');
+      expect(Number(third.headers.get('retry-after'))).toBeGreaterThan(0);
+      expect((await post('user', 'lain')).status).toBe(201);
+    } finally {
+      delete process.env.STUDIO_QUOTA_AGENT_CEILING_FACTOR;
+    }
   });
 
   it('checkRenderRate: identitas dari sesi, bukan agentId', () => {

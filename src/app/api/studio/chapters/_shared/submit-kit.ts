@@ -35,7 +35,7 @@ import { getStudioCaller, type StudioCaller } from "@/lib/studio/contract/auth";
 import { SLOT_KINDS } from "@/lib/studio/registry/slots";
 import { studioValidator } from "@/lib/studio/services/ingest/validate";
 import { submitChapter, submitSlot } from "@/lib/studio/services/submit";
-import { apiLog, checkRenderRate, isRecord, json, readJsonBody, reject, reqCtx, type ReqCtx } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, isRecord, json, readJsonBody, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { S55_BODY_OPTIONS, bodyAgentId, failFrom } from "../../validate/_shared/route-kit";
 
 export type SubmitKind = "chapter" | "slot";
@@ -129,6 +129,12 @@ export async function handleSubmit(req: NextRequest, kind: SubmitKind): Promise<
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE[kind]);
+  // FIX-R40-1 (QH-03): header kuota (bucket render) pada respons apa pun sesudah tagihan; 401 dan
+  // penolakan sebelum `checkRenderRate` tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => submitBody(req, kind, ctx));
+}
+
+async function submitBody(req: NextRequest, kind: SubmitKind, ctx: ReqCtx): Promise<Response> {
   const body = await readJsonBody(req, ctx, S55_BODY_OPTIONS);
   if (!body.ok) return body.response;
 

@@ -136,7 +136,11 @@ export interface IngestResultV2 extends Omit<IngestResult, "snapshot"> {
   /** Respons layanan kiriman SR-13 (simpan v2). */
   submit?: SubmitResultV2;
   warnings?: ComposeWarning[];
-  /** DC-08: peringatan kontrak non-penahan (CW-01 `CONTRACT_REF_PID_RETIRED`, KD-46). */
+  /**
+   * DC-08: peringatan kontrak non-penahan (CW-01 `CONTRACT_REF_PID_RETIRED`, KD-46), hanya bila
+   * tidak kosong. Diisi dry-run dokumen baru (I55 di luar tx) dan dokumen yang ada
+   * (`SubmitResultV2.warnings` dry-run kiriman); dibaca R08 cabang dokumen (FIX-R40-2).
+   */
   contractWarnings?: SubmitWarningV2[];
 }
 
@@ -861,6 +865,7 @@ async function ingestIntoExisting(ctx: V2Context, doc0: StudioDocV2, pinned: Pin
       ...(dry.snapshot ? { snapshot: dry.snapshot } : {}),
       schemaId: "studio.doc/v2",
       completeness: dry.result.completeness,
+      ...(dry.result.warnings && dry.result.warnings.length > 0 ? { contractWarnings: [...dry.result.warnings] } : {}),
     };
   }
   return persistV2ViaSubmit(ctx, { doc, assets: pf.assets }, (submit, revSnapshot) => {

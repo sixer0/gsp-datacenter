@@ -4,7 +4,7 @@
  * Konversi Markdown berjalan sinkron di event loop proses HQ bersama, jadi SETIAP panggilan
  * dihitung (bukan hanya `?validate=1`, yang tetap juga dihitung ember R08). Pola dan sumber
  * sama dengan FIX-1 (`@/lib/studio/http`): limiter jendela tetap `createFixedWindowLimiter`,
- * identitas TERAUTENTIKASI `renderRateIdentity` (bukan `agentId` badan), respons 429
+ * identitas TERAUTENTIKASI `quotaRateIdentity` (bukan `agentId` badan), respons 429
  * `RATE_LIMITED` + `Retry-After` lewat `reject`. Ember sendiri (`import`), terpisah dari ember
  * render dan validasi.
  *
@@ -13,28 +13,21 @@
  *
  * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `import`,
  * `@/lib/studio/http/quota`); 429 membawa header kuota, respons lain dipasang route.
+ * FIX-R40-5: kunci, tagihan, dan 429 lewat helper bersama `checkBucketRate`.
  */
-import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
-import { createFixedWindowLimiter, reject, renderRateIdentity, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
-import { applyQuotaHeaders, recordQuotaCharge } from "@/lib/studio/http/quota";
+import { createFixedWindowLimiter, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
+import { checkBucketRate, rateEnvInt } from "@/lib/studio/http/quota";
 
 export const IMPORT_RATE_LIMIT_DEFAULT = 60;
 export const IMPORT_RATE_WINDOW_MS_DEFAULT = 60_000;
-
-function envInt(name: string, fallback: number, min: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= min ? n : fallback;
-}
 
 let limiter: FixedWindowLimiter | null = null;
 
 function importLimiter(): FixedWindowLimiter {
   limiter ??= createFixedWindowLimiter({
-    limit: envInt("STUDIO_IMPORT_RATE_LIMIT", IMPORT_RATE_LIMIT_DEFAULT, 1),
-    windowMs: envInt("STUDIO_IMPORT_RATE_WINDOW_MS", IMPORT_RATE_WINDOW_MS_DEFAULT, 1000),
+    limit: rateEnvInt("STUDIO_IMPORT_RATE_LIMIT", IMPORT_RATE_LIMIT_DEFAULT, 1),
+    windowMs: rateEnvInt("STUDIO_IMPORT_RATE_WINDOW_MS", IMPORT_RATE_WINDOW_MS_DEFAULT, 1000),
   });
   return limiter;
 }
@@ -49,16 +42,5 @@ export function resetImportRateLimiter(): void {
  * (`retryAfterSec`, header `Retry-After`) yang langsung dikembalikan route.
  */
 export function checkImportRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
-  const key = createHash("sha256").update(`import\u0000${renderRateIdentity(caller)}`).digest("hex").slice(0, 32);
-  const rl = importLimiter().hit(key);
-  recordQuotaCharge(ctx, "import", rl);
-  if (rl.allowed) return null;
-  return applyQuotaHeaders(
-    reject(ctx, "RATE_LIMITED", "Too many markdown import requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-      callerKind: caller.kind,
-      retryAfterSec: rl.retryAfterSec,
-      limiter: "import",
-    }),
-    ctx,
-  );
+  return checkBucketRate("import", importLimiter(), caller, ctx, "Too many markdown import requests; retry later", "import");
 }

@@ -9,7 +9,13 @@
  * - DR-08 `DRAFT_BASIS_STALE` membawa baris `basis:` kepala (kolom 1);
  * - penolakan R08 4xx selain 401/429 = satu isu blok `{ pointer: "", keyword: <code>, message,
  *   details? }` (badan galat `{ error, code, details }` apa adanya);
- * - `valid` = tanpa isu error dan setiap blok `valid`.
+ * - `valid` = tanpa isu error dan setiap blok `valid`;
+ * - identitas dry-run (FIX-C2, D-392): agentId efektif blok = `agentId` payload bila blok
+ *   memuatnya (medan ada: dipakai apa adanya), selain itu agentId bawaan pemanggil (CLI
+ *   `--agent-id`, badan R23 `agentId`; bawaan keduanya = tanpa agentId). Bila blok tanpa medan
+ *   `agentId` dan bawaan ada, payload dry-run = blok + `agentId` bawaan (medan ditambahkan di
+ *   akhir objek); selain itu teks blok dikirim persis seperti tertulis. Dengan demikian R08 melihat
+ *   identitas yang sama di kedua jalur (`completenessPreview.lastFilledBy`).
  */
 import { DRAFT_LIMITS } from "../../contract/env";
 import type { DraftLimitReason } from "../../contract/enums";
@@ -24,10 +30,21 @@ export interface DraftDryRunOutcome {
   completenessPreview?: unknown;
 }
 
+/** Masukan dry-run satu blok (FIX-C2): payload efektif dan agentId efektif yang dilihat R08. */
+export interface DraftDryRunInput {
+  block: ExtractedDraftBlock;
+  /** Payload yang di-dry-run: nilai blok, plus `agentId` bawaan bila blok tanpa medan itu. */
+  value: Record<string, unknown>;
+  /** Teks JSON payload: `block.text` apa adanya, atau serialisasi `value` bila `agentId` ditambahkan. */
+  text: string;
+  /** agentId efektif (string payload, atau bawaan); undefined = tanpa agentId. */
+  agentId: string | undefined;
+}
+
 /** Transport pemeriksaan: revisi terkini dokumen (null = tidak ditemukan) dan dry-run R08 per blok. */
 export interface DraftCheckDeps {
   currentRevisionNo(documentId: string): Promise<number | null>;
-  dryRun(block: ExtractedDraftBlock): Promise<DraftDryRunOutcome>;
+  dryRun(input: DraftDryRunInput): Promise<DraftDryRunOutcome>;
 }
 
 export interface PreparedDraftCheck {
@@ -50,6 +67,15 @@ export function prepareDraftCheck(markdown: string): PreparedDraftCheck {
   const result = toDraftCheckResult(extracted);
   const dryRunBlocks = result.blocks.filter((b) => b.valid).map((b) => extracted.blocks[b.index - 1]);
   return { extracted, result, dryRunBlocks };
+}
+
+/**
+ * Jumlah tagihan bucket `validate` untuk satu permintaan R23 (KD-43 + FIX-SEC L-2, D-402): satu per
+ * blok yang akan di-dry-run, minimal satu, sehingga draf tanpa blok dry-run (parse, DR-08 lookup DB,
+ * echo respons) tetap berbatas laju; tidak pernah ganda bila ada blok.
+ */
+export function draftValidateCharges(prepared: Pick<PreparedDraftCheck, "dryRunBlocks">): number {
+  return Math.max(1, prepared.dryRunBlocks.length);
 }
 
 /** Baris pertama `basis:` di kepala (sebelum blok pertama); 0 bila tidak ada. */
@@ -92,6 +118,18 @@ export function rejectedDryRun(code: string, message: string, details?: unknown)
   return { valid: false, issues: [{ pointer: "", keyword: code, message, ...(isObj ? { details } : {}) }] };
 }
 
+/**
+ * Aturan agentId dry-run bersama CLI dan R23 (D-392): medan `agentId` payload menang (tak diubah);
+ * selain itu `defaultAgentId` (string tidak kosong) ditambahkan ke payload dry-run.
+ */
+export function dryRunInputOf(block: ExtractedDraftBlock, defaultAgentId?: string): DraftDryRunInput {
+  const value = block.value as Record<string, unknown>;
+  const own = typeof value.agentId === "string" ? value.agentId : undefined;
+  if ("agentId" in value || defaultAgentId === undefined || defaultAgentId === "") return { block, value, text: block.text, agentId: own };
+  const withAgent = { ...value, agentId: defaultAgentId };
+  return { block, value: withAgent, text: JSON.stringify(withAgent), agentId: defaultAgentId };
+}
+
 /** Timpakan hasil dry-run ke blok T2-71 (urutan medan tetap: submitPreview lalu completenessPreview). */
 export function applyDryRun(block: DraftBlockResultV2, outcome: DraftDryRunOutcome): void {
   block.valid = outcome.valid;
@@ -106,8 +144,13 @@ export function finalizeDraftResult(result: DraftCheckResultV2): DraftCheckResul
   return result;
 }
 
-/** DR-08 lalu dry-run R08 per blok (urut indeks), lalu `valid`. */
-export async function completeDraftCheck(markdown: string, prepared: PreparedDraftCheck, deps: DraftCheckDeps): Promise<DraftCheckResultV2> {
+/** DR-08 lalu dry-run R08 per blok (urut indeks), lalu `valid`. `defaultAgentId`: lihat aturan agentId di kepala berkas. */
+export async function completeDraftCheck(
+  markdown: string,
+  prepared: PreparedDraftCheck,
+  deps: DraftCheckDeps,
+  defaultAgentId?: string,
+): Promise<DraftCheckResultV2> {
   const { extracted, result } = prepared;
   const basis = draftBasisRevision(extracted);
   if (basis !== null) {
@@ -116,7 +159,7 @@ export async function completeDraftCheck(markdown: string, prepared: PreparedDra
   }
   for (const b of result.blocks) {
     if (!b.valid) continue;
-    applyDryRun(b, await deps.dryRun(extracted.blocks[b.index - 1]));
+    applyDryRun(b, await deps.dryRun(dryRunInputOf(extracted.blocks[b.index - 1], defaultAgentId)));
   }
   return finalizeDraftResult(result);
 }

@@ -17,7 +17,8 @@
  *
  * Hak akses: sama dengan `queryContracts` (pola R04 GET; semua pemanggil
  * terautentikasi membaca semua dokumen, register §9 / AS-2). Route R22 wajib
- * `requireSession` lebih dulu.
+ * `requireSession` lebih dulu. FIX-SEC (D-402): dokumen terarsip DIKECUALIKAN secara bawaan
+ * (juga bersama `documentId`); `includeArchived: true` (R22 `?includeArchived=1`) menyertakannya.
  */
 import { Prisma } from "@prisma/client";
 import { SEARCH_LIMITS, SEARCH_SNIPPET_OPTIONS, STUDIO_FTS_CONFIG, STUDIO_FTS_MAX_CHARS, type SearchHitV2 } from "@/lib/studio/contract";
@@ -56,6 +57,7 @@ export function searchConditions(f: SearchQueryFilter): Prisma.Sql[] {
     conds.push(Prisma.sql`rv."revisionNo" = d."currentRevisionNo"`);
     if (f.documentId !== undefined) conds.push(Prisma.sql`d."id" = ${f.documentId}`);
   }
+  if (f.includeArchived !== true) conds.push(Prisma.sql`d."archived" = false`);
   if (f.mission !== undefined) conds.push(Prisma.sql`d."missionFolder" = ${f.mission}`);
   if (f.kind !== undefined) conds.push(Prisma.sql`d."contractKind" = ${f.kind}`);
   if (f.type !== undefined && f.type.length > 0) conds.push(Prisma.sql`b."type" IN (${Prisma.join(f.type)})`);

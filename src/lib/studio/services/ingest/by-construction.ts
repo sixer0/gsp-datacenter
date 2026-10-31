@@ -69,7 +69,7 @@ import type { ChartCustomFormV2, ContractRecordPayloadV2, SubmitWarningV2 } from
 import { allowedWidthsText, figureLimits, isAllowedWidth, type FigureLimits } from "../../engine/chart/core/guards";
 import { CHART_CUSTOM_FORM_IDS, resolveChartCustom } from "../../registry/charts";
 import { CONTRACT_KIND_DEFS, CONTRACT_RECORD_SECTION_TYPE, isContractKind } from "../../registry/contracts";
-import { checkContractRecord, resolveContractRefs, type ContractRefReader, type ResolvedContractRef } from "../contracts";
+import { checkContractRecord, resolveContractRefs, summarizeContractChecks, type ContractRefReader, type ResolvedContractRef } from "../contracts";
 import { bindRegister, renderFeasibilityBlockers, tableChecks } from "./checks";
 import { resolveIngestEnforcement, runGate, type IngestEnforcement } from "./gate";
 import { isObject, joinPointer } from "./util";
@@ -250,18 +250,14 @@ export function checkContractSource(
   return checkContractTargets(targetsOf(source, slots, () => contractKindFor(source?.template?.slug, opts.contractKind), opts));
 }
 
-/** I54 atas target (urutan slot, lalu urutan medan). EC27 hanya bila tidak ada isu CH. */
+/**
+ * I54 atas target (urutan slot, lalu urutan medan). Pemeta + aturan EC27 = `summarizeContractChecks`
+ * (satu sumber dengan draf lokal CLI, FIX-R40-3): EC27 hanya bila tidak ada isu CH di target mana pun.
+ */
 export function checkContractTargets(targets: readonly ContractRecordTarget[]): ContractGateResult {
-  const out: ContractGateResult = { targets: [...targets], issues: [], refs: [], warnings: [] };
-  for (const t of targets) {
-    const r = checkContractRecord(t.payload, t.kind, { pointer: t.pointer });
-    for (const x of r.issues) out.issues.push({ pointer: x.pointer, keyword: x.checkId, message: x.message, checkId: x.checkId });
-    if (r.error && !out.error) {
-      const { key, positions } = r.error.details;
-      out.error = new StudioEngineError(r.error.code, `Kunci butir "${key}" ganda pada posisi ${positions.join(", ")}`, { ...r.error.details });
-    }
-  }
-  if (out.issues.length > 0) delete out.error;
+  const s = summarizeContractChecks(targets.map((t) => checkContractRecord(t.payload, t.kind, { pointer: t.pointer })));
+  const out: ContractGateResult = { targets: [...targets], issues: s.issues, refs: [], warnings: [] };
+  if (s.duplicate) out.error = new StudioEngineError(s.duplicate.code, s.duplicate.message, { ...s.duplicate.details });
   return out;
 }
 

@@ -7,7 +7,7 @@
  *
  * Pola dan sumber SAMA dengan route kiriman (FIX-1, `@/lib/studio/http`): limiter
  * jendela tetap `createFixedWindowLimiter`, identitas TERAUTENTIKASI
- * `renderRateIdentity` (bukan `agentId` badan), dan respons 429 `RATE_LIMITED` +
+ * `quotaRateIdentity` (bukan `agentId` badan), dan respons 429 `RATE_LIMITED` +
  * `Retry-After` lewat `reject`. Embernya terpisah dan lebih longgar dari ember render
  * (rekomendasi SR-57: validasi interaktif editor tidak menghabiskan jatah kiriman/build);
  * `?preview=html` tetap juga dihitung ember render.
@@ -17,28 +17,21 @@
  *
  * DC-19 (QH-01..QH-05): setiap tagihan dicatat pada ctx (bucket `validate`,
  * `@/lib/studio/http/quota`); 429 membawa header kuota, respons lain dipasang route.
+ * FIX-R40-5: kunci, tagihan, dan 429 lewat helper bersama `checkBucketRate`.
  */
-import { createHash } from "node:crypto";
 import type { StudioCaller } from "@/lib/studio/contract/auth";
-import { createFixedWindowLimiter, reject, renderRateIdentity, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
-import { applyQuotaHeaders, recordQuotaCharge } from "@/lib/studio/http/quota";
+import { createFixedWindowLimiter, type FixedWindowLimiter, type ReqCtx } from "@/lib/studio/http";
+import { checkBucketRate, rateEnvInt } from "@/lib/studio/http/quota";
 
 export const VALIDATE_RATE_LIMIT_DEFAULT = 120;
 export const VALIDATE_RATE_WINDOW_MS_DEFAULT = 60_000;
-
-function envInt(name: string, fallback: number, min: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= min ? n : fallback;
-}
 
 let limiter: FixedWindowLimiter | null = null;
 
 function validateLimiter(): FixedWindowLimiter {
   limiter ??= createFixedWindowLimiter({
-    limit: envInt("STUDIO_VALIDATE_RATE_LIMIT", VALIDATE_RATE_LIMIT_DEFAULT, 1),
-    windowMs: envInt("STUDIO_VALIDATE_RATE_WINDOW_MS", VALIDATE_RATE_WINDOW_MS_DEFAULT, 1000),
+    limit: rateEnvInt("STUDIO_VALIDATE_RATE_LIMIT", VALIDATE_RATE_LIMIT_DEFAULT, 1),
+    windowMs: rateEnvInt("STUDIO_VALIDATE_RATE_WINDOW_MS", VALIDATE_RATE_WINDOW_MS_DEFAULT, 1000),
   });
   return limiter;
 }
@@ -53,16 +46,5 @@ export function resetValidateRateLimiter(): void {
  * (`retryAfterSec`, header `Retry-After`) yang langsung dikembalikan route.
  */
 export function checkValidateRate(caller: Pick<StudioCaller, "kind" | "username" | "email">, ctx: ReqCtx): Response | null {
-  const key = createHash("sha256").update(`validate\u0000${renderRateIdentity(caller)}`).digest("hex").slice(0, 32);
-  const rl = validateLimiter().hit(key);
-  recordQuotaCharge(ctx, "validate", rl);
-  if (rl.allowed) return null;
-  return applyQuotaHeaders(
-    reject(ctx, "RATE_LIMITED", "Too many validate requests; retry later", { retryAfterSec: rl.retryAfterSec }, {
-      callerKind: caller.kind,
-      retryAfterSec: rl.retryAfterSec,
-      limiter: "validate",
-    }),
-    ctx,
-  );
+  return checkBucketRate("validate", validateLimiter(), caller, ctx, "Too many validate requests; retry later", "validate");
 }

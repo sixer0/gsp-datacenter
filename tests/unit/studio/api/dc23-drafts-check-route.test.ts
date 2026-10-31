@@ -176,13 +176,13 @@ describe('R23 POST /api/studio/drafts/check — 200', () => {
     expect(dbWrites()).toEqual([]);
   });
 
-  it('blok dengan galat ekstraksi tidak di-dry-run dan tidak ditagih; draf tanpa blok sah tanpa header kuota', async () => {
+  it('blok dengan galat ekstraksi tidak di-dry-run; draf tanpa blok sah tetap ditagih satu kali (FIX-SEC L-2, D-402)', async () => {
     const res = await r23(UNKNOWN_SCHEMA);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.valid).toBe(false);
     expect(body.issues.map((i: { code: string }) => i.code)).toContain('DRAFT_SCHEMA_UNKNOWN');
-    expect(quota(res)).toEqual([null, null]);
+    expect(quota(res)).toEqual(['validate', '119']);
     expect(svc.dryRunSlot).not.toHaveBeenCalled();
   });
 

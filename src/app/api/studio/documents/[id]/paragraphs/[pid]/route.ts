@@ -24,7 +24,7 @@ import { requireSession } from "@/lib/require-session";
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { patchPid, pidHistory } from "@/lib/studio/services/revisions";
 import { projectContent } from "@/lib/studio/services/structure";
-import { apiLog, checkRenderRate, failure, isPlainObject, isPlausibleId, json, readJsonObject, reject, reqCtx } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, failure, isPlainObject, isPlausibleId, json, readJsonObject, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { API_LOG_SOURCE, decodePidParam, findById, loadDocRevision, locatePid } from "../_lib/http";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +87,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE, API_LOG_SOURCE);
+  // FIX-R40-1 (QH-03): header kuota (bucket render) pada respons apa pun sesudah tagihan; 401 dan
+  // penolakan sebelum `checkRenderRate` tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => patchPidRoute(req, params, ctx));
+}
+
+async function patchPidRoute(req: NextRequest, params: Params["params"], ctx: ReqCtx): Promise<Response> {
   const { id, pid: rawPid } = await params;
 
   if (!isPlausibleId(id)) return reject(ctx, "DOCUMENT_NOT_FOUND", "Document not found");

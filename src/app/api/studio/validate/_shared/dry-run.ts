@@ -66,6 +66,11 @@ export type ValidateBody = ValidateResponse & {
   completenessPreview?: CompletenessReportV2;
   /** FIX-V: dry-run kiriman bab/slot v2. */
   submitPreview?: SubmitPreview;
+  /**
+   * FIX-R40-2 (KD-46, CW-01): peringatan kontrak non-penahan dry-run `studio.doc/v2` (dokumen baru
+   * dan dokumen yang ada); hanya bila tidak kosong. Bab/slot membawanya di `submitPreview.warnings` (AM-08).
+   */
+  warnings?: SubmitWarningV2[];
 };
 
 export function isUserError(err: unknown): err is StudioEngineError {
@@ -246,6 +251,10 @@ export async function validateV2Submission(
     return { valid: false, issues: rebaseIssues(issuesFromError(err), prefix), lint: null };
   }
   const out: ValidateBody = { valid: result.valid, issues: rebaseIssues(result.issues ?? [], prefix), lint: result.lint ?? null };
+  // FIX-R40-2: CW-01 dry-run dokumen (pointer relatif kiriman -> relatif badan, seperti isu).
+  if (result.contractWarnings && result.contractWarnings.length > 0) {
+    out.warnings = prefix ? result.contractWarnings.map((w) => ({ ...w, pointer: prefix + w.pointer })) : [...result.contractWarnings];
+  }
   // Pratinjau kelengkapan hasil dry-run SR-12, dibaca dengan pengaman bentuk.
   const preview = asCompletenessReport(result.completeness);
   if (preview) out.completenessPreview = preview;

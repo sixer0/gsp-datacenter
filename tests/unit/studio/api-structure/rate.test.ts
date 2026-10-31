@@ -12,8 +12,13 @@ import { chapterBody, createExtra, missionTarget, simpleChapter } from './_fx';
 import { prisma } from '@/lib/prisma';
 
 const guard = dbGuard('rate');
-beforeAll(async () => guard.setup(), 60_000);
+beforeAll(async () => {
+  // FIX-SEC L-4: plafon identitas = 1 x batas, agar rotasi agentId di uji terakhir terhenti plafon.
+  process.env.STUDIO_QUOTA_AGENT_CEILING_FACTOR = '1';
+  await guard.setup();
+}, 60_000);
 afterAll(async () => {
+  delete process.env.STUDIO_QUOTA_AGENT_CEILING_FACTOR;
   const r = await guard.teardown();
   expect(r.residue).toEqual({ docs: 0, assets: 0, templates: 0, jobs: 0 });
   expect(r.after).toEqual(r.before);
@@ -53,8 +58,10 @@ describe('FIX-1: laju per pemanggil', () => {
     expect(r.status, JSON.stringify(r.body).slice(0, 300)).toBe(201);
   });
 
-  it('agentId lain dengan secret yang sama berbagi satu ember (INTERNAL_AGENT:shared) -> 429', async () => {
-    // render-guard.ts renderRateIdentity: pemegang x-internal-secret = satu ember (agentId dapat dipalsukan).
+  it('agentId lain dengan secret yang sama terhenti plafon identitas (INTERNAL_AGENT:shared) -> 429', async () => {
+    // FIX-SEC L-4 (D-402): agentId memecah bucket hanya di bawah plafon identitas
+    // (STUDIO_QUOTA_AGENT_CEILING_FACTOR x batas); faktor 1 = plafon sama dengan batas, sudah habis oleh AGENT_ID.
+    // Faktor dipasang di beforeAll untuk seluruh berkas (giliran slot plafon dihitung sejak tagihan pertama).
     const r = await chapter(chapterBody(missionTarget(missionFolder('rate-a2')), simpleChapter('1'), createExtra()), 'agent', AGENT_ID_2);
     expect(r.status).toBe(429);
     expect(r.body.code).toBe('RATE_LIMITED');

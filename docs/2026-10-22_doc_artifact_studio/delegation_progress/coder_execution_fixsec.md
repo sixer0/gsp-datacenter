@@ -95,3 +95,78 @@ Galat kuota: 429 `RATE_LIMITED`, `details = { reason: "asset_quota_exceeded", bu
 - Security review ulang (D-247 butir 2) atas N-03, N-05..N-08: review recommended (lingkup: berkas di tabel Changes Made).
 - IP-47 sisa: migrasi pembaca jalur datar ke `relPath`, lalu hapus `linkAssetCopy`.
 - Bila kode 507 diinginkan: tambah `INSUFFICIENT_STORAGE` di `contract/errors.ts` + `enums.ts` (SR-04).
+
+---
+
+# Implementation Report: FIX-SEC siklus 2026-10-31 (D-402; gateway_check/13 M-1, L-1, L-2, L-4)
+
+Laporan baris FIX-SEC baru (document contract). Bagian di atas = FIX-SEC 2026-10-23 (SR-57), dipertahankan apa adanya.
+row: FIX-SEC (D-402) | date: 2026-10-31 | agent: coder-execution | source: masterplan/05_document_contract_specs.md §8, §9.1-§9.3, §9.6 | **status: complete**
+Skill: `backend-execution`, `dry-run-verify-fix`.
+
+## Executed Steps
+
+| Step | Task | Status | Notes |
+|---|---|---|---|
+| 1a | M-1 log baca R21/R22 | complete | `logQueryRead` (services/query/log.ts) dipanggil route sesudah 200: route, callerKind, identity (requester; email Google di-hash `google:sha256:<12 hex>`), agentId bila ada, filter + `q` dipotong 64 karakter (kontrol -> `?`), qLength, includeArchived, resultCount, hasNextCursor, correlationId; tanpa cuplikan. Sink JSONL `logs/query` yang ada |
+| 1b | M-1 arsip dikecualikan bawaan | complete | Kolom `StudioDocument.archived`. Opt-in **`includeArchived`**: `1` sertakan, `0` = bawaan, nilai lain atau ganda -> 400 `/query/includeArchived`. `contractWhere` `archived:false`; prafilter docNumber `(${bool}::boolean OR "archived" = false)`; `searchConditions` `d."archived" = false` (juga bersama documentId) |
+| 2 | L-1 byte NUL | complete | `nulIssues` di `contractFilterIssues`/`searchFilterIssues` (string + butir daftar) -> 400 SCHEMA_INVALID pointer `/query/<nama>` keyword `pattern`, sebelum tagihan |
+| 3 | L-2 R23 tanpa blok | complete | `draftValidateCharges` (services/draft/check.ts) = max(1, blok dry-run); route menagih sebanyak itu (tidak ganda bila ada blok) |
+| 4 | L-4 bucket per agen + plafon | complete | `quotaAgentRateIdentity`; `checkBucketRate`: tanpa agentId = kunci lama (identik); dengan agentId = kunci identitas+agentId, lalu plafon identitas F x batas bucket, F = env baru **`STUDIO_QUOTA_AGENT_CEILING_FACTOR`** (bulat 1..64, bawaan 4); plafon = F slot kunci di limiter bucket yang sama, diisi bergiliran; sisa terkecil agen/plafon dicatat (QH-04); 429 plafon membawa `scope:"identityCeiling"` di log |
+
+## Changes Made
+
+| File | Change Type | Description |
+|---|---|---|
+| src/lib/studio/services/query/filters.ts | modify | `includeArchived` (param + tipe), `nulIssues`, `includeArchivedIssue` |
+| src/lib/studio/services/query/contracts.ts | modify | arsip bawaan dikecualikan (where + prafilter docNumber) |
+| src/lib/studio/services/query/search.ts | modify | syarat `d."archived" = false` kecuali opt-in |
+| src/lib/studio/services/query/log.ts | modify | `logQueryRead`, `readLogIdentity`, `truncateForLog`, `filterValuesForLog`, `READ_LOG_VALUE_MAX` |
+| src/lib/studio/services/query/index.ts | modify | ekspor baru |
+| src/app/api/studio/contracts/route.ts, src/app/api/studio/search/route.ts | modify | `logQueryRead` sesudah sukses; header doc |
+| src/app/api/studio/drafts/check/route.ts | modify | tagihan `draftValidateCharges` |
+| src/lib/studio/services/draft/check.ts | modify | `draftValidateCharges` (hanya L-2) |
+| src/lib/studio/http/quota.ts | modify | hanya L-4 (`checkBucketRate`, identitas agen, plafon, env) |
+| tests/unit/studio/api/fixsec-query-read.test.ts | add | 13 uji: log baca, opt-in, NUL |
+| tests/unit/studio/api/fixsec-agent-quota.test.ts | add | 8 uji L-4 |
+| tests/unit/studio/api/fixsec-drafts-charge.test.ts | add | 5 uji L-2 |
+| tests/unit/studio/query/fixsec-archived.test.ts | add | 4 uji: murni + DB v21 dalam transaksi ROLLBACK (0 baris tersisa diperiksa) |
+| tests/unit/studio/api/dc23-drafts-check-route.test.ts | modify (DI LUAR kepemilikan) | 1 asersi basi: draf tanpa blok sah kini `['validate','119']` (L-2) |
+| tests/unit/studio/api-structure/rate.test.ts, tests/unit/studio/fix1/fix1.test.ts | modify (DI LUAR kepemilikan) | invarian lama "agentId tidak memecah bucket" -> "rotasi agentId terhenti plafon identitas" (env faktor 1 dipasang/dihapus di uji) |
+
+## Test Results
+
+| Test Type | Command | Result | Notes |
+|---|---|---|---|
+| typecheck | `npx tsc --noEmit -p .` | exit 0 | sesudah semua edit |
+| lint | `npx eslint <berkas tersentuh>` | exit 0, 0 warning | |
+| unit fixsec | `npx vitest run <4 berkas fixsec>` | 4 berkas, 30/30 lulus | uji DB ROLLBACK 73 ms |
+| regresi | dc15/dc16/dc19/dc23/fixqa + query/ | 12 berkas lulus (sesudah 1 asersi dc23 diperbarui) | |
+| suite penuh | `npx vitest run tests/unit/studio` | 145 berkas; 3262 lulus, 1 skip, 0 gagal | |
+
+## Verification
+
+- Asap :9021 (http; rahasia lewat substitusi shell): R22 `q=x%00y` 400 `/query/q:pattern` cid 8432920b-a1e5-4f55-84e3-e5dae8fad484; R21 `mission=a%00b` 400 cid be97663f-08e0-4e72-a6f9-817e76c71778; R21 `docNumber=a%00b` 400 cid 2591a667-7de9-46fa-bcda-5638e009142b (ketiganya tanpa header kuota).
+- R21 tanpa opt-in 200 contracts=2 sisa 119 cid 71441141-8f6d-4a27-982d-0f8aa41403a3; `includeArchived=1` 200 contracts=2 sisa 118 cid e6a1a697-6b88-495b-8d96-aaab6d522125 (v21 tanpa dokumen kontrak terarsip; eksklusi dibuktikan uji DB ROLLBACK); `includeArchived=yes` 400 enum cid 2620664e-6a1d-4358-9fa5-35246c04c0fa. R22 `q=laporan` 19 hit dengan/tanpa opt-in (cid dfa5d494-60da-4a96-b732-66bae27b9e63, b7dbbfb8-8586-43df-9ecf-3eb3f35bb119).
+- Log baca ada di `data/studio-workspace/logs/query/query-2026-10-31.jsonl` untuk cid 71441141... dan b7dbbfb8... (`message:"query read"`, `code:"QUERY_READ"`); tidak ada untuk cid 400.
+
+## Persistent Issues
+
+| Issue | Attempts | Root Cause | Current Status | Blocking? |
+|---|---|---|---|---|
+| none | - | - | - | - |
+
+## Issues & Decisions
+
+| Step | Issue / Decision | Resolution |
+|---|---|---|
+| 1b | Nama opt-in | `includeArchived` (camelCase seperti param R21/R22; `archived` di R04 adalah filter, bukan opt-in). `archived` tetap 400 tak dikenal di R21/R22 |
+| 1a | `q` di log baca | Dicatat terpotong 64 karakter sesuai brief controller; log galat tetap tanpa isi `q` |
+| 4 | Batas/jendela limiter tidak terekspos (`rate-limit.ts` di luar kepemilikan) | Plafon = F slot kunci di limiter bucket yang sama (batas dan jendela sama), giliran per identitas; sisa plafon tepat bila jendela slot sejajar, selisih < F bila tidak |
+| 4 | Cakupan L-4 | Semua bucket lewat `checkBucketRate`, termasuk sesi yang mengirim agentId; R21/R22 GET dan impor markdown (tanpa agentId) tidak berubah |
+| 2-4 | 3 berkas uji di luar kepemilikan diubah (dc23, rate, fix1) | Asersinya menyandikan perilaku yang dibatalkan D-402 (L-2/L-4); diubah minimal; perlu dicatat controller |
+| - | Dokumen | API-REFERENCE / STUDIO-AGENT-GUIDE / register 05 belum memuat `includeArchived`, env baru, tagihan minimal 1 R23, bucket per agen, log baca -> DOC-FIX |
+
+## Next Steps
+
+- DOC-FIX untuk dokumentasi di atas. Review recommended (lingkup: `http/quota.ts` L-4, `services/query` log/arsip).

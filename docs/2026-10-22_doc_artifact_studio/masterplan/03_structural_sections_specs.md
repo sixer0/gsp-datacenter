@@ -6,7 +6,7 @@ step: SR-01
 agent: data-analyst
 date: 2026-10-23
 status: complete
-amended: 2026-10-30 DC-32 (data-analyst); rujukan register masterplan/05_document_contract_specs.md, §19; D-361..D-381
+amended: 2026-10-30 DC-32 (data-analyst); rujukan register masterplan/05_document_contract_specs.md, §19; D-361..D-381. 2026-10-31 DOC-FIX-B (document-specialist; review DC-42 F-01/F-02, review kode DC-40 L1/L2; D-383, D-385, D-387, D-388, D-395, D-403)
 binding: D-06, D-21, D-98, D-127, D-128, D-131, D-133, D-134, D-138, D-139, D-140, D-141; blueprint identification/05 §0-§2 dan §4; dua pesan controller 2026-10-23 (pembuatan dokumen baru; ukuran kertas)
 inputs: identification/05_structural_sections_blueprint.md, masterplan/01_specs.md, decisions/decisions.md, prisma/schema.prisma, src/lib/studio/contract/**, src/lib/studio/params/{render,page,color-type,governance-language,apparatus}.ts, src/lib/studio/services/render/pure/**, src/lib/studio/registry/{sections,lint}.ts, benchmark/manual000/doc.json, benchmark/manual000/figures/specs/*.chart.json
 ---
@@ -416,6 +416,7 @@ Aturan:
 - Perencanaan unit: urut posisi slot dokumen. Slot berulang `chapter` → unit `part` (kunci `P<n>`) sebelum bab pertama bagian itu, lalu unit `chapter` per kunci urut numerik. Slot `appendix` → unit `appendix` per huruf urut. `signatureBlock` dengan `slot.placement = "inControlSheet"` tidak membuat unit (dirender di unit `controlSheet`). Slot opsional kosong tidak membuat unit. Pada render draf, slot wajib kosong di dalam lingkup membuat unit `placeholder: true`.
 - Alamat baris slot (M17): slot tak-berulang terisi → satu baris `F:<slotKey>`, `type` = sectionType. Pengecualian `sourceRegister` → satu baris per entri `F:<slotKey>/<n>` (n 1-based), `type = "sourceRegisterEntry"`. Slot AUTO tanpa payload → tidak ada baris.
 - Amandemen DOC-5 pid butir (register 05 §5.7, KD-34; D-376, D-380): slot `contractRecord` terisi → satu baris `F:<slotKey>` (slot `record`: `F:record`) bertipe `contractRecord`, ditambah satu baris per butir `F:record/<n>` (n 1-based, urutan `items`) bertipe `contractItem`. Pid butir diwarisi per `key` lintas revisi; butir baru mendapat pid bangkitan (§10); butir yang hilang dipensiunkan. Pola sama dengan pengecualian `sourceRegister` di atas; tata bahasa alamat tidak berubah (AC-7). Compose sudah membangun blok `F:<slotKey>/<n>` (`L/services/compose/contract-record.ts:9, 56-58`); baris M17 dan pewarisan pid per `key` milik DC-09 (D-376; sementara pid butir berbasis indeks, D-380).
+  - Amandemen DOC-FIX-B (F-02, L1; D-383, D-403): kalimat "sementara pid butir berbasis indeks" di atas adalah keadaan per DC-32 dan kini tidak berlaku. Baris M17 butir dan pewarisan pid per `key` sudah di kode: `inheritItemPids` (`L/services/structure/rows.ts:219-237`, dipanggil `:410`) mewarisi pid dari baris `contractItem` revisi sebelumnya pada slot yang sama; butir baru mendapat pid dari allocator (`freshItemPid`, `rows.ts:245-249`). Format pid butir baru berbeda per jalur (perilaku diketahui, register 05 §5.7): jalur kiriman/commit memakai `dbPidAllocator` (`L/services/structure/pid.ts:121-127`, pid acak `p-…`), sedangkan compose tanpa allocator memakai pid deterministik dari alamat `slot-record-<n>` (`L/services/compose/snapshot.ts:192-195`, `L/services/compose/pids.ts:52-55`).
 - Alamat bab: tata bahasa 01_specs §4.1 tetap; bab di slot berulang mana pun memakai `chap`. Kunci bab unik per revisi lintas slot (unik M15). `front` di tata bahasa diperluas menjadi `"F:" slotKey [ "/" posint ]`; empat kunci lama tetap sah (`address.ts:39`).
 - Penomoran artefak per kunci bab (01_specs §4.1): tabel ber-caption → `Tabel C.n`; chart/diagram/image/symbolSheet → `Gambar C.n`; derivation → `Turunan D-C.n`.
 - `snapshotSha256 = sha256Hex(stableStringify(snapshot))`. Compose deterministik: tanpa cap waktu selain `meta.issueDate`. Rekonstruksi dari M14-M18 → compose ulang → sha sama (SC-5).
@@ -815,6 +816,8 @@ Amandemen DOC-3 (batch Hermes): (a) path `/api/studio/*` yang tidak ada → `404
 
 Amandemen DOC-5 (register 05 §5.6; D-363, D-375, D-382): langkah 2 menambah checkId CH-01..CH-05 (`CONTRACT_ENUM`, `CONTRACT_PATTERN`, `CONTRACT_DATE`, `CONTRACT_REF_TARGET`, `CHART_CUSTOM_FORM`) serta DF-72/DF-73 (400 `SCHEMA_INVALID`); langkah 6b (murni, sebelum kunci) I54 → 422 `CONTRACT_ITEM_KEY_DUPLICATE`; langkah 9a (dalam transaksi, sebelum by-construction) I55 → 422 `CONTRACT_REF_NOT_FOUND` / `CONTRACT_REF_PID_NOT_FOUND`, pid pensiun = peringatan `CONTRACT_REF_PID_RETIRED` di `warnings` (AM-08); langkah 9 by-construction → 422 `CHART_CUSTOM_FORM_UNSUPPORTED`. Dry-run R08 menjalankan langkah yang sama. Dokumen tanpa slot `contractRecord`: nol isu baru (D-382).
 
+Amandemen DOC-FIX-B (F-01, L2; register 05 §5.6 amandemen DOC-FIX-B; D-374, D-395): dua bagian amandemen DOC-5 di atas digantikan. (1) Langkah 6b tidak "sebelum kunci": I54 berjalan DI DALAM kunci dokumen, sesudah gabung struktur (`mergeSubmission`, termasuk `PID_CONFLICT` dan `ASSET_NOT_FOUND` dari gabung) dan sebelum langkah 7 (cek idempoten, FIX-H2 `PATCHED_PIDS_OVERWRITTEN`, cek dasar §9.2) (`L/services/submit/pipeline.ts:840`, `:869`, lalu `:873`, `:894`, `:921`). (2) EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` bukan isu langkah 9: kode ini dilempar compose (`L/engine/chart/core/custom.ts:59-63`, lewat `composeV2` `pipeline.ts:926-939`) sesudah langkah 7 dan SEBELUM langkah 9a (I55) dan gerbang by-construction (`pipeline.ts:980`). Urutan kontrak yang berlaku: 2 (CH-01..CH-05, DF-72/DF-73) → 6 gabung → 6b I54 (400 checkId CH / 422 EC27) → 7 → compose (422 EC28) → 9a I55 (422 EC25/EC26, CW-01) → 9. Urutan sama di jalur sunting (`L/services/revisions/v2/commit.ts:211`, `:215-228`, `:251`) dan R04 dokumen baru (`L/services/ingest/v2.ts:579`). Akibat bagi agen: kiriman yang memuat rujukan salah sekaligus bentuk `chart.custom` tak didukung menerima EC28 lebih dulu, bukan EC25/EC26.
+
 Setiap galat: `{ error: <pesan Indonesia yang menyebut perbaikan dalam bahasa isi>, code, details }`.
 
 ### 11.2 Register kode baru (24; ditambahkan ke `STUDIO_ERROR_CODES` dan `STUDIO_ERROR_HTTP`, 44 → 68)
@@ -855,7 +858,7 @@ Amandemen DOC-5 (register 05 §13.1, AM-05; D-363, D-367): empat kode berikut **
 | EC25 | `CONTRACT_REF_NOT_FOUND` | 422 | register 05 §13.1; I55 (langkah 9a) |
 | EC26 | `CONTRACT_REF_PID_NOT_FOUND` | 422 | register 05 §13.1; I55 (langkah 9a) |
 | EC27 | `CONTRACT_ITEM_KEY_DUPLICATE` | 422 | register 05 §13.1; I54 (langkah 6b) |
-| EC28 | `CHART_CUSTOM_FORM_UNSUPPORTED` | 422 | register 05 §13.1; by-construction (langkah 9) |
+| EC28 | `CHART_CUSTOM_FORM_UNSUPPORTED` | 422 | register 05 §13.1; compose, sesudah langkah 7 dan sebelum langkah 9a (Amandemen DOC-FIX-B, F-01; semula tertulis "by-construction (langkah 9)") |
 
 Cara hitung (DC-32, 2026-10-30): Grep `^  "[A-Z][A-Z0-9_-]+",$` di `L/contract/enums.ts`; baris yang jatuh di dalam `STUDIO_ERROR_CODES` (`enums.ts:263-349`) = 264-299 (36) + 301-304 (4) + 307 (1) + 311-313 (3) + 316-339 (24) + 342 (1) + 345-348 (4) = **73**. HTTP 422 keempat kode: `L/contract/errors.ts:96-99`. checkId `SCHEMA_V2_CHECK_IDS` (E41) kini 14 (`enums.ts:437-444` + `446-451`; CH-01..CH-06 register 05 §5.4).
 
@@ -943,6 +946,11 @@ Amandemen DOC-5 (register 05 §9.4-§9.6, §10, AM-06, AM-07, AM-09, AM-14..AM-1
 - Header kuota: `X-Studio-Quota-Remaining` (C48) dan `X-Studio-Quota-Bucket` (C49) (`env.ts:172, 174`); bucket E53 `render`, `validate`, `import`, `query` (`enums.ts:503`); aturan QH-01..QH-06 (header ada pada setiap respons sesudah tagihan, tidak pada 401; dua bucket → sisa terkecil). Terpasang di R07, R08, R09, R17, impor markdown (DC-19, D-366) dan R21/R22 (D-372).
 - Nama berkas final: `<docNumberSafe>_rev<revisionNo>_<YYYYMMDDTHHMMSSZ>_<sha8>.<ext>` (FN-01..FN-08; `FINAL_FILENAME_PATTERN` C51; artefak `rev0` + awalan `ART-` C53; `env.ts:176-183`), dihitung saat baca tanpa kolom baru (KD-39). Header `X-Studio-Final-Filename` (C50) di R10, HEAD R10, `?name=final|datum` (E57), `OutputFileDto.finalFileName` (AM-09), dan format bawaan HTML dokumen ber-`contractKind` di R17 (C40, KD-41) adalah spesifikasi register 05 yang dikerjakan DC-18/DC-20 (D-380); per Grep 2026-10-30 `API/files/[id]/route.ts` baru mengekspor `GET` (:32). Nama berkas draf di atas (dasar DATUM) tidak berubah.
 - R03 `?kind=contracts` (AM-07) diserahkan ke DC-28 (D-367).
+
+Amandemen DOC-FIX-B (F-02; D-387, D-388, D-403, D-407): tiga butir di atas memuat keadaan per DC-32 dan diperbarui sesuai kode.
+- Header kuota: selain route yang disebut di atas, R04 POST, R12, R13, R06 PATCH, R16 PATCH, dan R14 PATCH (bucket `render`) serta R23 (bucket `validate`) kini dibungkus `withQuotaHeaders` (FIX-QA, D-403; contoh `API/documents/route.ts:405`, `API/documents/[id]/structure/route.ts:107`, `API/chapters/_shared/submit-kit.ts`, `API/drafts/check/route.ts`). Daftar bucket per route dan aturan bucket per agen ada di register 05 §9.6 amandemen DOC-FIX-B.
+- Nama berkas final: R10 `HEAD` dan `?name=final|datum` SUDAH di kode (DC-18/DC-20, D-387): `API/files/[id]/route.ts` mengekspor `GET` dan `HEAD` (`:89`); `?name=` di luar E57 → 400 `SCHEMA_INVALID` `/query/name` (`route.ts:49-53`). Kalimat "baru mengekspor `GET` (:32)" di atas adalah sejarah per DC-32.
+- R03 `?kind=contracts` SUDAH di kode (DC-28, D-388): `contractsPayload` (`API/registry/route.ts:276-292`, dipanggil `:445-446`) mengembalikan jenis kontrak berstatus `active`; parameter lain → 400 `SCHEMA_INVALID` `/query/<nama>`.
 
 ## 13. Parameter
 
@@ -1291,15 +1299,15 @@ Register `masterplan/05_document_contract_specs.md` (DC-02, diterima D-363) adal
 | Butir | Nama (identik register 05) | Definisi di 05 | Bukti kode (2026-10-30) | Asal |
 |---|---|---|---|---|
 | Section type dan jenis slot | `contractRecord` S30 "Catatan Kontrak"; C33 8 → 9; `activeTiers: []`; slot bawaan `record` | §6.1, §6.2; AM-01, AM-10, AM-11 | `L/registry/sections.ts:471-483` (`activeTiers: NONE` :480), `:666` (52), `:669` (DOCUMENT 30); `L/registry/slots.ts:29-40, 94` | D-371, D-376 |
-| Templat kontrak | `laporan-kerja-agen` (CK-01 `agentWorkReport`, NOTA); SL-08 `record`, SL-09 `content`, SL-10 `references` | §1.2, §6.3 | seed DC-29/DC-30 berjalan (D-379) | D-361, D-363, D-379 |
+| Templat kontrak | `laporan-kerja-agen` (CK-01 `agentWorkReport`, NOTA); SL-08 `record`, SL-09 `content`, SL-10 `references` | §1.2, §6.3 | Amandemen DOC-FIX-B (F-02): seed selesai, `prisma/seed-studio.ts:1180-1184` (flag `--contract-templates`), terpasang di v21 (D-385); semula "seed DC-29/DC-30 berjalan" | D-361, D-363, D-379, D-385 |
 | Kode galat HTTP | EC25 `CONTRACT_REF_NOT_FOUND`, EC26 `CONTRACT_REF_PID_NOT_FOUND`, EC27 `CONTRACT_ITEM_KEY_DUPLICATE`, EC28 `CHART_CUSTOM_FORM_UNSUPPORTED` (semua 422) | §13.1; AM-05 | `L/contract/enums.ts:345-348`; `L/contract/errors.ts:96-99` | D-363, D-367, D-374, D-375 |
 | checkId `SCHEMA_INVALID` | CH-01 `CONTRACT_ENUM`, CH-02 `CONTRACT_PATTERN`, CH-03 `CONTRACT_DATE`, CH-04 `CONTRACT_REF_TARGET`, CH-05 `CHART_CUSTOM_FORM`, CH-06 `SKELETON_CONTRACT_RECORD` | §5.4; AM-04 | `enums.ts:446-451` | D-367 |
 | DISPLAY_FIELD | DF-72, DF-73 | §5.5; AM-12 | `L/contract/schema/v2/forbidden.ts:130-140` | D-367 |
 | Route | R21 `/api/studio/contracts` (GET), R22 `/api/studio/search` (GET), R23 `/api/studio/drafts/check` (POST) | §9.1-§9.3; AM-06 | `L/contract/env.ts:79-81`; `API/contracts/route.ts`, `API/search/route.ts`, `API/drafts/check/route.ts` | D-372, D-378, D-381 |
 | Header kuota | C48 `X-Studio-Quota-Remaining`, C49 `X-Studio-Quota-Bucket`; E53 `QUOTA_BUCKETS`; QH-01..QH-06 | §9.6; AM-16 | `env.ts:172, 174`; `enums.ts:503` | D-364, D-366, D-372 |
-| Nama berkas final | FN-01..FN-08; C50 `X-Studio-Final-Filename`, C51 `FINAL_FILENAME_PATTERN`, C52, C53 `ART-`; I59-I62; E57 `final`/`datum` | §10; AM-09, AM-14, AM-15 | `env.ts:176-183`; R10 HEAD dan `?name=` belum di kode (`API/files/[id]/route.ts:32` hanya `GET`); DC-18/DC-20 berjalan | D-361 (U-2), D-364, D-380 |
+| Nama berkas final | FN-01..FN-08; C50 `X-Studio-Final-Filename`, C51 `FINAL_FILENAME_PATTERN`, C52, C53 `ART-`; I59-I62; E57 `final`/`datum` | §10; AM-09, AM-14, AM-15 | `env.ts:176-183`; Amandemen DOC-FIX-B (F-02): R10 `HEAD` (`API/files/[id]/route.ts:89`) dan `?name=final\|datum` (`route.ts:49-53`) sudah di kode, DC-18/DC-20 selesai (D-387); semula "belum di kode" | D-361 (U-2), D-364, D-380, D-387 |
 | `chart.custom` | `ChartV2.code` `"custom"` + `form` (T2-66); CU-01..CU-09; C59, C60 = 9; I68 | §12; AM-03 | `L/contract/types/v2/doc.ts:181-183`; `L/registry/charts.ts:1449` | D-368, D-374 |
-| Pid butir | `F:record/<n>` bertipe `contractItem`; pewarisan pid per `key` | §5.7; KD-34 | `L/services/compose/contract-record.ts:9, 56-58`; baris M17 dan pewarisan = DC-09 | D-376, D-380 |
+| Pid butir | `F:record/<n>` bertipe `contractItem`; pewarisan pid per `key` | §5.7; KD-34 | `L/services/compose/contract-record.ts:9, 56-58`; Amandemen DOC-FIX-B (F-02, L1): baris M17 dan pewarisan per `key` sudah di kode (`L/services/structure/rows.ts:219-237`, `:410`; D-383); format pid butir baru berbeda per jalur (§4.6 amandemen DOC-FIX-B, register 05 §5.7) | D-376, D-380, D-383 |
 | Data Prisma | M19-M21, MX08-MX12, migrasi `20261030220000_add_studio_contract` | §7 | migrasi terpasang di v21 | D-365 |
 
 ### 19.2 Hitungan terverifikasi (sumber = kode)
@@ -1314,10 +1322,12 @@ Register `masterplan/05_document_contract_specs.md` (DC-02, diterima D-363) adal
 
 ### 19.3 Ketidakcocokan nama 03 dan 05 (dicatat; 05 tidak disunting baris ini)
 
-| # | Butir | Register 05 | Kode / keputusan | Register 03 mengikuti |
-|---|---|---|---|---|
-| 1 | `contractRecord.activeTiers` | §6.1: "semua tier" | `NONE` (`sections.ts:480`); D-371 opsi (a) `[]` | kode + D-371 (§6.2, §19.1); 05 §6.1 perlu amandemen oleh pemilik 05 |
-| 2 | `DisplayFieldLocationRule.alsoAt` | tidak ada | `forbidden.ts:80, 132` | dirujuk sebagai nama kode (§5.1); pencatatan ke 05 saat DC-33 (D-367) |
-| 3 | Rujukan baris E41 | `enums.ts:430-439` (§0.3, §5.4) | kini `enums.ts:436-452` | baris kode terkini (bukan beda nama) |
+| # | Butir | Register 05 | Kode / keputusan | Register 03 mengikuti | Status (Amandemen DOC-FIX-B, F-02) |
+|---|---|---|---|---|---|
+| 1 | `contractRecord.activeTiers` | §6.1: "semua tier" | `NONE` (`sections.ts:480`); D-371 opsi (a) `[]` | kode + D-371 (§6.2, §19.1); 05 §6.1 perlu amandemen oleh pemilik 05 | Ditutup: register 05 §6.1 "Amandemen DC-33 (D-371, D-384)" mencatat `NONE` |
+| 2 | `DisplayFieldLocationRule.alsoAt` | tidak ada | `forbidden.ts:80, 132` | dirujuk sebagai nama kode (§5.1); pencatatan ke 05 saat DC-33 (D-367) | Ditutup: register 05 §5.5 "Amandemen DC-33 (D-367)" mendefinisikan `alsoAt` |
+| 3 | Rujukan baris E41 | `enums.ts:430-439` (§0.3, §5.4) | kini `enums.ts:436-452` | baris kode terkini (bukan beda nama) | Ditutup: register 05 §0.3 dan §5.4 "Amandemen DC-33 (D-384)" |
+
+Amandemen DOC-FIX-B: judul seksi ini ("05 tidak disunting baris ini") berlaku untuk baris DC-32. Register 05 sesudahnya diamandemen DC-33 (D-398) dan DOC-FIX-B, sehingga ketiga ketidakcocokan di atas tidak lagi terbuka.
 
 Nama lain yang dirujuk di §0.1-§18 (EC25-EC28, CH-01..CH-06, DF-72/DF-73, R21-R23, C48-C53, E53, E57, CU-01..CU-09, `F:record/<n>`, `contractItem`, `laporan-kerja-agen`, `record`) identik huruf demi huruf dengan register 05.

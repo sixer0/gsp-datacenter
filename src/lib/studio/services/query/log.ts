@@ -3,10 +3,16 @@
  *
  * Sink: JSONL harian `<STUDIO_WORKSPACE_ROOT>/logs/query/query-YYYY-MM-DD.jsonl`
  * lewat helper bersama `http/jsonl` (retensi + batas ukuran), ditambah console.
- * Tanpa isi kueri pengguna (`q` bisa memuat teks bebas): hanya nama filter yang
- * diisi, panjang `q`, kode galat, stack.
+ * Log galat: tanpa isi kueri pengguna (`q` bisa memuat teks bebas): hanya nama filter
+ * yang diisi, panjang `q`, kode galat, stack.
+ *
+ * Log baca (FIX-SEC M-1, D-402): `logQueryRead` mencatat setiap panggilan R21/R22 yang
+ * sukses (level info, `message: "query read"`): route, jenis pemanggil, identitas aman-log
+ * (email Google di-hash), agentId bila ada, nilai filter dan `q` DIPOTONG
+ * (`READ_LOG_VALUE_MAX` karakter, karakter kontrol diganti), jumlah hasil, ada-tidaknya
+ * halaman berikut, dan correlation id. Isi cuplikan/hasil tidak pernah dicatat.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendJsonlDaily } from "../../http/jsonl";
 
 export const QUERY_SOURCE = "studio.services.query";
@@ -77,4 +83,72 @@ export function filterShape(f: object): string[] {
     .filter(([, v]) => v !== undefined)
     .map(([k]) => k)
     .sort();
+}
+
+/** Panjang maksimum tiap nilai filter / `q` pada log baca. */
+export const READ_LOG_VALUE_MAX = 64;
+/** Butir daftar maksimum (status/type) pada log baca. */
+const READ_LOG_LIST_MAX = 8;
+
+/** Potong aman-log: karakter kontrol -> `?`, maks {@link READ_LOG_VALUE_MAX} karakter (+ `…`). */
+export function truncateForLog(v: string): string {
+  const clean = v.replace(/[\u0000-\u001f\u007f]/g, "?");
+  return clean.length > READ_LOG_VALUE_MAX ? `${clean.slice(0, READ_LOG_VALUE_MAX)}…` : clean;
+}
+
+/** Nilai filter aman-log: string dipotong, daftar dibatasi, angka/boolean apa adanya. */
+export function filterValuesForLog(f: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(f)) {
+    if (v === undefined) continue;
+    if (typeof v === "string") out[k] = truncateForLog(v);
+    else if (Array.isArray(v)) out[k] = v.slice(0, READ_LOG_LIST_MAX).map((x) => (typeof x === "string" ? truncateForLog(x) : x));
+    else if (typeof v === "number" || typeof v === "boolean") out[k] = v;
+  }
+  return out;
+}
+
+/** Pemanggil untuk log baca (subset `StudioCaller`). */
+export interface QueryReadCaller {
+  kind: string;
+  requester: string;
+  agentId?: string;
+}
+
+/** Identitas aman-log: `requester`, kecuali sesi Google (email = PII) -> `google:sha256:<12 hex>`. */
+export function readLogIdentity(caller: QueryReadCaller): string {
+  if (caller.kind === "GOOGLE_SESSION") return `google:sha256:${createHash("sha256").update(caller.requester).digest("hex").slice(0, 12)}`;
+  return truncateForLog(caller.requester);
+}
+
+/**
+ * Log baca R21/R22 sukses (M-1). `filter` = filter tervalidasi (untuk R22 memuat `q`);
+ * `resultCount` = jumlah kontrak/hit pada halaman ini.
+ */
+export function logQueryRead(input: {
+  correlationId: string;
+  route: string;
+  caller: QueryReadCaller;
+  filter: object;
+  resultCount: number;
+  hasNextCursor: boolean;
+}): void {
+  const { q, ...rest } = input.filter as { q?: unknown } & Record<string, unknown>;
+  queryLog({
+    level: "info",
+    message: "query read",
+    correlationId: input.correlationId,
+    code: "QUERY_READ",
+    context: {
+      route: input.route,
+      callerKind: input.caller.kind,
+      identity: readLogIdentity(input.caller),
+      ...(input.caller.agentId ? { agentId: truncateForLog(input.caller.agentId) } : {}),
+      filters: filterValuesForLog(rest),
+      ...(typeof q === "string" ? { q: truncateForLog(q), qLength: q.length } : {}),
+      includeArchived: rest.includeArchived === true,
+      resultCount: input.resultCount,
+      hasNextCursor: input.hasNextCursor,
+    },
+  });
 }

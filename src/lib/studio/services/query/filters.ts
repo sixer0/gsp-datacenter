@@ -9,6 +9,10 @@
  * - `contractFilterIssues` / `searchFilterIssues`: pengaman filter bertipe yang
  *   dipanggil ulang oleh layanan (pemanggil non-route tidak bisa melewatinya).
  * Kegagalan dilempar sebagai `StudioEngineError("SCHEMA_INVALID", ..., issues)`.
+ *
+ * FIX-SEC (D-402): dokumen terarsip dikecualikan secara bawaan; `includeArchived=1` (R21/R22)
+ * menyertakannya (`0` = bawaan). Nilai teks apa pun yang memuat byte NUL (U+0000) -> isu
+ * `/query/<nama>` keyword `pattern` (Postgres menolak NUL dengan 22021 = 500; L-1).
  */
 import {
   AGENT_WORK_REPORT_STATUSES,
@@ -27,6 +31,7 @@ import {
 } from "@/lib/studio/contract";
 import { StudioEngineError } from "@/lib/studio/contract/errors";
 import { SLOT_SECTION_TYPES } from "@/lib/studio/registry/slots";
+import { isCalendarDay } from "../contracts/dates";
 
 // ── Batas lokal (register §9.1/§9.2) ─────────────────────────────────────
 
@@ -76,6 +81,8 @@ export interface ContractQueryFilter {
   take?: number;
   /** id dokumen dari `nextCursor`. */
   cursor?: string;
+  /** FIX-SEC: `true` = sertakan dokumen terarsip; tidak diisi = dikecualikan (bawaan). */
+  includeArchived?: true;
 }
 
 export interface SearchQueryFilter {
@@ -90,6 +97,8 @@ export interface SearchQueryFilter {
   take?: number;
   /** Kursor opak dari `nextCursor`. */
   cursor?: string;
+  /** FIX-SEC: `true` = sertakan dokumen terarsip; tidak diisi = dikecualikan (bawaan). */
+  includeArchived?: true;
 }
 
 export interface SearchCursor {
@@ -97,8 +106,8 @@ export interface SearchCursor {
   id: string;
 }
 
-const CONTRACT_PARAMS = ["mission", "docKey", "docNumber", "kind", "status", "cardId", "owner", "taskRef", "dueBefore", "dueAfter", "take", "cursor"] as const;
-const SEARCH_PARAMS = ["q", "mission", "kind", "documentId", "revisionNo", "type", "slotKey", "take", "cursor"] as const;
+const CONTRACT_PARAMS = ["mission", "docKey", "docNumber", "kind", "status", "cardId", "owner", "taskRef", "dueBefore", "dueAfter", "take", "cursor", "includeArchived"] as const;
+const SEARCH_PARAMS = ["q", "mission", "kind", "documentId", "revisionNo", "type", "slotKey", "take", "cursor", "includeArchived"] as const;
 
 // ── Pembantu ──────────────────────────────────────────────────────────────
 
@@ -106,15 +115,10 @@ function issue(name: string, keyword: string, message: string): ValidationIssue 
   return { pointer: `/query/${name}`, keyword, message };
 }
 
-/** Tanggal kalender sah `YYYY-MM-DD` (menolak 2026-02-30). */
+/** Tanggal kalender sah `YYYY-MM-DD` (menolak 2026-02-30); aturan hari = `isCalendarDay` (FIX-R40-3). */
 export function isCalendarDate(s: string): boolean {
   const m = RE_DATE.exec(s);
-  if (!m) return false;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+  return m !== null && isCalendarDay(Number(m[1]), Number(m[2]), Number(m[3]));
 }
 
 /** Daftar dipisah koma: dipangkas, butir kosong dibuang, urutan pertama dipertahankan, tanpa ganda. */
@@ -168,6 +172,27 @@ function collect(sp: URLSearchParams, allowed: readonly string[], out: Validatio
   return vals;
 }
 
+/** `includeArchived`: `1` -> true, `0` -> tidak diisi (bawaan: arsip dikecualikan), lainnya -> isu enum. */
+function parseIncludeArchived(raw: string | undefined, out: ValidationIssue[]): true | undefined {
+  if (raw === undefined || raw === "0") return undefined;
+  if (raw === "1") return true;
+  out.push(issue("includeArchived", "enum", "includeArchived harus 0 atau 1"));
+  return undefined;
+}
+
+/** L-1: setiap nilai teks (atau butir daftar) yang memuat U+0000 -> satu isu per medan. */
+function nulIssues(out: ValidationIssue[], f: object): void {
+  for (const [k, v] of Object.entries(f)) {
+    const vals = typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    if (vals.some((x) => x.includes("\u0000"))) out.push(issue(k, "pattern", `${k} tidak boleh memuat byte NUL (U+0000)`));
+  }
+}
+
+/** Isu `includeArchived` bertipe (pemanggil non-route). */
+function includeArchivedIssue(out: ValidationIssue[], v: unknown): void {
+  if (v !== undefined && v !== true) out.push(issue("includeArchived", "enum", "includeArchived harus true atau tidak diisi"));
+}
+
 function parseUint(name: string, raw: string | undefined, out: ValidationIssue[]): number | undefined {
   if (raw === undefined) return undefined;
   if (!RE_UINT.test(raw)) {
@@ -186,6 +211,8 @@ function fail(issues: ValidationIssue[]): never {
 /** Isu filter kontrak bertipe (kosong = sah). */
 export function contractFilterIssues(f: ContractQueryFilter): ValidationIssue[] {
   const out: ValidationIssue[] = [];
+  nulIssues(out, f);
+  includeArchivedIssue(out, f.includeArchived);
   lenIssue(out, "mission", f.mission, 1, MISSION_MAX);
   lenIssue(out, "docKey", f.docKey, 1, DOC_KEY_MAX);
   patternIssue(out, "docKey", f.docKey, RE_DOC_KEY, "huruf kecil/angka dipisah tanda hubung");
@@ -236,6 +263,7 @@ export function parseContractQuery(sp: URLSearchParams): ContractQueryFilter {
     dueAfter: v.get("dueAfter"),
     take,
     cursor: v.get("cursor"),
+    includeArchived: parseIncludeArchived(v.get("includeArchived"), pre),
   };
   for (const k of Object.keys(f) as Array<keyof ContractQueryFilter>) if (f[k] === undefined) delete f[k];
   const issues = [...pre, ...contractFilterIssues(f)];
@@ -248,6 +276,8 @@ export function parseContractQuery(sp: URLSearchParams): ContractQueryFilter {
 /** Isu filter pencarian bertipe (kosong = sah). `q` dinilai sesudah trim. */
 export function searchFilterIssues(f: SearchQueryFilter): ValidationIssue[] {
   const out: ValidationIssue[] = [];
+  nulIssues(out, f);
+  includeArchivedIssue(out, f.includeArchived);
   const q = typeof f.q === "string" ? f.q.trim() : "";
   if (q.length < SEARCH_LIMITS.qMin || q.length > SEARCH_LIMITS.qMax) {
     out.push(issue("q", "length", `q wajib, ${SEARCH_LIMITS.qMin}..${SEARCH_LIMITS.qMax} karakter sesudah dipangkas`));
@@ -292,6 +322,7 @@ export function parseSearchQuery(sp: URLSearchParams): SearchQueryFilter {
     slotKey: v.get("slotKey"),
     take: parseUint("take", v.get("take"), pre),
     cursor: v.get("cursor"),
+    includeArchived: parseIncludeArchived(v.get("includeArchived"), pre),
   };
   for (const k of Object.keys(f) as Array<keyof SearchQueryFilter>) if (k !== "q" && f[k] === undefined) delete f[k];
   const issues = [...pre, ...searchFilterIssues(f)];

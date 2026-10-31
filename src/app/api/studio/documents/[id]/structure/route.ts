@@ -23,7 +23,7 @@ import { schemaInvalidMessage, type DocMeta, type NormDocSnapshot, type NormDocS
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { CHANGE_FIELD_MAX } from "@/lib/studio/services/revisions";
 import { isAdminCaller } from "@/lib/studio/services/templates";
-import { apiLog, checkRenderRate, isPlainObject, json, readJsonObject, reject, reqCtx, isPlausibleId } from "@/lib/studio/http";
+import { apiLog, checkRenderRate, isPlainObject, json, readJsonObject, reject, reqCtx, isPlausibleId, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { failFrom } from "../../../validate/_shared/route-kit";
 import { parseStructurePatch } from "./_lib/patch-body";
 import { completenessOf, loadRevision, revParam, SR22_LOG_SOURCE, type LoadedRevision } from "./_lib/revision";
@@ -102,6 +102,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const denied = await requireSession(req);
   if (denied) return denied;
   const ctx = reqCtx(req, ROUTE, SR22_LOG_SOURCE);
+  // FIX-R40-1 (QH-03): header kuota (bucket render) pada respons apa pun sesudah tagihan; 401 dan
+  // penolakan sebelum `checkRenderRate` tanpa tagihan = tanpa header.
+  return withQuotaHeaders(ctx, () => patchStructureRoute(req, params, ctx));
+}
+
+async function patchStructureRoute(req: NextRequest, params: Params["params"], ctx: ReqCtx): Promise<Response> {
   const { id } = await params;
   if (!isPlausibleId(id)) return reject(ctx, "DOCUMENT_NOT_FOUND", "Document not found");
 

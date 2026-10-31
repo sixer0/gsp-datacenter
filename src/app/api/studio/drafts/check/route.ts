@@ -8,6 +8,9 @@
  * (`_lib/dry-run.ts`, layanan yang sama; transaksi READ ONLY) -> DR-08 basis basi terhadap
  * `currentRevisionNo` dokumen. Tanpa tulis DB, tanpa render.
  *
+ * agentId dry-run (D-392): `agentId` payload blok bila ada, selain itu `agentId` badan R23 (ditambahkan
+ * ke payload dry-run, sama seperti CLI `--agent-id`); tanpa keduanya = tanpa agentId.
+ *
  * Orkestrasi (urutan isu, aturan dry-run, pemetaan penolakan 4xx) bersama CLI
  * `scripts/studio/draft-check.ts --remote` lewat `services/draft/check.ts`, sehingga `--json` CLI
  * identik dengan respons ini untuk berkas yang sama (AC-19).
@@ -20,7 +23,8 @@
  *
  * Bucket `validate` ditagih satu kali per blok yang akan di-dry-run (KD-43: setiap blok = satu
  * dry-run R08), semuanya sebelum dry-run pertama; satu tagihan ditolak -> 429 tanpa dry-run apa
- * pun. Draf tanpa blok yang dapat di-dry-run tidak ditagih.
+ * pun. FIX-SEC L-2 (D-402): draf tanpa blok yang dapat di-dry-run tetap ditagih SATU kali
+ * (`draftValidateCharges` = max(1, blok dry-run)), sehingga respons 200-nya membawa header kuota.
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
@@ -42,7 +46,8 @@ import {
   type ReqCtx,
 } from "@/lib/studio/http";
 import { checkDraftLimits, completeDraftCheck, draftLimitMessage, prepareDraftCheck } from "@/lib/studio/services/draft";
-import { bodyAgentId, failFrom } from "../../validate/_shared/route-kit";
+import { draftValidateCharges } from "@/lib/studio/services/draft/check";
+import { failFrom } from "../../validate/_shared/route-kit";
 import { checkValidateRate } from "../../validate/_shared/validate-rate";
 import { currentRevisionNoOf, dryRunDraftBlock } from "./_lib/dry-run";
 
@@ -131,20 +136,23 @@ async function postCheck(req: NextRequest, ctx: ReqCtx): Promise<Response> {
 
     const caller = await getStudioCaller(req, agentId);
     const prepared = prepareDraftCheck(markdown);
-    // KD-43: satu tagihan per blok yang akan di-dry-run, semuanya sebelum dry-run pertama.
-    for (let i = 0; i < prepared.dryRunBlocks.length; i++) {
+    // KD-43: satu tagihan per blok yang akan di-dry-run, semuanya sebelum dry-run pertama; L-2: minimal satu.
+    const charges = draftValidateCharges(prepared);
+    for (let i = 0; i < charges; i++) {
       const limited = checkValidateRate(caller, ctx);
       if (limited) return limited;
     }
 
-    const result = await completeDraftCheck(markdown, prepared, {
-      currentRevisionNo: currentRevisionNoOf,
-      // Identitas per blok seperti R08 melihatnya (agentId blok), cadangan agentId badan R23.
-      dryRun: async (block) => {
-        const value = block.value as Record<string, unknown>;
-        return dryRunDraftBlock(value, await getStudioCaller(req, bodyAgentId(value) ?? agentId), ctx);
+    const result = await completeDraftCheck(
+      markdown,
+      prepared,
+      {
+        currentRevisionNo: currentRevisionNoOf,
+        // Aturan agentId bersama CLI (services/draft/check.ts, D-392): agentId payload blok, selain itu agentId badan R23.
+        dryRun: async (input) => dryRunDraftBlock(input.value, await getStudioCaller(req, input.agentId), ctx),
       },
-    });
+      agentId,
+    );
     apiLog({
       ...ctx,
       level: "info",

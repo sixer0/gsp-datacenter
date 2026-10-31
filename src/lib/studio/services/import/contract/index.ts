@@ -37,7 +37,8 @@ import { validateV2Against } from "../../ingest/validate";
 import { parseInline, type InlineSink } from "../inline";
 import { importMarkdownChapter, MD_IMPORT_MAX_CHARS } from "../markdown";
 import {
-  actorOf,
+  actorValueOf,
+  aliasTokenOf,
   CARD_ID_RE,
   cardIdsIn,
   cleanValue,
@@ -50,11 +51,12 @@ import {
   HEADER_SCAN_LINES,
   headingAt,
   keyValueOf,
-  leadToken,
   normalizeHeading,
   normalizeSource,
+  parsePhaseLine,
   parseReportedAt,
   type SourceTable,
+  taskRefValueOf,
 } from "./parse";
 import {
   ContractImportError,
@@ -76,7 +78,6 @@ const FIRST_EXTRA_CHAPTER_KEY = 6;
 const REFERENCE_MAX_ENTRIES = 500;
 
 const GL13_RE = /^(\d{4}-\d{2}-\d{2})[ T]([01]\d|2[0-3]):([0-5]\d)/;
-const PHASE_RE = /^\[FASE\]\s*(.+?)\s*\|\s*(.+?)\s*->\s*(.+?)\s*\|\s*\d{1,2}:\d{2}\s*$/;
 const LABEL_RE = /^([A-Z][A-Z_]*):(?:\s+(.*))?$/;
 const DISPLAY_NUMBER_RE = /^[([]?(?:\d{1,3}|[A-Za-z])[.)\]]\s+/;
 const FENCE_LINE_RE = /^ {0,3}(`{3,}|~{3,})/;
@@ -193,7 +194,9 @@ class Run {
     const a = this.def.aliases;
     switch (target) {
       case "status": {
-        const code = a.statuses[leadToken(raw).toLowerCase()];
+        const tok = aliasTokenOf(raw, (x) => a.statuses[x.toLowerCase()] !== undefined);
+        if (tok.compound) return this.compound("status", key, raw, line);
+        const code = a.statuses[tok.token.toLowerCase()];
         if (!code) {
           this.warn("CONTRACT_STATUS_UNMAPPED", line, `status "${cleanValue(raw)}" has no alias; not guessed (KD-42)`, { scope: "record", field: "status", key, value: cleanValue(raw) });
           return false;
@@ -201,7 +204,9 @@ class Run {
         return this.setOnce("status", code, key, raw, line, source);
       }
       case "verdict": {
-        const code = a.verdicts[leadToken(raw)];
+        const tok = aliasTokenOf(raw, (x) => a.verdicts[x] !== undefined);
+        if (tok.compound) return this.compound("verdict", key, raw, line);
+        const code = a.verdicts[tok.token];
         if (!code) {
           this.warn("CONTRACT_STATUS_UNMAPPED", line, `verdict "${cleanValue(raw)}" has no alias; not guessed`, { scope: "record", field: "verdict", key, value: cleanValue(raw) });
           return false;
@@ -209,14 +214,14 @@ class Run {
         return this.setOnce("verdict", code, key, raw, line, source);
       }
       case "owner": {
-        const v = actorOf(raw);
-        if (!v) return this.invalid("owner", key, raw, line, "C36 actor pattern");
-        return this.setOnce("owner", v, key, raw, line, source);
+        const v = actorValueOf(raw);
+        if (v.value === null) return this.patternUnmapped("owner", key, raw, line, v.reason, "C36 actor pattern");
+        return this.setOnce("owner", v.value, key, raw, line, source);
       }
       case "taskRef": {
-        const v = contractKeyOf(leadToken(raw));
-        if (!v) return this.invalid("taskRef", key, raw, line, "C35 key pattern");
-        return this.setOnce("taskRef", v, key, raw, line, source);
+        const v = taskRefValueOf(raw);
+        if (v.value === null) return this.patternUnmapped("taskRef", key, raw, line, v.reason, "C35 key pattern");
+        return this.setOnce("taskRef", v.value, key, raw, line, source);
       }
       case "reportedAt": {
         const p = parseReportedAt(raw);
@@ -247,6 +252,25 @@ class Run {
     (this as Run)[field] = value as Run[F];
     this.map(field, source, line, value, cleanValue(raw));
     return true;
+  }
+
+  /** DC35-F1: nilai majemuk (`PASS/FAIL`, `complete/blocked`) -> CW-02, tidak ditebak (KD-42); teks sumber tetap. */
+  private compound(field: "status" | "verdict", key: string, raw: string, line: number): boolean {
+    const value = cleanValue(raw);
+    this.warn("CONTRACT_STATUS_UNMAPPED", line, `${field} "${value}" is compound (several alternatives); not guessed (KD-42)`, { scope: "record", field, key, value, reason: "compound" });
+    return false;
+  }
+
+  /**
+   * D-405: medan berpola (owner C36, taskRef C35) bernilai majemuk atau tak cocok pola -> medan kosong +
+   * CW-04 (skema tidak menampung teks utuh: pola tanpa `/`, `,`, spasi); baris sumber tetap teks (bab 1
+   * untuk kepala/label), tidak dipotong ke token pertama (KD-42).
+   */
+  private patternUnmapped(field: "owner" | "taskRef", key: string, raw: string, line: number, reason: "compound" | "pattern", rule: string): boolean {
+    const value = cleanValue(raw);
+    const why = reason === "compound" ? "is compound (several values)" : `does not match ${rule}`;
+    this.warn("CONTRACT_FIELD_UNMAPPED", line, `${field} from "${key}" ${why}: "${value}"; not guessed (KD-42), kept as text`, { scope: "record", field, key, value, reason });
+    return false;
   }
 
   private invalid(field: string, key: string, raw: string, line: number, rule: string): boolean {
@@ -363,7 +387,13 @@ function itemsFromTable(run: Run, t: SourceTable): void {
       continue;
     }
     const rawStatus = cleanValue(cell(statusIdx));
-    const status = run.def.aliases.itemStatuses[leadToken(rawStatus).toLowerCase()];
+    const itemStatuses = run.def.aliases.itemStatuses;
+    const tok = aliasTokenOf(rawStatus, (x) => itemStatuses[x.toLowerCase()] !== undefined);
+    if (tok.compound) {
+      run.warn("CONTRACT_STATUS_UNMAPPED", r.line, `item ${key} status "${rawStatus}" is compound (several alternatives); not guessed (KD-42), row not admitted (table kept in text)`, { scope: "item", key, value: rawStatus, reason: "compound" });
+      continue;
+    }
+    const status = itemStatuses[tok.token.toLowerCase()];
     if (!status) {
       run.warn("CONTRACT_STATUS_UNMAPPED", r.line, `item ${key} status "${rawStatus}" has no alias; row not admitted (table kept in text)`, { scope: "item", key, value: rawStatus });
       continue;
@@ -379,9 +409,16 @@ function itemsFromTable(run: Run, t: SourceTable): void {
     const titleText = cleanValue(cell(titleIdx));
     if (titleIdx < 0 || titleText === "") run.note("ITEM_TITLE_FROM_KEY", r.line, `item ${key} has no title cell; key used as title`);
     const item: ContractItemV2 = { key, title: parseInline(titleText !== "" ? titleText : key, NOOP_SINK), status };
-    const owner = ownerIdx >= 0 && cleanValue(cell(ownerIdx)) !== "" ? actorOf(cell(ownerIdx)) : null;
-    if (owner) item.owner = owner;
-    else if (ownerIdx >= 0 && cleanValue(cell(ownerIdx)) !== "") run.note("FIELD_VALUE_INVALID", r.line, `item ${key} owner "${cleanValue(cell(ownerIdx))}" does not match C36; omitted`);
+    const ownerRaw = ownerIdx >= 0 ? cleanValue(cell(ownerIdx)) : "";
+    if (ownerRaw !== "") {
+      // D-405: owner butir majemuk/tak cocok C36 -> tidak diisi + CW-04; sel tetap utuh di tabel teks bab.
+      const owner = actorValueOf(ownerRaw);
+      if (owner.value !== null) item.owner = owner.value;
+      else {
+        const why = owner.reason === "compound" ? "is compound (several values)" : "does not match C36";
+        run.warn("CONTRACT_FIELD_UNMAPPED", r.line, `item ${key} owner "${ownerRaw}" ${why}; omitted, not guessed (KD-42), table kept in text`, { scope: "item", field: "owner", key, value: ownerRaw, reason: owner.reason });
+      }
+    }
     const phase = cleanValue(cell(phaseIdx));
     if (phase !== "" && phase.length <= 64) item.phase = phase;
     if (depIdx >= 0) {
@@ -536,10 +573,10 @@ function runF2(run: Run, lines: readonly string[], mask: readonly boolean[], ent
       continue;
     }
     if (t.startsWith("[FASE]")) {
-      const m = PHASE_RE.exec(t);
-      if (m && run.phase === null && m[2].length <= 64 && m[3].length <= 64) {
-        mission = m[1];
-        run.phase = { from: m[2], to: m[3] };
+      const m = parsePhaseLine(t);
+      if (m && run.phase === null && m.from.length <= 64 && m.to.length <= 64) {
+        mission = m.mission;
+        run.phase = { from: m.from, to: m.to };
         run.map("phase", "phaseLine", i + 1, run.phase, t);
         continue;
       }

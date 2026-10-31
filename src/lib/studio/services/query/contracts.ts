@@ -15,14 +15,15 @@
  * = R04 GET `/api/studio/documents` (`documents/route.ts` GET: `requireSession`
  * lalu `findMany` tanpa syarat pemanggil) dan kebijakan baca register §9 / AS-2
  * blueprint 07 (semua pemanggil terautentikasi membaca semua dokumen; dinilai DC-41).
- * Route R21 wajib memanggil `requireSession` sebelum layanan ini. Dokumen arsip
- * ikut tercakup (sama dengan R04 tanpa `archived`).
+ * Route R21 wajib memanggil `requireSession` sebelum layanan ini. FIX-SEC (D-402):
+ * dokumen terarsip (`archived = true`) DIKECUALIKAN secara bawaan; `includeArchived: true`
+ * (R21 `?includeArchived=1`) menyertakannya. Setiap baca sukses dicatat route (log baca).
  *
  * `status` dapat `null`: dokumen bertemplat ber-contractKind yang slot `record`-nya
  * belum terisi (aturan tulis §7.6: MX09 hanya `contractKind`); T2-68 mengetiknya
  * nullable (amandemen D-370).
  */
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   CONTRACT_QUERY_LIMITS,
   type AgentWorkReportStatus,
@@ -31,6 +32,7 @@ import {
   type ContractSummaryV2,
   type StudioCompleteness,
 } from "@/lib/studio/contract";
+import { FINAL_DOC_NUMBER_MAX } from "@/lib/studio/contract/env";
 import { isStudioEngineError } from "@/lib/studio/contract/errors";
 import { resolveQueryOptions, type QueryOptions } from "./db";
 import { assertContractFilter, type ContractQueryFilter } from "./filters";
@@ -38,6 +40,17 @@ import { filterShape, logQueryError } from "./log";
 
 /** Batas id hasil prafilter `docNumber` (bentuk aman bisa cocok > 1 dokumen). */
 export const DOC_NUMBER_MATCH_MAX = 1000;
+
+/**
+ * I61 `docNumberSafe` (`render/final-name.ts`, FN-02) dalam SQL, langkah 1-5: runtun di luar
+ * `[A-Za-z0-9.-]` -> `-`; `-` beruntun jadi satu; buang `-`/`.` awal dan akhir; potong C52
+ * `FINAL_DOC_NUMBER_MAX` (parameter, bukan angka keras; FIX-R40-4) lalu buang `-`/`.` akhir;
+ * kosong -> `DOC`. Paritas dengan versi TS dikunci uji `fixqb-docnumber-safe-sql` (DB, rollback).
+ * `expr` = ekspresi SQL teks (kolom atau parameter); tidak pernah nilai pengguna mentah.
+ */
+export function docNumberSafeSql(expr: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`coalesce(nullif(rtrim(left(trim(both '-.' from regexp_replace(regexp_replace(${expr}, '[^A-Za-z0-9.-]+', '-', 'g'), '-{2,}', '-', 'g')), ${FINAL_DOC_NUMBER_MAX}::int), '-.'), ''), 'DOC')`;
+}
 
 export interface QueryContractsResult {
   contracts: ContractSummaryV2[];
@@ -68,6 +81,7 @@ export function contractWhere(f: ContractQueryFilter, docNumberIds?: string[]): 
   if (f.dueBefore) due.lte = utcDate(f.dueBefore);
   return {
     contractKind: f.kind ?? { not: null },
+    ...(f.includeArchived ? {} : { archived: false }),
     ...(f.mission ? { missionFolder: f.mission } : {}),
     ...(f.docKey ? { missionDocKey: f.docKey } : {}),
     ...(f.status ? { contractStatus: { in: f.status } } : {}),
@@ -90,8 +104,9 @@ export async function queryContracts(filter: ContractQueryFilter, opts?: QueryOp
       const rows = await db.$queryRaw<Array<{ id: string }>>`
         SELECT "id" FROM "StudioDocument"
         WHERE "contractKind" IS NOT NULL
+          AND (${filter.includeArchived === true}::boolean OR "archived" = false)
           AND ("docNumber" = ${v}
-            OR rtrim(left(trim(both '-.' from regexp_replace(regexp_replace("docNumber", '[^A-Za-z0-9.-]+', '-', 'g'), '-{2,}', '-', 'g')), 80), '-.') = ${v})
+            OR ${docNumberSafeSql(Prisma.sql`"docNumber"`)} = ${v})
         LIMIT ${DOC_NUMBER_MATCH_MAX}`;
       docNumberIds = rows.map((r) => r.id);
       if (docNumberIds.length === 0) return { contracts: [], nextCursor: null };

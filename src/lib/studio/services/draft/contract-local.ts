@@ -4,8 +4,10 @@
  * satu sumber aturan dengan gerbang R08), menggantikan cek `items[].key` lokal CLI DC-22
  * (`TODO(DC-07)`). Murni: tanpa DB.
  *
- * Urutan pemanggil I54: `issues` (400, checkId CH-01..CH-04) lebih dulu; bila kosong, galat 422
- * EC27 `CONTRACT_ITEM_KEY_DUPLICATE` dengan `positions` BERBASIS 1 (register §13.1, NV-10).
+ * Urutan pemanggil I54 = gerbang R08 (`summarizeContractChecks`, satu pemeta + satu aturan EC27,
+ * FIX-R40-3): `issues` (400, checkId CH-01..CH-04) dari semua payload blok lebih dulu; bila kosong,
+ * SATU galat 422 EC27 `CONTRACT_ITEM_KEY_DUPLICATE` (yang pertama) dengan `positions` BERBASIS 1
+ * (register §13.1, NV-10).
  *
  * Jenis kontrak: mode lokal tidak mengetahui `contractKind` templat dokumen (butuh DB). Tahap 1
  * hanya mendaftarkan satu jenis (C58 `agentWorkReport`, E44), yang setnya identik dengan enum skema
@@ -14,7 +16,7 @@
 import { CONTRACT_KINDS, type ContractKind } from "../../contract/enums";
 import type { ValidationIssue } from "../../contract/types/api";
 import type { ContractRecordPayloadV2 } from "../../contract/types/v2/contract";
-import { checkContractRecord } from "../contracts";
+import { checkContractRecord, summarizeContractChecks } from "../contracts";
 
 /** Jenis kontrak yang dipakai pemeriksaan lokal (satu-satunya jenis tahap 1). */
 export const LOCAL_CONTRACT_KIND: ContractKind = CONTRACT_KINDS[0];
@@ -41,26 +43,12 @@ function contractPayloads(value: Record<string, unknown>): Array<{ pointer: stri
 
 /**
  * Isu I54 untuk semua payload `contractRecord` di satu blok (urutan payload, lalu urutan medan).
- * Isu CH-xx: `keyword` = `checkId`. EC27: `keyword` `CONTRACT_ITEM_KEY_DUPLICATE`,
- * `details = { key, positions }` (1-based).
+ * Isu CH-xx: `keyword` = `checkId`. Tanpa isu CH di payload mana pun: satu EC27, `keyword`
+ * `CONTRACT_ITEM_KEY_DUPLICATE`, `details = { key, positions }` (1-based).
  */
 export function draftContractIssues(value: Record<string, unknown>, kind: ContractKind = LOCAL_CONTRACT_KIND): DraftContractIssue[] {
-  const out: DraftContractIssue[] = [];
-  for (const { pointer, payload } of contractPayloads(value)) {
-    const r = checkContractRecord(payload as unknown as ContractRecordPayloadV2, kind, { pointer });
-    if (r.issues.length > 0) {
-      for (const i of r.issues) out.push({ pointer: i.pointer, keyword: i.checkId, message: i.message, checkId: i.checkId });
-      continue;
-    }
-    if (r.error) {
-      const { key, positions } = r.error.details;
-      out.push({
-        pointer: r.error.details.pointer,
-        keyword: r.error.code,
-        message: `Kunci butir "${key}" ganda pada posisi ${positions.join(", ")}`,
-        details: { key, positions },
-      });
-    }
-  }
-  return out;
+  const s = summarizeContractChecks(contractPayloads(value).map(({ pointer, payload }) => checkContractRecord(payload as unknown as ContractRecordPayloadV2, kind, { pointer })));
+  if (!s.duplicate) return s.issues;
+  const { pointer, key, positions } = s.duplicate.details;
+  return [{ pointer, keyword: s.duplicate.code, message: s.duplicate.message, details: { key, positions } }];
 }

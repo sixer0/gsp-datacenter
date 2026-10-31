@@ -13,7 +13,13 @@ const REPORTED_AT_RE = new RegExp(CONTRACT_REPORTED_AT_PATTERN);
 const REPORTED_AT_PARTS_RE =
   /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|([+-])(\d{2}):(\d{2})))?$/;
 
-function isCalendarDay(y: number, m: number, d: number): boolean {
+/**
+ * Satu-satunya validator hari kalender Gregorius Studio (CH-03 CONTRACT_DATE; FIX-R40-3):
+ * dipakai juga impor kontrak (`import/contract/parse.ts`), filter R21 (`query/filters.ts`),
+ * dan nama final I60 (`render/final-name.ts`). Tabel hari per bulan (bukan `Date.UTC`, yang
+ * memetakan tahun 0-99 ke 1900-1999), jadi berlaku untuk tahun 0000-9999.
+ */
+export function isCalendarDay(y: number, m: number, d: number): boolean {
   if (m < 1 || m > 12 || d < 1) return false;
   const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];

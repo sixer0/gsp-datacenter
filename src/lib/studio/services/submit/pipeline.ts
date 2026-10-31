@@ -8,7 +8,8 @@
  *     kiriman (SR-19, dedupe sha; idempoten), rujukan aset langsung.
  *  2. Di dalam kunci (`withDocumentLock`): cari dokumen; buat bila belum ada
  *     (revisi 1 = kerangka kosong + kiriman, D-153); baca revisi terbaru n;
- *     `mergeSubmission` (SR-08: struktur, pid §10, idempoten sha KD-13); tanpa
+ *     `mergeSubmission` (SR-08: struktur, pid §10, idempoten sha KD-13); dokumen kontrak:
+ *     I54 murni (05 §5.6 langkah 2/6b, FIX-C1) sebelum semua cek langkah 7 di bawah; tanpa
  *     perubahan -> `unchanged` tanpa revisi; FIX-H2 (D-322): pid yang disunting lewat PATCH
  *     sesudah kiriman terakhir lingkupnya / `baseRevisionNo` tidak boleh ditimpa (409
  *     `SCOPE_CONFLICT` + `overwrittenPids`, `overwrite.ts`); cek dasar per lingkup (§9.2;
@@ -856,6 +857,18 @@ async function applyInLock(
   const templateSlug = current.template.slug;
   const templateVersionNo = current.template.version;
 
+  // DC-09: jenis kontrak templat terpatok (MX08) -> compose (label slot contractRecord, DC-10).
+  // Dikueri hanya bila kerangka memuat slot contractRecord (non-kontrak: tanpa kueri baru, D-382).
+  const contractKind = await skeletonContractKind(tx, templateVersionId, skeleton.skeleton.slots);
+  // D-382: pointer payload kontrak di badan kiriman (kiriman slot: `/payload`; selain itu dokumen tergabung).
+  const contractPointer = (k: string): string => (plan.kind === "slot" && k === plan.slotKey ? "/payload" : `/sections/${k}`);
+  // FIX-C1 (D-392; register 05 §5.6 langkah 2/6b, 03 §11.1): I54 murni (400 checkId CH / 422 EC27)
+  // langsung sesudah gabung struktur (langkah 6), SEBELUM langkah 7 (idempoten, FIX-H2, cek dasar
+  // §9.2 -> 409 SCOPE_CONFLICT) dan sebelum compose (DC-10 mengandaikan payload sah). Non-kontrak:
+  // tanpa target, tanpa isu (D-382).
+  const contractPre = contractCheckError(checkContractSource(merged.doc, skeleton.skeleton.slots, { contractKind, contractPointer }));
+  if (contractPre) throw contractPre;
+
   // Idempoten (§9.3): tanpa perubahan lingkup, register, dan aset -> tanpa revisi.
   if (!created && latest && prevRows && !merged.changed) {
     return {
@@ -908,14 +921,6 @@ async function applyInLock(
     rebased = (await checkBase(tx, document.id, latest, plan.baseRevisionNo, scopes, current)).rebased;
   }
 
-  // DC-09: jenis kontrak templat terpatok (MX08) -> compose (label slot contractRecord, DC-10).
-  // Dikueri hanya bila kerangka memuat slot contractRecord (non-kontrak: tanpa kueri baru, D-382).
-  const contractKind = await skeletonContractKind(tx, templateVersionId, skeleton.skeleton.slots);
-  // D-382: pointer payload kontrak di badan kiriman (kiriman slot: `/payload`; selain itu dokumen tergabung).
-  const contractPointer = (k: string): string => (plan.kind === "slot" && k === plan.slotKey ? "/payload" : `/sections/${k}`);
-  // D-382 (register 05 §5.6 langkah 6b): I54 SEBELUM compose (compose kontrak DC-10 mengandaikan payload sah).
-  const contractPre = contractCheckError(checkContractSource(merged.doc, skeleton.skeleton.slots, { contractKind, contractPointer }));
-  if (contractPre) throw contractPre;
   let composed: ReturnType<typeof composeV2>;
   try {
     composed = composeV2({

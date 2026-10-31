@@ -5,6 +5,7 @@
  */
 import { CARD_ID_PATTERN, CONTRACT_ACTOR_PATTERN, CONTRACT_KEY_PATTERN, CONTRACT_REPORTED_AT_PATTERN } from "../../../contract/env";
 import { atxHeading, splitTableRow } from "../lexer";
+import { isCalendarDay } from "../../contracts/dates";
 
 export const CARD_ID_RE = new RegExp(CARD_ID_PATTERN);
 export const CONTRACT_KEY_RE = new RegExp(CONTRACT_KEY_PATTERN);
@@ -135,10 +136,175 @@ export function cleanValue(v: string): string {
   return t;
 }
 
-/** Token awal nilai (kata pertama; sisanya = keterangan penulis, mis. `FAIL (satu FAIL ...)`). */
-export function leadToken(v: string): string {
-  const m = /^[A-Za-z0-9_.-]+/.exec(cleanValue(v));
-  return m ? m[0] : "";
+/** Pemisah alternatif sesudah spasi: `/`, `,` atau kata `atau`/`or`/`vs`/`versus` (DC35-F1). */
+const ALT_AFTER_SPACE_RE = /^(?:[/,]|(?:atau|or|vs\.?|versus)(?=\s|$))/i;
+/** Pemisah lain sesudah spasi yang masih bisa mengawali kandidat alias kedua (`complete | blocked`). */
+const SEP_AFTER_SPACE_RE = /^[|;+&]\s*[*`]*/;
+const LEAD_TOKEN_RE = /^[A-Za-z0-9_.-]+/;
+
+export type AliasToken = { token: string; compound: false } | { token: null; compound: true };
+
+/**
+ * Token alias status/vonis (§16.5, KD-42, DC35-F1). Token awal hanya diterima bila diikuti akhir
+ * nilai, spasi, atau `(` (keterangan penulis, mis. `FAIL (satu FAIL ...)`, D-377 butir 2); penanda
+ * tampilan `*`/backtick sesudah token diabaikan. Nilai majemuk -> `compound` (tidak ditebak):
+ *   - token diikuti langsung pemisah apa pun (`PASS/FAIL`, `todo,blocked`, `complete|blocked`);
+ *   - sesudah spasi ada pemisah alternatif `/`, `,`, `atau`, `or`, `vs` (`PASS / FAIL`, `PASS atau FAIL`);
+ *   - sesudah spasi ada `|`, `;`, `+`, `&` yang diikuti token beralias lain (`complete | blocked`);
+ *     `complete | Giliran: ...` tetap `complete` (pemisah medan, bukan alternatif; token yang diikuti
+ *     `:` adalah label medan berikutnya, bukan kandidat).
+ * `isAlias` memeriksa token di tabel alias pemanggil (dengan aturan huruf tabel itu).
+ */
+export function aliasTokenOf(v: string, isAlias: (token: string) => boolean): AliasToken {
+  const t = cleanValue(v);
+  const m = LEAD_TOKEN_RE.exec(t);
+  if (!m) return { token: "", compound: false };
+  const rest = t.slice(m[0].length).replace(/^[*`]+/, "");
+  if (rest === "" || rest[0] === "(") return { token: m[0], compound: false };
+  if (!/^\s/.test(rest)) return { token: null, compound: true };
+  const after = rest.trimStart();
+  if (ALT_AFTER_SPACE_RE.test(after)) return { token: null, compound: true };
+  const sep = SEP_AFTER_SPACE_RE.exec(after);
+  if (sep) {
+    const tail = after.slice(sep[0].length);
+    const next = LEAD_TOKEN_RE.exec(tail);
+    if (next && tail[next[0].length] !== ":" && isAlias(next[0])) return { token: null, compound: true };
+  }
+  return { token: m[0], compound: false };
+}
+
+export type PatternValue = { value: string; reason?: undefined } | { value: null; reason: "compound" | "pattern" };
+
+/**
+ * Medan berpola (owner C36, taskRef C35; D-405). Aturan token sama dengan `aliasTokenOf`: nilai
+ * majemuk (`DC-03/DC-04`, `coder, verifier`) TIDAK dipotong ke token pertama -> `compound`; token yang
+ * tidak cocok pola -> `pattern`. Kandidat kedua sesudah `| ; + &` dihitung hanya bila mirip kunci
+ * (cocok pola dan memuat angka), agar prosa sesudah pemisah medan tidak dianggap nilai kedua.
+ */
+function patternValueOf(v: string, re: RegExp, lower: boolean): PatternValue {
+  const norm = (x: string) => (lower ? x.toLowerCase() : x);
+  const tok = aliasTokenOf(v, (x) => /\d/.test(x) && re.test(norm(x)));
+  if (tok.compound) return { value: null, reason: "compound" };
+  const t = norm(tok.token);
+  return re.test(t) ? { value: t } : { value: null, reason: "pattern" };
+}
+
+/** owner (C36; huruf kecil). */
+export function actorValueOf(v: string): PatternValue {
+  return patternValueOf(v, CONTRACT_ACTOR_RE, true);
+}
+
+/** taskRef (C35). */
+export function taskRefValueOf(v: string): PatternValue {
+  return patternValueOf(v, CONTRACT_KEY_RE, false);
+}
+
+// ── Baris fase GL-12 ─────────────────────────────────────────────────────
+
+const PHASE_PREFIX = "[FASE]";
+const PHASE_TIME_TAIL_RE = /^\s*\d{1,2}:\d{2}\s*$/;
+const WS_CHAR_RE = /\s/;
+/** Karakter yang tidak dicocokkan `.` tanpa bendera `s`. */
+const isLineTerminator = (c: number) => c === 0x0a || c === 0x0d || c === 0x2028 || c === 0x2029;
+
+export interface PhaseLine {
+  mission: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * GL-12 `[FASE] <misi> | <dari> -> <ke> | HH:MM`. Pemindai linear yang hasilnya identik dengan
+ * regex lama `/^\[FASE\]\s*(.+?)\s*\|\s*(.+?)\s*->\s*(.+?)\s*\|\s*\d{1,2}:\d{2}\s*$/` untuk SEMUA
+ * masukan (urutan prioritas backtracking yang sama: grup malas sependek mungkin dari kiri, `\s*`
+ * rakus), tanpa waktu kubik regex itu (L-3, CWE-1333). Kunci kesetaraan:
+ *   - `|` ekor = `|` terakhir baris (sesudahnya hanya spasi/jam), sisa ekor diperiksa sekali;
+ *   - keberhasilan dari sebuah `->` (grup 3) dan dari sebuah `|` (grup 2 + 3) hanya bergantung pada
+ *     posisi tanda itu, jadi dihitung sekali per posisi lalu "tanda baik berikutnya" dicari mundur;
+ *   - kandidat akhir grup naik monoton dengan posisi tanda, sehingga tanda baik pertama = hasil regex.
+ * Dibuktikan uji diferensial acak terhadap regex lama (`fiximp-import-contract.test.ts`).
+ */
+export function parsePhaseLine(t: string): PhaseLine | null {
+  if (!t.startsWith(PHASE_PREFIX)) return null;
+  const n = t.length;
+  const tailPipe = t.lastIndexOf("|");
+  if (tailPipe < PHASE_PREFIX.length || !PHASE_TIME_TAIL_RE.test(t.slice(tailPipe + 1))) return null;
+
+  const ws = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ws[i] = WS_CHAR_RE.test(t[i]) ? 1 : 0;
+  // wsStart[i]: j terkecil dengan t[j..i) seluruhnya spasi; wsEnd[i]: j terbesar dengan t[i..j) spasi.
+  const wsStart = new Int32Array(n + 1);
+  for (let i = 1; i <= n; i++) wsStart[i] = ws[i - 1] ? wsStart[i - 1] : i;
+  const wsEnd = new Int32Array(n + 2);
+  wsEnd[n] = n;
+  wsEnd[n + 1] = n + 1;
+  for (let i = n - 1; i >= 0; i--) wsEnd[i] = ws[i] ? wsEnd[i + 1] : i;
+  // nextTerm[i]: pemutus baris pertama di/sesudah i (n bila tidak ada); grup `.+?` tidak melewatinya.
+  const nextTerm = new Int32Array(n + 2);
+  nextTerm[n] = n;
+  nextTerm[n + 1] = n;
+  for (let i = n - 1; i >= 0; i--) nextTerm[i] = isLineTerminator(t.charCodeAt(i)) ? i : nextTerm[i + 1];
+
+  // Grup 3 mulai a3: akhir terpendek e3 dengan t[e3..tailPipe) seluruhnya spasi.
+  const tailWs = wsStart[tailPipe];
+  const g3At = (a3: number): number => {
+    if (a3 >= tailPipe) return -1;
+    const e3 = Math.max(a3 + 1, tailWs);
+    return nextTerm[a3] >= e3 ? e3 : -1;
+  };
+
+  // Per `->` di b: mulai grup 3 pertama yang berhasil (`\s*` rakus -> dari spasi terjauh, mundur).
+  const arrowA3 = new Int32Array(n + 2).fill(-1);
+  const arrowE3 = new Int32Array(n + 2).fill(-1);
+  const nextArrow = new Int32Array(n + 2).fill(-1);
+  for (let b = n - 2; b >= 0; b--) {
+    nextArrow[b] = nextArrow[b + 1];
+    if (t.charCodeAt(b) !== 0x2d || t.charCodeAt(b + 1) !== 0x3e) continue;
+    for (let a3 = wsEnd[b + 2]; a3 >= b + 2; a3--) {
+      const e3 = g3At(a3);
+      if (e3 >= 0) {
+        arrowA3[b] = a3;
+        arrowE3[b] = e3;
+        nextArrow[b] = b;
+        break;
+      }
+    }
+  }
+  // Grup 2 mulai a2: `->` baik pertama sesudahnya; akhir e2 = awal spasi yang mendahului `->`.
+  const g2At = (a2: number): { e2: number; b: number } | null => {
+    if (a2 + 1 > n) return null;
+    const b = nextArrow[a2 + 1];
+    if (b < 0) return null;
+    const e2 = Math.max(a2 + 1, wsStart[b]);
+    return e2 <= nextTerm[a2] ? { e2, b } : null;
+  };
+
+  // Per `|` di p: mulai grup 2 pertama yang berhasil.
+  const pipeA2 = new Int32Array(n + 2).fill(-1);
+  const nextPipe = new Int32Array(n + 2).fill(-1);
+  for (let p = n - 1; p >= 0; p--) {
+    nextPipe[p] = nextPipe[p + 1];
+    if (t.charCodeAt(p) !== 0x7c) continue;
+    for (let a2 = wsEnd[p + 1]; a2 >= p + 1; a2--) {
+      if (g2At(a2)) {
+        pipeA2[p] = a2;
+        nextPipe[p] = p;
+        break;
+      }
+    }
+  }
+
+  // Grup 1 mulai a0: `|` baik pertama sesudahnya; akhir e1 = awal spasi yang mendahului `|`.
+  for (let a0 = wsEnd[PHASE_PREFIX.length]; a0 >= PHASE_PREFIX.length; a0--) {
+    const p = nextPipe[a0 + 1];
+    if (p < 0) continue;
+    const e1 = Math.max(a0 + 1, wsStart[p]);
+    if (e1 > nextTerm[a0]) continue;
+    const a2 = pipeA2[p];
+    const g2 = g2At(a2)!;
+    return { mission: t.slice(a0, e1), from: t.slice(a2, g2.e2), to: t.slice(arrowA3[g2.b], arrowE3[g2.b]) };
+  }
+  return null;
 }
 
 /** Semua id kartu C34 dalam teks, unik, urut kemunculan. */
@@ -148,19 +314,9 @@ export function cardIdsIn(text: string): string[] {
   return [...seen];
 }
 
-export function actorOf(v: string): string | null {
-  const t = leadToken(v).toLowerCase();
-  return CONTRACT_ACTOR_RE.test(t) ? t : null;
-}
-
 export function contractKeyOf(v: string): string | null {
   const t = cleanValue(v);
   return CONTRACT_KEY_RE.test(t) ? t : null;
-}
-
-function isCalendarDate(y: number, mo: number, d: number): boolean {
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
 }
 
 const DATE_LEAD_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?)?(?:\s*(Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d|WIB)(?![A-Za-z0-9]))?/;
@@ -181,7 +337,7 @@ export function parseReportedAt(v: string, whole = false): ParsedReportedAt | nu
   if (!m) return null;
   if (whole && m[0].length !== t.length) return null;
   const [, y, mo, d, hh, mm, ss, zone] = m;
-  if (!isCalendarDate(Number(y), Number(mo), Number(d))) return null;
+  if (!isCalendarDay(Number(y), Number(mo), Number(d))) return null;
   const date = `${y}-${mo}-${d}`;
   let value = date;
   let timeDropped = false;
