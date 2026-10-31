@@ -10,11 +10,18 @@ export {
   basisLineOf,
   completeDraftCheck,
   draftBasisRevision,
+  draftCreateTargetOf,
   draftLimitMessage,
+  draftMissionTargetOf,
+  dryRunInputOf,
   finalizeDraftResult,
+  META_REQUIRED_FOR_CREATE,
+  needsCreateEnvelope,
+  sequentialCreateSources,
+  simulatedCreateInput,
   prepareDraftCheck,
   rejectedDryRun,
   staleBasisIssue,
 } from "./check";
-export type { DraftCheckDeps, DraftDryRunOutcome, PreparedDraftCheck } from "./check";
+export type { DraftCheckDeps, DraftCreateTarget, DraftDryRunInput, DraftDryRunOutcome, PreparedDraftCheck } from "./check";
 export { draftContractIssues, LOCAL_CONTRACT_KIND, type DraftContractIssue } from "./contract-local";

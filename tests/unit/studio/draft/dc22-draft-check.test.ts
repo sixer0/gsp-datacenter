@@ -234,7 +234,8 @@ describe('CLI (proses nyata)', () => {
     expect(r.code).toBe(0);
     const j = JSON.parse(r.out);
     expect(Object.keys(j)).toEqual(['valid', 'header', 'issues', 'blocks']);
-    expect(Object.keys(j.blocks[0])).toEqual(['index', 'line', 'endLine', 'schema', 'valid', 'issues', 'payload']);
+    // U-05d (D-419): --json tanpa payload secara bawaan; --with-payload = bentuk R23.
+    expect(Object.keys(j.blocks[0])).toEqual(['index', 'line', 'endLine', 'schema', 'valid', 'issues']);
   });
 
   it('--emit 1 byte-identik dengan isi blok (CRLF dan UTF-8 dipertahankan)', () => {
@@ -261,6 +262,7 @@ describe('CLI (proses nyata)', () => {
     const blocks = Array.from({ length: 21 }, () => '```json\n{}\n```\n').join('\n');
     const r = run([file('banyak.md', `# DRAF\n\n${blocks}`), '--json']);
     expect(r.code).toBe(1);
-    expect(JSON.parse(r.out)).toMatchObject({ code: 'PAYLOAD_TOO_LARGE', details: { reason: 'DRAFT_TOO_MANY_BLOCKS' } });
+    // U-05b (D-419): galat fatal --json = { fatal: { code, message, details } }.
+    expect(JSON.parse(r.out)).toMatchObject({ fatal: { code: 'PAYLOAD_TOO_LARGE', details: { reason: 'DRAFT_TOO_MANY_BLOCKS' } } });
   });
 });

@@ -26,8 +26,12 @@
  *                  agentWorkReport): kerangka, outline wajib, set status, vonis, status butir, rel
  *                  rujukan, jenis bukti, pola, batas, label, alias, format bawaan. Tanpa parameter
  *                  lain (400 SCHEMA_INVALID `/query/<nama>`); jenis dicadangkan tidak dicantumkan
+ *                  Setiap butir memuat `examples` (U-03, D-419): badan `record` + `chapters["1".."5"]` siap salin
  * Respons: 200 `{ kind, count, items, meta? }` (essentials menambah `global`, `bySectionType`);
- * galat 400 REGISTRY_KIND_UNKNOWN (kind/filter tidak dikenal).
+ * galat 400 REGISTRY_KIND_UNKNOWN (kind/filter tidak dikenal); `details` selalu larik isu (01 §6.2).
+ * `kind` absen atau tak dikenal (U-07, R2-F1 D-426): satu isu
+ * `{ pointer: "/query/kind", keyword, message, received, validKinds, examples }`; filter tak dikenal:
+ * isu berpointer `/query/<nama>`.
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
@@ -107,6 +111,40 @@ function countBy<T>(items: readonly T[], key: (t: T) => string): Record<string, 
 
 function unknownKind(message: string, details: unknown, ctx: ReqCtx): Response {
   return reject(ctx, "REGISTRY_KIND_UNKNOWN", message, details);
+}
+
+/** Contoh kueri sah yang disertakan pada 400 kind absen/tak dikenal (U-07). */
+const KIND_EXAMPLES: readonly string[] = [
+  `${ROUTE}?kind=contracts`,
+  `${ROUTE}?kind=schema&schemaId=studio.chapter/v2`,
+  `${ROUTE}?kind=sections`,
+];
+
+/**
+ * U-07 (D-419): `kind` absen atau tak dikenal -> 400 REGISTRY_KIND_UNKNOWN (perilaku kontrak R03 tetap;
+ * tidak ada respons 200 tanpa kind). R2-F1 (D-424 #4): `details` = larik SATU isu seperti filter tak
+ * dikenal (01 §6.2 `ValidationIssue[]`, satu bentuk per kode); daftar kind sah dan contoh kueri
+ * dibawa di dalam isu itu agar agen tidak perlu menebak.
+ */
+function kindRequired(kind: string, ctx: ReqCtx): Response {
+  const missing = kind === "";
+  const message = missing
+    ? `kind query parameter is required; one of ${KINDS.join(", ")} (e.g. ?kind=contracts)`
+    : `kind must be one of ${KINDS.join(", ")} (e.g. ?kind=contracts)`;
+  return unknownKind(
+    message,
+    [
+      {
+        pointer: "/query/kind",
+        keyword: missing ? "required" : "enum",
+        message: KINDS.join("|"),
+        received: missing ? null : kind.slice(0, 64),
+        validKinds: [...KINDS],
+        examples: [...KIND_EXAMPLES],
+      },
+    ],
+    ctx,
+  );
 }
 
 /** Filter query berdaftar tertutup; nilai di luar daftar -> 400 REGISTRY_KIND_UNKNOWN (pointer `/query/<nama>`). */
@@ -419,13 +457,7 @@ export async function GET(req: NextRequest) {
 
   const sp = new URL(req.url).searchParams;
   const kind = sp.get("kind") || "";
-  if (!(KINDS as readonly string[]).includes(kind)) {
-    return unknownKind(
-      `kind must be one of ${KINDS.join(", ")}`,
-      [{ pointer: "/query/kind", keyword: "enum", message: KINDS.join("|") }],
-      ctx,
-    );
-  }
+  if (!(KINDS as readonly string[]).includes(kind)) return kindRequired(kind, ctx);
 
   try {
     const k = kind as RegistryKind;

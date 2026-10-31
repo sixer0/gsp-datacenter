@@ -1,7 +1,10 @@
 /**
  * CLI pemeriksa draf/checkpoint MD (DC-22, register 05 §11.3-§11.4).
  *
- *   npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json]
+ *   npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json [--with-payload]]
+ *
+ * Dapat dijalankan dari cwd mana pun (U-05c): `npx tsx <repo>/scripts/studio/draft-check.ts ...`;
+ * alias `@/*` diselesaikan relatif ke repo oleh `./_repo-alias` (diimpor pertama).
  *
  * Opsi:
  *   --remote <baseUrl>   setiap blok dikirim apa adanya ke R08 `POST /api/studio/validate` (dry-run,
@@ -13,7 +16,14 @@
  *                        --remote. Tanpa opsi ini dan tanpa `agentId` blok: tanpa agentId (sama dengan R23)
  *   --emit <n>           cetak teks blok ke-n (1-based) persis seperti tertulis (byte-identik), untuk
  *                        dikirim apa adanya
- *   --json               cetak hasil T2-70 `DraftCheckResultV2` (bentuk respons R23)
+ *   --json               cetak hasil T2-70 `DraftCheckResultV2` (bentuk respons R23) TANPA medan
+ *                        `blocks[].payload` (U-05d); `--with-payload` menyertakannya (= respons R23).
+ *                        Dengan --json stdout SELALU JSON sah: galat fatal (kode keluar != 0 di luar
+ *                        hasil pemeriksaan) dicetak `{ "fatal": { code, message, details? } }` (U-05b)
+ *
+ * Simulasi berurutan (U-05a, `services/draft/check.ts`): blok bab/slot sesudah blok buat-dokumen
+ * bertarget `mission.folder` + `docKey` sama dianggap menarget dokumen yang akan dibuat (tanpa
+ * `META_REQUIRED_FOR_CREATE`); aturan sama dengan R23.
  *
  * Lokal (bawaan): batas C54 (DR-09/DR-10) -> I63 `extractDraft` (DR-01..DR-07) -> skema v2 per blok
  * (validator yang sama dengan R08: `validateV2`, ajv bersama + `classifySchemaV2Errors`) -> pemeriksaan
@@ -24,6 +34,7 @@
  * melebihi batas C54; 2 galat pemakaian/berkas/jaringan.
  * Nilai rahasia tidak pernah dicetak maupun ditulis ke berkas.
  */
+import "./_repo-alias";
 import fs from "node:fs";
 import type { DraftCheckResultV2 } from "../../src/lib/studio/contract";
 import { STUDIO_ROUTES } from "../../src/lib/studio/contract/env";
@@ -36,12 +47,22 @@ import {
   finalizeDraftResult,
   prepareDraftCheck,
   rejectedDryRun,
+  sequentialCreateSources,
   toDraftCheckResult,
   type DraftDryRunOutcome,
 } from "../../src/lib/studio/services/draft";
 import { isV2SubmissionSchema, validateV2 } from "../../src/app/api/studio/validate/_shared/v2-kit";
+import {
+  httpFailureOf,
+  normalizeBaseUrl as normalizeSharedBaseUrl,
+  studioRequest,
+  StudioUnreachableError,
+  StudioUrlError,
+  type HttpFetch,
+  type HttpReply,
+} from "./_http-client";
 
-const USAGE = "pemakaian: npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json]";
+const USAGE = "pemakaian: npx tsx scripts/studio/draft-check.ts <berkas.md> [--remote <baseUrl>] [--agent-id <id>] [--emit <n>] [--json [--with-payload]]";
 
 const HELP = [
   USAGE,
@@ -55,18 +76,42 @@ const HELP = [
   "  --agent-id <id>      agentId bawaan dry-run untuk blok tanpa medan agentId (hanya bersama --remote);",
   "                       sama dengan medan agentId badan POST /api/studio/drafts/check",
   "  --emit <n>           cetak isi blok ke-n persis seperti tertulis, mis. --emit 1 > blok1.json",
-  "  --json               cetak hasil lengkap sebagai JSON",
+  "  --json               cetak hasil sebagai JSON (tanpa isi payload blok); galat fatal pun dicetak",
+  "                       sebagai JSON { \"fatal\": { \"code\", \"message\" } }",
+  "  --with-payload       bersama --json: sertakan blocks[].payload (bentuk persis respons R23)",
   "  -h, --help           tampilkan bantuan ini",
   "",
   "Tanpa --remote pemeriksaan berjalan lokal: tanpa server dan tanpa basis data.",
+  "Blok bab/slot sesudah blok pembuat dokumen (misi + docKey sama) diperiksa sebagai bagian dokumen itu.",
+  "Dapat dijalankan dari direktori mana pun: npx tsx <repo>/scripts/studio/draft-check.ts draf.md",
   "",
   "Kode keluar: 0 lolos, 1 ada isu galat atau blok tidak valid, 2 galat pemakaian, berkas, atau jaringan.",
 ].join("\n");
 
-const REMOTE_TIMEOUT_MS = 30_000;
+/** Kode galat fatal `--json` (U-05b). */
+export type DraftCheckFatalCode =
+  | "USAGE_ERROR"
+  | "FILE_UNREADABLE"
+  | "SECRET_MISSING"
+  | "REMOTE_UNREACHABLE"
+  | "REMOTE_UNAUTHORIZED"
+  | "RATE_LIMITED"
+  | "REMOTE_ERROR"
+  | "REMOTE_BAD_RESPONSE"
+  | "BLOCK_NOT_FOUND"
+  | "PAYLOAD_TOO_LARGE"
+  | "INTERNAL_ERROR";
 
-/** Galat pemakaian/berkas/jaringan (kode keluar 2). */
-export class DraftCheckUsageError extends Error {}
+/** Galat pemakaian/berkas/jaringan (kode keluar 2); `code` = kode fatal `--json`. */
+export class DraftCheckUsageError extends Error {
+  constructor(
+    message: string,
+    readonly code: DraftCheckFatalCode = "USAGE_ERROR",
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 
 // ── Pemeriksaan lokal ───────────────────────────────────────────────────
 
@@ -96,11 +141,8 @@ export function checkDraftLocal(markdown: string): DraftCheckResultV2 {
 
 // ── Pemeriksaan remote (R08) ────────────────────────────────────────────
 
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
-  status: number;
-  headers: { get(name: string): string | null };
-  text(): Promise<string>;
-}>;
+/** Fetch yang dapat disuntik (uji); sama dengan klien bersama `./_http-client` (R2-F2 #6). */
+export type FetchLike = HttpFetch;
 
 export interface RemoteOptions {
   baseUrl: string;
@@ -110,43 +152,40 @@ export interface RemoteOptions {
   agentId?: string;
 }
 
-function normalizeBaseUrl(raw: string): string {
-  let u: URL;
+/** Asal + path tanpa garis miring akhir; selain http(s) = galat pemakaian (klien bersama `./_http-client`). */
+export function normalizeBaseUrl(raw: string): string {
   try {
-    u = new URL(raw);
-  } catch {
-    throw new DraftCheckUsageError(`--remote harus URL http(s) yang sah, mis. http://127.0.0.1:9021 (diberikan "${raw}")`);
-  }
-  if (u.protocol !== "http:" && u.protocol !== "https:") throw new DraftCheckUsageError("--remote harus memakai http:// atau https://");
-  return u.origin + u.pathname.replace(/\/+$/, "");
-}
-
-async function call(opts: RemoteOptions, path: string, init: { method: string; body?: string }): Promise<{ status: number; body: unknown; retryAfter: string | null }> {
-  const f = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
-  const headers: Record<string, string> = { "x-internal-secret": opts.secret, accept: "application/json" };
-  if (init.body !== undefined) headers["content-type"] = "application/json";
-  let res: Awaited<ReturnType<FetchLike>>;
-  try {
-    res = await f(`${opts.baseUrl}${path}`, { ...init, headers, signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS) });
+    return normalizeSharedBaseUrl(raw);
   } catch (e) {
-    const why = e instanceof Error ? (e.name === "TimeoutError" ? `tidak menjawab dalam ${REMOTE_TIMEOUT_MS / 1000} detik` : e.message) : String(e);
-    throw new DraftCheckUsageError(`server ${opts.baseUrl} tidak dapat dihubungi: ${why}`);
+    if (e instanceof StudioUrlError) throw new DraftCheckUsageError(e.message);
+    throw e;
   }
-  const text = await res.text();
-  let body: unknown = null;
-  try {
-    body = text === "" ? null : JSON.parse(text);
-  } catch {
-    body = null;
-  }
-  return { status: res.status, body, retryAfter: res.headers.get("retry-after") };
 }
 
-function serverFailure(path: string, r: { status: number; body: unknown; retryAfter: string | null }): DraftCheckUsageError {
-  if (r.status === 401) return new DraftCheckUsageError("server menolak rahasia (401): periksa env INTERNAL_API_SECRET");
-  if (r.status === 429) return new DraftCheckUsageError(`batas laju server tercapai (429)${r.retryAfter ? `; coba lagi dalam ${r.retryAfter} detik` : ""}`);
+/**
+ * Klien bersama dengan pengalihan DIIKUTI: perilaku lama draft-check yang risikonya diterima USER
+ * (D-402 M-2, D-425 #2); lihat kepala `./_http-client`.
+ */
+async function call(opts: RemoteOptions, path: string, init: { method: "GET" | "POST"; body?: string }): Promise<HttpReply> {
+  try {
+    return await studioRequest({ baseUrl: opts.baseUrl, secret: opts.secret, fetchImpl: opts.fetchImpl, redirect: "follow" }, init.method, path, { body: init.body, okStatuses: [200] });
+  } catch (e) {
+    if (e instanceof StudioUnreachableError) throw new DraftCheckUsageError(e.message, "REMOTE_UNREACHABLE");
+    throw e;
+  }
+}
+
+/** Galat server -> kode fatal `--json` draft-check; `details` membawa status, code server, dan cid (peta bersama). */
+function serverFailure(path: string, r: HttpReply): DraftCheckUsageError {
+  const f = httpFailureOf(r, `${path}`);
+  const details: Record<string, unknown> = {
+    httpStatus: f.httpStatus,
+    ...(f.serverCode !== undefined ? { serverCode: f.serverCode } : {}),
+    ...(f.correlationId !== undefined ? { correlationId: f.correlationId } : {}),
+  };
+  if (f.code === "REMOTE_UNAUTHORIZED" || f.code === "RATE_LIMITED") return new DraftCheckUsageError(f.message, f.code, details);
   const msg = isRecord(r.body) && typeof r.body.error === "string" ? `: ${r.body.error}` : "";
-  return new DraftCheckUsageError(`server menjawab ${r.status} untuk ${path}${msg}`);
+  return new DraftCheckUsageError(`server menjawab ${r.status} untuk ${path}${msg}`, r.status === 200 ? "REMOTE_BAD_RESPONSE" : "REMOTE_ERROR", details);
 }
 
 /** Revisi terkini dokumen lewat R05 (DR-08); 404 = dokumen tidak ditemukan (tidak dapat dicek). */
@@ -157,7 +196,7 @@ async function currentRevisionNo(documentId: string, opts: RemoteOptions): Promi
   if (r.status !== 200) throw serverFailure(path, r);
   const doc = isRecord(r.body) && isRecord(r.body.document) ? r.body.document : null;
   const current = doc && typeof doc.currentRevisionNo === "number" ? doc.currentRevisionNo : null;
-  if (current === null) throw new DraftCheckUsageError(`jawaban ${path} tidak memuat document.currentRevisionNo`);
+  if (current === null) throw new DraftCheckUsageError(`jawaban ${path} tidak memuat document.currentRevisionNo`, "REMOTE_BAD_RESPONSE");
   return current;
 }
 
@@ -212,7 +251,7 @@ function issueLine(i: unknown): string {
 }
 
 /** Laporan untuk manusia (Bahasa Indonesia). */
-export function formatHuman(file: string, result: DraftCheckResultV2, remote: string | null): string {
+export function formatHuman(file: string, result: DraftCheckResultV2, remote: string | null, createSources: ReadonlyMap<number, number> = new Map()): string {
   const h = result.header;
   const out: string[] = [];
   out.push(`draft-check: ${file}${remote ? ` (remote ${remote})` : " (lokal)"}`);
@@ -224,7 +263,9 @@ export function formatHuman(file: string, result: DraftCheckResultV2, remote: st
     out.push(`  [${i.severity === "error" ? "galat" : "peringatan"}] ${where(i)}${i.code}: ${i.message}`);
   }
   for (const b of result.blocks) {
-    out.push(`  blok ${b.index} (baris ${b.line}-${b.endLine}) ${b.schema ?? "tanpa $schema"}: ${b.valid ? "valid" : "TIDAK VALID"}`);
+    const src = remote ? createSources.get(b.index) : undefined;
+    const via = src !== undefined ? ` (target: dokumen yang dibuat blok ${src})` : "";
+    out.push(`  blok ${b.index} (baris ${b.line}-${b.endLine}) ${b.schema ?? "tanpa $schema"}${via}: ${b.valid ? "valid" : "TIDAK VALID"}`);
     for (const i of b.issues.slice(0, 20)) out.push(issueLine(i));
     if (b.issues.length > 20) out.push(`      ... ${b.issues.length - 20} isu lain (pakai --json untuk daftar lengkap)`);
   }
@@ -245,6 +286,7 @@ export interface CliArgs {
   agentId: string | null;
   emit: number | null;
   json: boolean;
+  withPayload: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): CliArgs | "help" {
@@ -253,10 +295,12 @@ export function parseArgs(argv: readonly string[]): CliArgs | "help" {
   let agentId: string | null = null;
   let emit: number | null = null;
   let json = false;
+  let withPayload = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") return "help";
     if (a === "--json") json = true;
+    else if (a === "--with-payload") withPayload = true;
     else if (a === "--remote" || a === "--emit" || a === "--agent-id") {
       const v = argv[i + 1];
       if (v === undefined || v.startsWith("--")) throw new DraftCheckUsageError(`${a} memerlukan nilai`);
@@ -276,7 +320,8 @@ export function parseArgs(argv: readonly string[]): CliArgs | "help" {
   if (file === null) throw new DraftCheckUsageError("berkas <berkas.md> belum diberikan");
   if (emit !== null && (json || remote !== null)) throw new DraftCheckUsageError("--emit tidak dapat digabung dengan --json atau --remote");
   if (agentId !== null && remote === null) throw new DraftCheckUsageError("--agent-id hanya berlaku bersama --remote");
-  return { file, remote, agentId, emit, json };
+  if (withPayload && !json) throw new DraftCheckUsageError("--with-payload hanya berlaku bersama --json");
+  return { file, remote, agentId, emit, json, withPayload };
 }
 
 export interface CliIo {
@@ -286,16 +331,54 @@ export interface CliIo {
   fetchImpl?: FetchLike;
 }
 
+/** Hasil `--json` tanpa `blocks[].payload` (U-05d); urutan medan lain tetap. */
+export function withoutPayload(result: DraftCheckResultV2): unknown {
+  return {
+    ...result,
+    blocks: result.blocks.map((b) => {
+      const rest: Partial<DraftCheckResultV2["blocks"][number]> = { ...b };
+      delete rest.payload;
+      return rest;
+    }),
+  };
+}
+
+/** Badan galat fatal `--json` (U-05b). */
+export function fatalJson(code: DraftCheckFatalCode, message: string, details?: Record<string, unknown>): string {
+  return `${JSON.stringify({ fatal: { code, message, ...(details ? { details } : {}) } }, null, 2)}
+`;
+}
+
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
+  // Diketahui sebelum pengurai agar galat pemakaian pun dicetak sebagai JSON (U-05b).
+  const wantsJson = argv.includes("--json");
+  const fatal = (code: DraftCheckFatalCode, message: string, rc: 1 | 2, opts: { usage?: boolean; details?: Record<string, unknown>; hint?: string } = {}): number => {
+    io.stderr(`draft-check: ${message}${opts.hint ?? ""}
+${opts.usage ? `${USAGE}
+` : ""}`);
+    if (wantsJson) io.stdout(fatalJson(code, message, opts.details));
+    return rc;
+  };
+  try {
+    return await run(argv, io, fatal);
+  } catch (e) {
+    return fatal("INTERNAL_ERROR", `galat tak terduga: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`, 2);
+  }
+}
+
+type FatalFn = (code: DraftCheckFatalCode, message: string, rc: 1 | 2, opts?: { usage?: boolean; details?: Record<string, unknown>; hint?: string }) => number;
+
+async function run(argv: readonly string[], io: CliIo, fatal: FatalFn): Promise<number> {
   let args: CliArgs | "help";
   try {
     args = parseArgs(argv);
   } catch (e) {
-    io.stderr(`draft-check: ${e instanceof Error ? e.message : String(e)}\n${USAGE}\n`);
-    return 2;
+    return fatal(e instanceof DraftCheckUsageError ? e.code : "USAGE_ERROR", e instanceof Error ? e.message : String(e), 2, { usage: true });
   }
   if (args === "help") {
-    io.stdout(`${HELP}\n`);
+    io.stdout(argv.includes("--json") ? `${JSON.stringify({ help: HELP }, null, 2)}
+` : `${HELP}
+`);
     return 0;
   }
 
@@ -303,30 +386,24 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
   try {
     raw = fs.readFileSync(args.file);
   } catch (e) {
-    io.stderr(`draft-check: tidak dapat membaca ${args.file}: ${e instanceof Error ? e.message : String(e)}\n`);
-    return 2;
+    return fatal("FILE_UNREADABLE", `tidak dapat membaca ${args.file}: ${e instanceof Error ? e.message : String(e)}`, 2);
   }
   const markdown = raw.toString("utf8");
 
   const limit = checkDraftLimits(markdown, { bodyBytes: raw.length });
   if (limit !== null) {
-    const message = draftLimitMessage(limit);
-    if (args.json) io.stdout(`${JSON.stringify({ error: message, code: "PAYLOAD_TOO_LARGE", details: { reason: limit } }, null, 2)}\n`);
-    io.stderr(`draft-check: ${limit}: ${message}; pecah draf menjadi beberapa berkas\n`);
-    return 1;
+    return fatal("PAYLOAD_TOO_LARGE", `${limit}: ${draftLimitMessage(limit)}`, 1, { details: { reason: limit }, hint: "; pecah draf menjadi beberapa berkas" });
   }
 
   if (args.emit !== null) {
     const ex = extractDraft(markdown);
     const block = ex.blocks[args.emit - 1];
-    if (!block) {
-      io.stderr(`draft-check: blok ${args.emit} tidak ada; draf memuat ${ex.blocks.length} blok json tertutup\n`);
-      return 2;
-    }
+    if (!block) return fatal("BLOCK_NOT_FOUND", `blok ${args.emit} tidak ada; draf memuat ${ex.blocks.length} blok json tertutup`, 2);
     io.stdout(block.text);
     const local = checkDraftLocal(markdown).blocks[args.emit - 1];
     if (!local.valid) {
-      io.stderr(`draft-check: catatan: blok ${args.emit} tidak valid secara lokal; jalankan tanpa --emit untuk rinciannya\n`);
+      io.stderr(`draft-check: catatan: blok ${args.emit} tidak valid secara lokal; jalankan tanpa --emit untuk rinciannya
+`);
       return 1;
     }
     return 0;
@@ -335,17 +412,11 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
   let result: DraftCheckResultV2;
   if (args.remote !== null) {
     const secret = io.env.INTERNAL_API_SECRET ?? "";
-    if (secret === "") {
-      io.stderr("draft-check: --remote memerlukan env INTERNAL_API_SECRET yang terisi\n");
-      return 2;
-    }
+    if (secret === "") return fatal("SECRET_MISSING", "--remote memerlukan env INTERNAL_API_SECRET yang terisi", 2);
     try {
       result = await checkDraftRemote(markdown, { baseUrl: args.remote, secret, fetchImpl: io.fetchImpl, ...(args.agentId !== null ? { agentId: args.agentId } : {}) });
     } catch (e) {
-      if (e instanceof DraftCheckUsageError) {
-        io.stderr(`draft-check: ${e.message}\n`);
-        return 2;
-      }
+      if (e instanceof DraftCheckUsageError) return fatal(e.code, e.message, 2, e.details ? { details: e.details } : {});
       throw e;
     }
   } else {
@@ -353,9 +424,10 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
   }
 
   if (args.json) {
-    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    io.stdout(`${JSON.stringify(args.withPayload ? result : withoutPayload(result), null, 2)}
+`);
   } else {
-    io.stdout(formatHuman(args.file, result, args.remote));
+    io.stdout(formatHuman(args.file, result, args.remote, args.remote !== null ? sequentialCreateSources(extractDraft(markdown)) : undefined));
   }
   return exitCodeOf(result);
 }
@@ -371,7 +443,8 @@ if (typeof require !== "undefined" && require.main === module) {
       process.exitCode = code;
     },
     (e: unknown) => {
-      process.stderr.write(`draft-check: galat tak terduga: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
+      process.stderr.write(`draft-check: galat tak terduga: ${e instanceof Error ? e.message : String(e)}
+`);
       process.exitCode = 2;
     },
   );

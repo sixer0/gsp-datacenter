@@ -25,6 +25,10 @@
  * dry-run R08), semuanya sebelum dry-run pertama; satu tagihan ditolak -> 429 tanpa dry-run apa
  * pun. FIX-SEC L-2 (D-402): draf tanpa blok yang dapat di-dry-run tetap ditagih SATU kali
  * (`draftValidateCharges` = max(1, blok dry-run)), sehingga respons 200-nya membawa header kuota.
+ * R2-F2 #7 (D-425): dry-run ulang bersimulasi (U-05a; blok bab/slot sesudah blok pembuat dokumen
+ * yang dijawab `META_REQUIRED_FOR_CREATE`) ditagih SATU kali lagi tepat sebelum dijalankan, sehingga
+ * tagihan = jumlah dry-run yang benar-benar dijalankan (minimal satu), tanpa tagihan ganda. Tagihan
+ * dry-run ulang yang ditolak -> 429 tanpa dry-run ulang itu (dry-run sebelumnya hanya baca).
  */
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/require-session";
@@ -50,6 +54,13 @@ import { draftValidateCharges } from "@/lib/studio/services/draft/check";
 import { failFrom } from "../../validate/_shared/route-kit";
 import { checkValidateRate } from "../../validate/_shared/validate-rate";
 import { currentRevisionNoOf, dryRunDraftBlock } from "./_lib/dry-run";
+
+/** Tagihan dry-run ulang ditolak: membawa respons 429 bucket `validate` ke `postCheck`. */
+class SimulatedDryRunLimited extends Error {
+  constructor(readonly response: Response) {
+    super("validate rate limit reached before simulated dry-run");
+  }
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -143,11 +154,18 @@ async function postCheck(req: NextRequest, ctx: ReqCtx): Promise<Response> {
       if (limited) return limited;
     }
 
+    let simulatedCharges = 0;
     const result = await completeDraftCheck(
       markdown,
       prepared,
       {
         currentRevisionNo: currentRevisionNoOf,
+        // R2-F2 #7: satu tagihan per dry-run ulang bersimulasi, tepat sebelum dijalankan.
+        beforeSimulatedDryRun: () => {
+          const limited = checkValidateRate(caller, ctx);
+          if (limited) throw new SimulatedDryRunLimited(limited);
+          simulatedCharges++;
+        },
         // Aturan agentId bersama CLI (services/draft/check.ts, D-392): agentId payload blok, selain itu agentId badan R23.
         dryRun: async (input) => dryRunDraftBlock(input.value, await getStudioCaller(req, input.agentId), ctx),
       },
@@ -163,12 +181,15 @@ async function postCheck(req: NextRequest, ctx: ReqCtx): Promise<Response> {
         valid: result.valid,
         blocks: result.blocks.length,
         dryRun: prepared.dryRunBlocks.length,
+        simulatedDryRun: simulatedCharges,
+        charges: charges + simulatedCharges,
         invalidBlocks: result.blocks.filter((b) => !b.valid).length,
         issues: result.issues.map((i) => i.code),
       },
     });
     return json(result, 200, ctx);
   } catch (err) {
+    if (err instanceof SimulatedDryRunLimited) return err.response;
     return failFrom(err, ctx, { op: "POST drafts/check" });
   }
 }

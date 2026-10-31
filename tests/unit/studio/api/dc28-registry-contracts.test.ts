@@ -93,7 +93,13 @@ describe('R03 GET ?kind=contracts (register 05 §9.4, AC-21)', () => {
     expect(res.status).toBe(400);
     const body = await jsonOf(res);
     expect(body.code).toBe('REGISTRY_KIND_UNKNOWN');
+    // 01 §6.2: details = larik isu (bentuk lama dipertahankan, R2-F1 D-424 #4); isu tunggal
+    // membawa kind sah + contoh kueri (U-07, D-419).
+    expect(Array.isArray(body.details)).toBe(true);
+    expect(body.details).toHaveLength(1);
     expect(body.details[0].message.split('|')).toContain('contracts');
+    expect(body.details[0]).toMatchObject({ pointer: '/query/kind', keyword: 'enum', received: 'contract' });
+    expect(body.details[0].validKinds).toContain('contracts');
   });
 
   it('anonim -> 401 tanpa akses DB', async () => {

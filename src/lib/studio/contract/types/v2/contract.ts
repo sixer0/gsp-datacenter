@@ -21,7 +21,9 @@ import type {
   StudioOutputFormat,
   StudioTier,
 } from "../../enums";
+import type { StudioChapterV2 } from "./chapter";
 import type { InlineV2 } from "./common";
+import type { StudioSlotV2 } from "./slot";
 
 // ── Payload slot `contractRecord` (CF-01..CF-13) ─────────────────────────
 
@@ -218,6 +220,21 @@ export interface ContractKindDefV2 {
   };
   /** C40. */
   defaultFormats: readonly StudioOutputFormat[];
+  /** U-03 (D-419) — contoh kiriman siap salin; setiap contoh lolos skema v2 + dry-run R08 (uji r2reg). */
+  examples: ContractKindExamplesV2;
+}
+
+/**
+ * U-03 (D-419) — contoh kiriman per jenis kontrak (R03 `kind=contracts`, `items[].examples`):
+ * agen menyalin badan apa adanya lalu mengganti isinya (konten saja, D-139).
+ */
+export interface ContractKindExamplesV2 {
+  /** Medan yang wajib diganti sebelum mengirim (target, pelaku, waktu, isi). */
+  howTo: readonly string[];
+  /** Kiriman pertama slot `record` (`POST /api/studio/slots`, amplop buat): payload `contractRecord` lengkap. */
+  record: StudioSlotV2 & { slot: "record"; payload: ContractRecordPayloadV2 };
+  /** Satu badan `studio.chapter/v2` per `chapterKey` outline wajib (`POST /api/studio/chapters`). */
+  chapters: Readonly<Record<string, StudioChapterV2>>;
 }
 
 // ── Nama berkas final (§10) ──────────────────────────────────────────────

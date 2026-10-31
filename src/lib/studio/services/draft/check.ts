@@ -16,6 +16,11 @@
  *   `agentId` dan bawaan ada, payload dry-run = blok + `agentId` bawaan (medan ditambahkan di
  *   akhir objek); selain itu teks blok dikirim persis seperti tertulis. Dengan demikian R08 melihat
  *   identitas yang sama di kedua jalur (`completenessPreview.lastFilledBy`).
+ * - simulasi berurutan (U-05a, D-419): blok bab/slot sesudah blok buat-dokumen yang menarget
+ *   `mission.folder` + `docKey` yang sama menarget dokumen yang AKAN dibuat blok itu. Bila dry-run
+ *   blok tersebut menjawab `META_REQUIRED_FOR_CREATE` (dokumen belum ada), blok di-dry-run ulang
+ *   dengan `template` dan `meta` blok buat ditambahkan (medan yang belum ada saja), sehingga isu
+ *   yang dilaporkan adalah isu isi blok sendiri. Satu aturan untuk CLI `--remote` dan R23 (AC-19).
  */
 import { DRAFT_LIMITS } from "../../contract/env";
 import type { DraftLimitReason } from "../../contract/enums";
@@ -45,6 +50,13 @@ export interface DraftDryRunInput {
 export interface DraftCheckDeps {
   currentRevisionNo(documentId: string): Promise<number | null>;
   dryRun(input: DraftDryRunInput): Promise<DraftDryRunOutcome>;
+  /**
+   * Dipanggil tepat SEBELUM setiap dry-run ulang bersimulasi (U-05a), yaitu dry-run kedua untuk
+   * blok yang sama. R23 menagih bucket `validate` di sini (R2-F2 #7: satu tagihan per dry-run yang
+   * benar-benar dijalankan, KD-43); melempar = pemeriksaan dihentikan tanpa dry-run ulang. CLI tidak
+   * memerlukannya karena setiap dry-run-nya adalah panggilan R08 yang ditagih R08 sendiri.
+   */
+  beforeSimulatedDryRun?(input: DraftDryRunInput): void | Promise<void>;
 }
 
 export interface PreparedDraftCheck {
@@ -70,9 +82,11 @@ export function prepareDraftCheck(markdown: string): PreparedDraftCheck {
 }
 
 /**
- * Jumlah tagihan bucket `validate` untuk satu permintaan R23 (KD-43 + FIX-SEC L-2, D-402): satu per
- * blok yang akan di-dry-run, minimal satu, sehingga draf tanpa blok dry-run (parse, DR-08 lookup DB,
- * echo respons) tetap berbatas laju; tidak pernah ganda bila ada blok.
+ * Jumlah tagihan bucket `validate` di MUKA untuk satu permintaan R23 (KD-43 + FIX-SEC L-2, D-402):
+ * satu per blok yang akan di-dry-run (dry-run pertamanya), minimal satu, sehingga draf tanpa blok
+ * dry-run (parse, DR-08 lookup DB, echo respons) tetap berbatas laju; tidak pernah ganda bila ada
+ * blok. Dry-run ulang bersimulasi (U-05a) ditagih terpisah, satu per dry-run ulang yang benar-benar
+ * dijalankan, lewat {@link DraftCheckDeps.beforeSimulatedDryRun} (R2-F2 #7).
  */
 export function draftValidateCharges(prepared: Pick<PreparedDraftCheck, "dryRunBlocks">): number {
   return Math.max(1, prepared.dryRunBlocks.length);
@@ -157,9 +171,102 @@ export async function completeDraftCheck(
     const stale = staleBasisIssue(markdown, extracted, basis, await deps.currentRevisionNo(basis.documentId));
     if (stale) result.issues.push(stale);
   }
+  const sources = sequentialCreateSources(extracted);
   for (const b of result.blocks) {
     if (!b.valid) continue;
-    applyDryRun(b, await deps.dryRun(dryRunInputOf(extracted.blocks[b.index - 1], defaultAgentId)));
+    const input = dryRunInputOf(extracted.blocks[b.index - 1], defaultAgentId);
+    let outcome = await deps.dryRun(input);
+    const src = sources.get(b.index);
+    if (src !== undefined && needsCreateEnvelope(outcome)) {
+      const simulated = simulatedCreateInput(input, extracted.blocks[src - 1].value as Record<string, unknown>);
+      await deps.beforeSimulatedDryRun?.(simulated);
+      outcome = await deps.dryRun(simulated);
+    }
+    applyDryRun(b, outcome);
   }
   return finalizeDraftResult(result);
+}
+
+// ── Simulasi berurutan (U-05a, D-419) ───────────────────────────────────
+
+/** Kode R08 untuk kiriman bab/slot ke dokumen yang belum ada tanpa `template` + `meta.title`. */
+export const META_REQUIRED_FOR_CREATE = "META_REQUIRED_FOR_CREATE";
+
+/** Target buat-dokumen: folder misi + docKey efektif (bawaan C23 = slug templat). */
+export interface DraftCreateTarget {
+  folder: string;
+  docKey: string;
+}
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function nonEmpty(v: unknown): v is string {
+  return typeof v === "string" && v.trim() !== "";
+}
+
+/** Target misi blok bab/slot (`target.mission.folder`, tanpa documentId/docNumber); docKey null = tidak ditulis. */
+export function draftMissionTargetOf(value: Record<string, unknown>): { folder: string; docKey: string | null } | null {
+  if (value.$schema !== "studio.slot/v2" && value.$schema !== "studio.chapter/v2") return null;
+  const t = value.target;
+  if (!isObj(t) || t.documentId !== undefined || t.docNumber !== undefined) return null;
+  if (!isObj(t.mission) || !nonEmpty(t.mission.folder)) return null;
+  return { folder: t.mission.folder, docKey: nonEmpty(t.docKey) ? t.docKey : null };
+}
+
+/**
+ * Blok buat-dokumen: bab/slot bertarget misi dengan `template.slug` dan `meta.title`, atau
+ * `studio.doc/v2` dengan `mission.folder`. null bila bukan blok buat.
+ */
+export function draftCreateTargetOf(value: Record<string, unknown>): DraftCreateTarget | null {
+  const slug = isObj(value.template) && nonEmpty(value.template.slug) ? value.template.slug : null;
+  const title = isObj(value.meta) && nonEmpty(value.meta.title);
+  if (slug === null || !title) return null;
+  if (value.$schema === "studio.doc/v2") {
+    if (!isObj(value.mission) || !nonEmpty(value.mission.folder)) return null;
+    return { folder: value.mission.folder, docKey: nonEmpty(value.docKey) ? value.docKey : slug };
+  }
+  const t = draftMissionTargetOf(value);
+  return t === null ? null : { folder: t.folder, docKey: t.docKey ?? slug };
+}
+
+/**
+ * Peta indeks blok (1-based) -> indeks blok buat-dokumen SEBELUMNYA yang ditargetnya: folder misi
+ * sama dan docKey sama (docKey blok kosong = docKey efektif blok buat). Blok buat terdekat menang.
+ * Blok dengan JSON tidak sah diabaikan.
+ */
+export function sequentialCreateSources(ex: ExtractedDraft): Map<number, number> {
+  const out = new Map<number, number>();
+  const creates: Array<{ index: number; target: DraftCreateTarget }> = [];
+  ex.blocks.forEach((block, i) => {
+    const index = i + 1;
+    if (!isObj(block.value)) return;
+    const own = draftMissionTargetOf(block.value);
+    if (own !== null) {
+      for (let k = creates.length - 1; k >= 0; k--) {
+        const c = creates[k];
+        if (c.target.folder === own.folder && (own.docKey ?? c.target.docKey) === c.target.docKey) {
+          out.set(index, c.index);
+          break;
+        }
+      }
+    }
+    const created = draftCreateTargetOf(block.value);
+    if (created !== null) creates.push({ index, target: created });
+  });
+  return out;
+}
+
+/** Dry-run menjawab dokumen belum ada (`META_REQUIRED_FOR_CREATE`, isu blok atau penolakan). */
+export function needsCreateEnvelope(outcome: DraftDryRunOutcome): boolean {
+  return !outcome.valid && Array.isArray(outcome.issues) && outcome.issues.some((i) => isObj(i) && (i.keyword === META_REQUIRED_FOR_CREATE || i.code === META_REQUIRED_FOR_CREATE));
+}
+
+/** Masukan dry-run ulang: payload + `template`/`meta` blok buat (hanya medan yang belum ada). */
+export function simulatedCreateInput(input: DraftDryRunInput, createValue: Record<string, unknown>): DraftDryRunInput {
+  const value: Record<string, unknown> = { ...input.value };
+  if (value.template === undefined && createValue.template !== undefined) value.template = createValue.template;
+  if (value.meta === undefined && createValue.meta !== undefined) value.meta = createValue.meta;
+  return { ...input, value, text: JSON.stringify(value) };
 }

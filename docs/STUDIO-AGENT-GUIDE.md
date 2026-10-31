@@ -130,11 +130,13 @@ badan (dan `agentId`) dibaca: agen yang berbagi satu rahasia berbagi kuota impor
    }
    ```
 9. **Laporan kerja agen.** Laporan kerja baru (pengganti laporan kerja Markdown di `docs/`) ditulis
-   ke templat `laporan-kerja-agen`: slot `record` lewat `POST /api/studio/slots` (status, butir,
-   bukti), lalu bab 1..5 lewat `POST /api/studio/chapters`. Status diperbarui dengan mengirim ulang
-   slot `record`; laporan dicari lewat `GET /api/studio/contracts` dan `GET /api/studio/search`;
-   draf lokal diperiksa dengan `scripts/studio/draft-check.ts` atau `POST /api/studio/drafts/check`
-   (seksi 17).
+   ke templat `laporan-kerja-agen`. Baca hanya [seksi 17.0](#170-resep-satu-halaman): salin templat
+   draf MD (slot `record` + bab 1..5), lalu satu perintah
+   `npx tsx scripts/studio/studio-report.ts submit draf.md` membuat, mengirim, merender, dan
+   memverifikasi laporan; `studio-report.ts update <documentId> draf.md` memperbaruinya. Badan kiriman
+   dan keluaran `draft-check --json` tidak disimpan sebagai berkas; yang ada di disk hanya draf MD
+   dan berkas final unduhan. Laporan dicari lewat `GET /api/studio/contracts` dan
+   `GET /api/studio/search` (seksi 17.7).
 
 ---
 
@@ -152,11 +154,15 @@ Semua route Studio menolak pemanggil anonim dengan `401 {"error":"Unauthorized"}
 POST/PATCH JSON wajib `Content-Type: application/json`; jenis lain ditolak
 `415 UNSUPPORTED_MEDIA_TYPE` (multipart hanya untuk `POST /api/studio/assets`).
 
+Badan dikirim dari memori atau lewat stdin, tidak disimpan sebagai berkas `.json` (seksi 17.0).
+Contoh dari shell, badan bab dari importer resmi (seksi 5.6) dialirkan langsung ke `curl`:
+
 ```bash
-curl -sS -X POST "$HQ_URL/api/studio/chapters" \
-  -H "Content-Type: application/json" \
-  -H "x-internal-secret: $INTERNAL_API_SECRET" \
-  --data-binary @bab-3.json
+npx tsx scripts/studio/md2chapter.ts bab3.md --key 3 --doc-id "$DOC_ID" --submission \
+  | curl -sS -X POST "$HQ_URL/api/studio/chapters" \
+      -H "Content-Type: application/json" \
+      -H "x-internal-secret: $INTERNAL_API_SECRET" \
+      --data-binary @-
 ```
 
 Setiap respons non-401 membawa `x-correlation-id`; nilai yang sama tercatat di log tahan lama
@@ -840,14 +846,18 @@ bagian; jangan mengulang tanpa mengubah masukan.
 CLI setara (keluaran byte-identik dengan endpoint, tanpa jaringan):
 
 ```bash
-# bab pertama dokumen baru (membuat dokumen)
+# bab pertama dokumen baru (membuat dokumen): periksa dulu, amplop dicetak ke stdout
 npx tsx scripts/studio/md2chapter.ts bab1.md --key 1 --mission 2026-10-30_misi_b --doc-key laporan-survei \
-  --template datum-gsp --doc-title "Laporan Survei Gardu Induk Cikupa" --submission > bab1.json
-# bab berikutnya ke dokumen yang sudah ada
-npx tsx scripts/studio/md2chapter.ts bab4.md --key 4 --doc-id cmw1doc8k2p4x7q9z3 --submission > bab4.json
+  --template datum-gsp --doc-title "Laporan Survei Gardu Induk Cikupa" --submission
+# bab berikutnya ke dokumen yang sudah ada, dialirkan langsung ke route kirim
+npx tsx scripts/studio/md2chapter.ts bab4.md --key 4 --doc-id cmw1doc8k2p4x7q9z3 --submission \
+  | curl -sS -X POST "$HQ_URL/api/studio/chapters" -H "Content-Type: application/json" \
+      -H "x-internal-secret: $INTERNAL_API_SECRET" --data-binary @-
 ```
 
-Kode keluar 0 = sah, 1 = tidak sah menurut validator v2, 2 = galat pemakaian.
+Kode keluar 0 = sah, 1 = tidak sah menurut validator v2, 2 = galat pemakaian. Amplop tidak disimpan
+sebagai berkas `.json` (seksi 17.0); jalankan tanpa pipa dulu bila perlu melihat hasil dan kode
+keluarnya, karena pipa tetap mengirim keluaran yang tidak sah.
 
 | Markdown | Hasil |
 |---|---|
@@ -1507,8 +1517,9 @@ Bentuk galat: `{ "error": "<pesan yang menyebut perbaikan>", "code": "<KODE>", "
 Pesan galat yang dijelaskan di panduan ini (503 preflight, 404 `ROUTE_NOT_FOUND`, 409 penimpaan PATCH)
 berbahasa Indonesia; sebagian pesan validasi teknis masih berbahasa Inggris. Teks awam yang siap
 diteruskan selalu ada di `details.reason`, `details.forwardToController`, atau `hint`.
-Galat validasi: `details[] = { pointer, keyword, message, checkId? }`. Galat 500 tidak memuat stack
-trace; laporkan `x-correlation-id`.
+Galat validasi: `details[] = { pointer, keyword, message, checkId? }`. Kode mesin dibaca dari `code`
+tingkat atas (bukan `error.code`); id korelasi ada di header `x-correlation-id` (seksi 17.13). Galat
+500 tidak memuat stack trace; laporkan `x-correlation-id`.
 
 | HTTP | Kode | Penyebab | Tindakan agen |
 |---|---|---|---|
@@ -1520,7 +1531,7 @@ trace; laporkan `x-correlation-id`.
 | 400 | `CHANGE_NOTE_REQUIRED` | versi templat tanpa `changeNote` | isi `changeNote` (pengguna templat) |
 | 400 | `ADDRESS_INVALID` | alamat tidak sesuai tata bahasa | ambil alamat dari respons terakhir, enkode URL |
 | 400 | `PARAM_CLASS_T_READONLY` | menulis kunci turunan (kelas T) | buang kunci itu; agen tidak mengirim parameter |
-| 400 | `REGISTRY_KIND_UNKNOWN` | `kind`/`schemaId` registri salah | pakai nilai dari pesan galat |
+| 400 | `REGISTRY_KIND_UNKNOWN` | `kind`/`schemaId` registri salah atau `kind` tidak diberikan; untuk `kind`, `details` berupa larik satu isu `[{ pointer, keyword, message, received, validKinds, examples }]` (seksi 17.13) | pakai nilai dari `details[0].validKinds` atau `details[0].examples` |
 | 401 | `UNAUTHORIZED` | header rahasia tidak ada atau salah | periksa konfigurasi env; jangan mencoba nilai lain |
 | 403 | `FORBIDDEN` | templat TERBATAS (`details.reason = "TEMPLATE_RESTRICTED"`, mis. `datum-manual-000`) pada kirim, validate, PATCH, atau artefak; `renumberChapters` non-ADMIN; refresh render-env | pakai templat lain atau teruskan ke controller; jangan ulang |
 | 403 | `PARAM_CLASS_K_FORBIDDEN` | menulis kunci kelas K | buang kunci itu |
@@ -1571,7 +1582,7 @@ trace; laporkan `x-correlation-id`.
 | 422 | `CHART_CUSTOM_FORM_UNSUPPORTED` | kombinasi `form` × bentuk data `chart.custom` di luar sembilan bentuk terdaftar (`details.supported`) | pakai kombinasi dari tabel seksi 17.12 atau kode chart preset |
 | 422 | `DATUM-31` | diagram berupa Mermaid | tulis ulang sebagai `spec` simpul dan penghubung |
 | 422 | `DATUM-39` | resolusi gambar terlalu kecil untuk templat | kirim gambar lebih besar |
-| 429 | `RATE_LIMITED` | batas laju terlampaui; kuota `render` dan `validate` dihitung per identitas, atau per identitas + `agentId` bila badan membawanya (di bawah plafon identitas; seksi 17.11), sedangkan kuota importer (`import`) dan kueri (`query`) selalu per identitas: kiriman, PATCH, render, render ulang, artefak, dan validate `?preview=html` berbagi bawaan 30 per 60 detik (kiriman dihitung walau tidak merender); validate R08 punya kuota tersendiri 120 per 60 detik; importer Markdown 60 per 60 detik (`?validate=1` juga kuota validate); cek draf R23 memakai kuota validate, satu per blok (minimal satu per panggilan); kueri R21/R22 punya kuota `query` 120 per 60 detik; unggah aset 60 per menit; atau kuota byte aset 24 jam habis | tunggu `Retry-After` detik, lalu ulang sekali; untuk banyak bab, beri jeda antar kiriman |
+| 429 | `RATE_LIMITED` | batas laju terlampaui; kuota `render` dan `validate` dihitung per identitas, atau per identitas + `agentId` bila badan membawanya (di bawah plafon identitas; seksi 17.11), sedangkan kuota importer (`import`) dan kueri (`query`) selalu per identitas: kiriman, PATCH, render, render ulang, artefak, dan validate `?preview=html` berbagi bawaan 30 per 60 detik (kiriman dihitung walau tidak merender); validate R08 punya kuota tersendiri 120 per 60 detik; importer Markdown 60 per 60 detik (`?validate=1` juga kuota validate); cek draf R23 memakai kuota validate, satu per dry-run yang dijalankan (bab atau slot sesudah blok pembuat dokumen yang belum ada dihitung dua; minimal satu per panggilan; seksi 17.9); kueri R21/R22 punya kuota `query` 120 per 60 detik; unggah aset 60 per menit; atau kuota byte aset 24 jam habis | tunggu `Retry-After` detik, lalu ulang sekali; untuk banyak bab, beri jeda antar kiriman |
 | 500 | `PDF_CONVERT_FAILED`, `HTML_RENDER_FAILED`, `RENDER_FAILED`, `STORAGE_ROOT_FORBIDDEN`, `STORAGE_WRITE_FAILED` pada render | galat render atau penyimpanan berkas keluaran | isi sudah tersimpan: render ulang; bila berulang laporkan `x-correlation-id` |
 | 500 | `STORAGE_WRITE_FAILED` pada unggah aset atau kiriman ber-`assets` (`details.reason = "insufficient_disk_space"`) | ruang disk server kurang | aset dan kiriman TIDAK tersimpan; jangan mengulang, laporkan ke operator dengan `x-correlation-id` |
 | 503 | `RENDER_QUEUE_FULL` | antrean render penuh | tunggu `Retry-After` lalu ulang render; kiriman isi tidak terpengaruh |
@@ -1762,6 +1773,259 @@ Contoh JSON di bab ini diperiksa ulang pada 2026-10-31 dengan `scripts/studio/dr
 terhadap server DEV (seksi 17.9); semuanya `valid: true` dengan kode keluar 0. Id dokumen dan pid
 pada contoh adalah dokumen uji server DEV; ganti dengan id dari respons Anda sendiri.
 
+Agen sesi baru cukup membaca seksi 17.0 untuk membuat dan memperbarui laporan. Seksi 17.1 sampai
+17.13 adalah rujukan rinci untuk medan, pencarian, render, dan galat.
+
+### 17.0 Resep satu halaman
+
+**Aturan berkas.** Jangan menyimpan badan kiriman (`studio.slot/v2`, `studio.chapter/v2`,
+`studio.doc/v2`, badan R23) atau keluaran `draft-check --json` sebagai berkas, termasuk di `%TEMP%`.
+Berkas yang boleh ada di disk hanya draf MD laporan dan berkas final unduhan (`--out`). Badan
+dikirim dari memori oleh `studio-report`, atau dari shell lewat pipa stdin
+(`... | curl --data-binary @-`).
+
+**Jalur utama: CLI `studio-report`.** Rahasia dibaca dari env `INTERNAL_API_SECRET` proses agen
+(seksi 2) dan tidak pernah dicetak. CLI dapat dijalankan dari direktori kerja mana pun.
+
+```bash
+# laporan baru: semua blok draf dikirim berurutan, lalu render HTML dan verifikasi
+npx tsx <repo>/scripts/studio/studio-report.ts submit draf.md --remote http://127.0.0.1:<port>
+# pembaruan: draf yang sama, isi yang berubah (status, reportedAt, items, evidence, bab)
+npx tsx <repo>/scripts/studio/studio-report.ts update <documentId> draf.md --remote http://127.0.0.1:<port>
+```
+
+- **`submit <draf.md>`**: draf diperiksa lokal lebih dulu (aturan `draft-check`). Blok dikirim
+  berurutan: `studio.slot/v2` ke R13, `studio.chapter/v2` ke R12, `studio.doc/v2` ke R04. Blok bab
+  atau slot sesudah blok pembuat dokumen yang menarget `mission.folder` + `docKey` sama dikirim
+  dengan `target: { documentId }` dokumen yang baru dibuat. Lalu kelengkapan R15; bila `COMPLETE`,
+  render R17 (HTML), unduh R10 ke memori, cocokkan sha256, dan `HEAD` R10 `?verify=1`.
+- **`update <documentId> <draf.md>`**: basis dibaca lewat R20; target setiap blok diganti
+  `{ documentId }`, `baseRevisionNo` diisi otomatis bila tidak ditulis, dan hanya blok yang isinya
+  berbeda dari basis yang dikirim. Blok `studio.doc/v2` ditolak (kode `UPDATE_DOC_BLOCK_UNSUPPORTED`,
+  keluar 1). `template` dan `meta` di blok `record` boleh tetap ada: judul yang sama diterima, judul
+  berbeda ditolak `409 META_CONFLICT`. Lalu kelengkapan, render, dan verifikasi seperti `submit`.
+
+| Opsi | Isi |
+|---|---|
+| `--remote <url>` | server Studio; bawaan env `HQ_URL`. Arahkan hanya ke server lokal (`http://127.0.0.1:<port>`); pengalihan 3xx tidak diikuti agar rahasia tidak diteruskan |
+| `--agent-id <id>` | `agentId` (1..80) untuk blok tanpa medan `agentId` dan untuk render; medan `agentId` di blok menang |
+| `--mission <folder>` | (`submit` saja) ganti folder misi blok pembuat dokumen dan blok sesudahnya; `docKey` tidak ikut diganti |
+| `--allow-example` | izinkan blok yang menarget misi atau `docKey` contoh registri (bawaan: ditolak `EXAMPLE_TARGET`, lihat templat di bawah). Hanya untuk uji contoh, bukan laporan sungguhan |
+| `--out <dir>` | simpan berkas final ke `<dir>` dengan nama dari `X-Studio-Final-Filename` (seksi 17.8). Nama itu harus lolos pola nama final C51 (`<docNumberSafe>_rev<n>_<YYYYMMDDTHHMMSSZ>_<sha8>.<ext>`, tanpa pemisah path); selain itu `OUT_NAME_UNSAFE` (keluar 2) dan tidak ada yang ditulis. Berkas bernama sama yang isinya berbeda tidak ditimpa (`OUT_EXISTS`). Tanpa opsi ini CLI tidak menulis berkas apa pun |
+| `--require-complete` | keluar 3 bila dokumen belum `COMPLETE`; tanpa opsi ini render dilewati dan keluar 0 |
+| `--json` | keluaran mesin (JSON) di stdout |
+| `--timing <csv>`, `--step <id>` | HANYA untuk uji coba terukur: menambah baris waktu (header 20 kolom, RFC 4180) ke `<csv>`; kolom konteks dari env `STUDIO_TIMING_RUN_ID`, `STUDIO_TIMING_ARM` (bawaan `B`), `STUDIO_TIMING_REPORT_ID`, `STUDIO_TIMING_ORDER`, `STUDIO_TIMING_SESSION_ID`; `--step` = `step_id` (bawaan nama perintah). Sel yang diawali `=`, `+`, `-`, `@`, tab, atau CR diberi awalan `'` agar tidak terbaca sebagai formula spreadsheet (kecuali `-` saja dan bilangan negatif). Kerja biasa tidak memakai keduanya |
+
+Keluaran sukses mencetak satu baris per blok (rute, status HTTP, revisi, cid), lalu `documentId`,
+`revisionNo`, `sha16`, nama final, dan hasil verifikasi. Dengan `--json`: `{ ok: true, command,
+documentId, docNumber, revisionNo, completeness, steps, render, renderSkipped, timingRows,
+wallSeconds }`; `render` = `{ fileId, format, finalFileName, bytes, sha256, sha16, verified, savedTo }`
+atau `null` bila dilewati. Galat dicetak ke stderr sebagai `studio-report: galat <code> (HTTP <n>)
+pada <langkah>: <pesan>` disertai `pointer` dan `x-correlation-id`; dengan `--json` stdout tetap JSON
+`{ ok: false, exitCode, fatal: { code, message, httpStatus?, correlationId?, pointer?, step?, details?, progress? } }`.
+Batas waktu setiap panggilan HTTP 60 detik.
+
+| Kode keluar | Arti |
+|---|---|
+| `0` | sukses (termasuk dokumen belum lengkap tanpa `--require-complete`) |
+| `1` | galat isi: draf tidak lolos cek lokal, server menolak kiriman (4xx selain 401 dan 429), sha atau verifikasi berkas tidak cocok |
+| `2` | galat lingkungan atau pemakaian: argumen, rahasia, jaringan, pengalihan 3xx (`REMOTE_REDIRECT`), 401 (`REMOTE_UNAUTHORIZED`, periksa `INTERNAL_API_SECRET`), 429 (`RATE_LIMITED`), 5xx, target contoh (`EXAMPLE_TARGET`), berkas `--out` (`OUT_NAME_UNSAFE`, `OUT_EXISTS`) atau `--timing` |
+| `3` | dokumen belum lengkap dan `--require-complete` diberikan |
+
+**Kiriman terputus.** Bila galat terjadi sesudah sedikitnya satu blok tersimpan, kode keluar tetap
+mengikuti penyebabnya (1 atau 2). Stderr menambah baris `dokumen`, `sudah tersimpan`, `langkah gagal`,
+dan `lanjutkan`; dengan `--json` isinya ada di `fatal.progress` = `{ documentId, docNumber,
+revisionNo, completedSteps, failedStep, allBlocksSent, resume }`. `revisionNo` = revisi terakhir yang
+tersimpan; `allBlocksSent: true` berarti semua blok sudah tersimpan dan galatnya di kelengkapan,
+render, unduh, atau simpan. Cara melanjutkan: perbaiki penyebabnya, lalu jalankan ulang perintah yang
+sama dengan opsi yang sama. Kiriman ulang idempoten: blok yang sudah tersimpan dijawab `unchanged`
+(atau dilewati pada `update`), jadi tidak ada revisi ganda. Sesudah `submit` yang terputus boleh juga
+`update <documentId> draf.md` dengan `documentId` dari `fatal.progress`. Galat keluar 1 atau 2 tanpa
+`progress` berarti belum ada blok yang tersimpan.
+
+**Templat draf siap salin.** Isinya sama persis dengan contoh registri `GET /api/studio/registry?kind=contracts`
+`items[0].examples` (`record` dan `chapters["1".."5"]`). Contoh tidak memuat ID dokumen atau pid nyata:
+blok bab menarget misi + `docKey` yang sama dengan blok `record` (sehingga satu draf membuat dokumen dan
+kelima bab), dan `refs` tidak ada karena harus menunjuk dokumen dan pid nyata (seksi 17.3). Salinan apa
+adanya ditolak `studio-report` (langkah wajib di bawah). Bentuk kepala dan blok dijelaskan di seksi 17.9.
+
+**Langkah WAJIB sebelum kirim: ganti misi dan `docKey` contoh.** Semua blok templat menarget misi
+contoh `2026-10-31_misi_contoh` dan `docKey` `laporan-kerja-penulis`. Ganti keduanya di `record` dan
+di setiap bab dengan folder misi Anda dan `docKey` yang unik per laporan (satu `docKey` = satu
+dokumen). Sebelum kiriman pertama, `studio-report` memeriksa setiap blok: blok yang masih menarget
+misi ATAU `docKey` contoh ditolak `EXAMPLE_TARGET` (keluar 2) dan tidak ada yang dikirim.
+`--mission <folder>` hanya mengganti folder, jadi `docKey` contoh tetap ditolak. `--allow-example`
+mematikan penjaga ini dan tidak dipakai untuk laporan sungguhan. Penjaga ini hanya ada di
+`studio-report`: `draft-check` meloloskan templat apa adanya, dan kiriman HTTP langsung dengan kunci
+contoh akan membuat atau menulis ke dokumen contoh bersama. Ganti juga judul, `agentId`, seluruh
+payload, dan prosa bab; jangan ubah nama medan atau bentuk blok.
+
+````markdown
+# DRAF Laporan kerja PSIKOTES-1008
+tujuan: laporkan penulisan bab 2 kajian kondisi Gardu Induk Cikupa
+langkah-berikut: kirim bab 3 sesudah data ukur suhu minyak TD-1 diterima
+basis: baru
+
+```json
+{
+  "$schema": "studio.slot/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "template": { "slug": "laporan-kerja-agen" },
+  "meta": { "title": "Laporan kerja penulisan kajian gardu Cikupa" },
+  "slot": "record",
+  "payload": {
+    "type": "contractRecord",
+    "status": "complete",
+    "verdict": "PASS",
+    "owner": "gsp-document-writer",
+    "initiator": "gsp-master01",
+    "taskRef": "PSIKOTES-1008",
+    "reportedAt": "2026-10-31T16:40+07:00",
+    "due": "2026-11-03",
+    "phase": { "from": "writing", "to": "review" },
+    "cardIds": ["t_249c6b84"],
+    "evidence": [
+      { "kind": "file", "ref": "out/kajian-gardu-cikupa_bab2.json", "sha256": "55d324b1", "bytes": 48213, "line": 1, "item": "t_249c6b84", "note": { "text": "Badan bab 2 yang dikirim." } },
+      { "kind": "command", "ref": "npx tsx scripts/studio/draft-check.ts draf.md", "exitCode": 0, "item": "t_249c6b84", "note": { "text": "Draf lolos tanpa isu sebelum dikirim." } },
+      { "kind": "correlation", "ref": "3b684687-59df-408a-a65d-f116efeb295d", "note": { "text": "Kiriman bab 2 tersimpan." } }
+    ],
+    "items": [
+      { "key": "t_249c6b84", "title": { "text": "Tulis bab 2 kajian kondisi gardu" }, "status": "done", "owner": "gsp-document-writer", "phase": "writing" },
+      { "key": "BAB-3", "title": { "text": "Tabel temuan per gardu" }, "status": "blocked", "due": "2026-11-03", "dependsOn": ["t_249c6b84"] }
+    ]
+  }
+}
+```
+
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "chapter": { "key": "1", "title": { "text": "Ringkasan" }, "sections": [
+    { "title": { "text": "Hasil" }, "blocks": [
+      { "type": "paragraph", "role": "lede", "text": "Bab 2 kajian kondisi Gardu Induk Cikupa selesai ditulis, lolos pemeriksaan draf tanpa isu, dan tersimpan di Studio sebagai revisi baru laporan ini." },
+      { "type": "paragraph", "text": "Tabel temuan per gardu untuk bab 3 belum dapat ditulis karena data ukur suhu minyak dari tim lapangan belum diterima sampai laporan ini dikirim." },
+      { "type": "list", "items": [ { "text": "Bab 2 lolos draft-check tanpa isu." }, { "text": "Bab 3 terhambat data ukur lapangan." } ] }
+    ] }
+  ] }
+}
+```
+
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "chapter": { "key": "2", "title": { "text": "Rincian kerja" }, "sections": [
+    { "title": { "text": "Langkah" }, "blocks": [
+      { "type": "list", "ordered": true, "items": [
+        { "text": "Baca data inspeksi 2026-10-20 dan catatan lapangan." },
+        { "text": "Tulis bab 2 sebagai draf Markdown, lalu jalankan draft-check." },
+        { "text": "Kirim bab 2 ke Studio dan catat cid respons." } ] }
+    ] },
+    { "title": { "text": "Berkas diubah" }, "blocks": [
+      { "type": "table", "caption": { "text": "Berkas yang ditulis pada tugas ini." },
+        "columns": [ { "role": "id" }, { "role": "text" } ],
+        "rows": [
+          { "kind": "header", "cells": [ { "text": "Berkas" }, { "text": "Perubahan" } ] },
+          { "cells": [ { "text": "out/kajian-gardu-cikupa_bab2.json" }, { "text": "Badan bab 2 baru" } ] },
+          { "cells": [ { "text": "draf.md" }, { "text": "Draf Markdown bab 2" } ] } ],
+        "source": { "text": "Catatan kerja gsp-document-writer, 2026-10-31." } }
+    ] }
+  ] }
+}
+```
+
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "chapter": { "key": "3", "title": { "text": "Bukti" }, "sections": [
+    { "title": { "text": "Pemeriksaan" }, "blocks": [
+      { "type": "paragraph", "text": "Setiap pemeriksaan dijalankan ulang sesudah kiriman terakhir, dan daftar bukti terstruktur beserta sha256 dan kode keluar tercatat di slot catatan laporan." },
+      { "type": "table", "caption": { "text": "Hasil pemeriksaan sebelum kiriman." },
+        "columns": [ { "role": "text" }, { "role": "numeral" }, { "role": "text" } ],
+        "rows": [
+          { "kind": "header", "cells": [ { "text": "Pemeriksaan" }, { "text": "Kode keluar" }, { "text": "Hasil" } ] },
+          { "cells": [ { "text": "draft-check draf.md" }, { "text": "0" }, { "text": "Tanpa isu" } ] },
+          { "cells": [ { "text": "Dry-run validate bab 2" }, { "text": "0" }, { "text": "Sah" } ] } ],
+        "source": { "text": "Keluaran perintah pemeriksaan, 2026-10-31." } },
+      { "type": "paragraph", "role": "note", "text": "Studio tidak membuka berkas bukti yang dirujuk, sehingga rujukan pada tabel dan catatan hanya berfungsi sebagai petunjuk bagi pembaca dan pencarian." }
+    ] }
+  ] }
+}
+```
+
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "chapter": { "key": "4", "title": { "text": "Isu terbuka" }, "sections": [
+    { "title": { "text": "Hambatan" }, "blocks": [
+      { "type": "paragraph", "text": "Satu butir kerja masih terhambat karena menunggu masukan dari pihak di luar tim penulis, dan butir itu tidak dapat diselesaikan oleh agen sendiri." },
+      { "type": "list", "items": [
+        { "text": "BAB-3: data ukur suhu minyak TD-1 belum diterima dari tim lapangan." },
+        { "text": "Foto PMT-2 resolusi rendah; perlu foto ulang sebelum dipakai di bab 3." } ] },
+      { "type": "paragraph", "role": "pivot", "text": "Tanpa data ukur dari tim lapangan, bab 3 hanya dapat dikirim sebagai draf dan laporan ini belum boleh dirender penuh untuk diterbitkan." }
+    ] }
+  ] }
+}
+```
+
+```json
+{
+  "$schema": "studio.chapter/v2",
+  "agentId": "gsp-document-writer",
+  "target": { "mission": { "folder": "2026-10-31_misi_contoh" }, "docKey": "laporan-kerja-penulis" },
+  "chapter": { "key": "5", "title": { "text": "Langkah berikut" }, "sections": [
+    { "title": { "text": "Rencana" }, "blocks": [
+      { "type": "list", "ordered": true, "items": [
+        { "text": "Minta data ukur TD-1 ke tim lapangan." },
+        { "text": "Tulis dan kirim bab 3 setelah data diterima." } ] },
+      { "type": "paragraph", "role": "closingAction", "text": "Controller diminta meneruskan permintaan data ukur suhu minyak TD-1 kepada tim lapangan paling lambat 2026-11-01 agar bab 3 dapat diselesaikan tepat waktu." }
+    ] }
+  ] }
+}
+```
+````
+
+Templat ini lolos `draft-check --remote --json` (6 blok `valid: true`, kode keluar 0). Uji
+`studio-report submit` di server DEV pada 2026-10-31 (`agentId` `doc-r2-f2`): salinan apa adanya
+keluar 2 `EXAMPLE_TARGET` tanpa kiriman; dengan `--mission` saja tetap `EXAMPLE_TARGET` (karena
+`docKey`); dengan misi `2026-10-31_docr2f2`, `docKey` `lapkerja-docr2f2-a`, dan `agentId` blok
+diganti, enam kiriman `201` (rev1 sampai rev6), `COMPLETE`, HTML terverifikasi, keluar 0, dokumen
+`<documentId>` (`<nomorDokumen>`), cid kiriman pertama `0a882cb5-8dad-4dfd-a021-18be17a9bd46`. Pada
+uji sebelumnya, `update` dengan draf yang sama (status `partial`, `reportedAt` baru) hanya mengirim
+blok `record` (`201` rev7, cid `3f0d3a34-72f7-4937-b560-8f14de140e73`); kelima bab dilewati karena
+sama dengan basis.
+
+Untuk pembaruan, ubah draf yang sama: `status`, `reportedAt`, status butir, bukti baru, dan bab yang
+berubah, lalu jalankan `update` dengan `documentId` dari keluaran `submit`. CLI membaca basis sendiri
+lewat R20; kepala `basis:` hanya catatan dan boleh diganti `<documentId>@rev<n>` agar
+`draft-check --remote` dapat memperingatkan basis yang tertinggal. Blok yang tidak berubah tidak
+dikirim. Payload `record` menggantikan payload lama seutuhnya (seksi 17.5), jadi blok `record` di
+draf harus tetap lengkap.
+
+**Alternatif HTTP, hanya untuk klien non-CLI.** Urutan panggilan yang dijalankan `studio-report`;
+badan dibangun dan dikirim dari memori klien, bukan dari berkas:
+
+| Langkah | Route | Isi |
+|---|---|---|
+| 1 | R03 `GET /api/studio/registry?kind=contracts` | enum, kerangka, dan `items[0].examples` (seksi 17.2) |
+| 2 | R13 `POST /api/studio/slots` (atau R04 untuk `studio.doc/v2`) | blok `record` beramplop buat; simpan `document.id` (seksi 17.4) |
+| 3 | R12 `POST /api/studio/chapters` | satu panggilan per bab 1..5 dengan `target: { documentId }` |
+| 4 | R15 `GET /api/studio/documents/[id]/completeness` | lanjut bila `COMPLETE` (seksi 17.6) |
+| 5 | R17 `POST /api/studio/documents/[id]/render` | `{ "agentId": "...", "scope": "document" }`, HTML bawaan (seksi 17.8) |
+| 6 | R10 `GET /api/studio/files/{id}` lalu `HEAD ...?verify=1` | cocokkan sha256 dan nama final (seksi 17.8) |
+
+Pembaruan lewat HTTP: R20 `?slot=record&shape=submission` lalu R13 dengan `baseRevisionNo` yang dibaca
+(seksi 17.5). Galat setiap langkah dibaca dari `code` tingkat atas dan header `x-correlation-id`
+(seksi 17.13).
+
 ### 17.1 Kapan memakai laporan kerja
 
 - **Setiap laporan kerja baru** sejak fase ini: laporan selesai tugas, laporan baris rencana,
@@ -1774,8 +2038,10 @@ pada contoh adalah dokumen uji server DEV; ganti dengan id dari respons Anda sen
   (`lastFilledBy`, `agent:<agentId>`) tetapi tidak menolak agen lain yang menulis laporan yang sama
   (D-361 U-3). Aturan kerjanya tetap: hanya penanggung jawab (`owner`) yang mengirim slot `record`
   dan bab laporannya; agen lain mengirim laporan sendiri dan merujuknya lewat `refs`.
-- Jangan menyimpan salinan JSON mentah laporan di disk bersama sebagai sumber kedua. Sumber
-  kebenaran adalah dokumen Studio; draf lokal (seksi 17.9) hanya titik simpan sementara.
+- Jangan menyimpan salinan JSON mentah laporan, badan kiriman, atau keluaran `draft-check --json`
+  sebagai berkas (aturan berkas seksi 17.0). Sumber kebenaran adalah dokumen Studio; draf MD lokal
+  (seksi 17.9) hanya titik simpan sementara, dan berkas final unduhan adalah satu-satunya keluaran
+  yang disimpan.
 
 ### 17.2 Templat dan kerangka
 
@@ -1785,7 +2051,7 @@ parameter lain ditolak `400 SCHEMA_INVALID`, pointer `/query/<nama>`). Respons
 
 | Medan entri | Nilai `agentWorkReport` |
 |---|---|
-| `templateSlug` / `tier` / `typeCode` | `laporan-kerja-agen` / `NOTA` / `LAP` (nomor dokumen berbentuk `001/GSP/LAP/X/2026`) |
+| `templateSlug` / `tier` / `typeCode` | `laporan-kerja-agen` / `NOTA` / `LAP` (nomor dokumen berbentuk `<nomorDokumen>`, mis. pola `NNN/GSP/LAP/X/2026`) |
 | `skeleton` | `record` (Catatan Laporan, wajib, tak berulang), `content` (Isi Laporan, wajib, bab berulang), `references` (Referensi, opsional) |
 | `outline` | bab wajib `1` Ringkasan, `2` Rincian kerja, `3` Bukti, `4` Isu terbuka, `5` Langkah berikut |
 | `statuses` | status laporan: `draft`, `complete`, `partial`, `blocked`, `needs-review` |
@@ -1796,6 +2062,7 @@ parameter lain ditolak `400 SCHEMA_INVALID`, pointer `/query/<nama>`). Respons
 | `limits` | batas jumlah butir, bukti, rujukan (seksi 13) |
 | `labels`, `aliases` | label tampil (milik templat; agen tidak mengirim label) dan alias generator seksi 17.10 |
 | `defaultFormats` | `["HTML"]` (seksi 17.8) |
+| `examples` | badan contoh siap salin yang lolos dry-run R08: `howTo` (petunjuk penggantian), `record` (`studio.slot/v2` beramplop buat, payload lengkap), `chapters["1".."5"]` (`studio.chapter/v2` per bab dengan paragraf, list, tabel, peran); dasar templat draf seksi 17.0 |
 
 Ambil enum dari respons ini, bukan dari salinan lokal: kode yang ditulis agen harus persis sama
 (huruf kecil dengan tanda hubung untuk status, huruf besar untuk vonis). Label seperti "Selesai"
@@ -1872,18 +2139,21 @@ dari sekuens (`.../LAP/...`), dan menyimpan revisi 1.
 }
 ```
 
-Panggilan lengkapnya (autentikasi: seksi 2). Simpan badan di atas sebagai `record.json`, lalu:
+Jalur utama: tulis badan di atas sebagai blok `json` di draf MD dan kirim dengan `studio-report
+submit` (seksi 17.0), yang juga mengirim bab dan merender. Badan tidak disimpan sebagai berkas
+`.json`. Bila harus memanggil route langsung dari shell (autentikasi: seksi 2), alirkan blok draf ke
+`curl` lewat stdin:
 
 ```bash
-curl -sS -X POST "$HQ_URL/api/studio/slots" \
+npx tsx scripts/studio/draft-check.ts draf.md --emit 1 | curl -sS -X POST "$HQ_URL/api/studio/slots" \
   -H "Content-Type: application/json" \
   -H "x-internal-secret: $INTERNAL_API_SECRET" \
-  --data-binary @record.json
+  --data-binary @-
 ```
 
 Kiriman bab (`POST /api/studio/chapters`) dan pembaruan slot (seksi 17.5) memakai bentuk panggilan
-yang sama, hanya path dan badannya yang berbeda. Rahasia dibaca dari env; jangan menuliskannya ke
-berkas badan atau log.
+yang sama, hanya path dan nomor blok `--emit` yang berbeda. Rahasia dibaca dari env; jangan
+menuliskannya ke draf atau log.
 
 Respons `201` memuat `document.id`, `revision.revisionNo` 1, `slot.pid` (pid catatan `F:record`),
 dan kelengkapan `INCOMPLETE` dengan `missingRequired` `content:1`..`content:5`. Simpan
@@ -1894,7 +2164,7 @@ dengan `target: { documentId }`:
 {
   "$schema": "studio.chapter/v2",
   "agentId": "gsp-document-writer",
-  "target": { "documentId": "cmvuz4mn70001v1jgoom5m4qw" },
+  "target": { "documentId": "GANTI-documentId" },
   "chapter": {
     "key": "1",
     "title": { "text": "Ringkasan" },
@@ -1929,7 +2199,7 @@ seutuhnya, jadi kirim catatan lengkap, bukan hanya medan yang berubah. Cara pali
 {
   "$schema": "studio.slot/v2",
   "agentId": "gsp-document-writer",
-  "target": { "documentId": "cmvuz4mn70001v1jgoom5m4qw" },
+  "target": { "documentId": "GANTI-documentId" },
   "slot": "record",
   "baseRevisionNo": 7,
   "payload": {
@@ -1942,7 +2212,7 @@ seutuhnya, jadi kirim catatan lengkap, bukan hanya medan yang berubah. Cara pali
     "reportedAt": "2026-10-31T16:40+07:00",
     "cardIds": ["t_249c6b84"],
     "refs": [
-      { "documentId": "cmvuz5jlk0020v1jg9vekh7rp", "pid": "p-pznnphrywf", "rel": "evidence" }
+      { "documentId": "GANTI-documentId-rujukan", "pid": "GANTI-pid", "rel": "evidence" }
     ],
     "evidence": [
       { "kind": "file", "ref": "out/kajian-gardu-cikupa_bab2.json", "bytes": 48213, "sha256": "55d324b1" },
@@ -1999,7 +2269,7 @@ dikenal, ganda, atau tidak sah, termasuk nilai yang memuat byte NUL (`%00`), dit
 | Parameter | Isi |
 |---|---|
 | `mission`, `docKey` | folder misi (cocok tepat) dan kunci dokumen |
-| `docNumber` | nomor dokumen tepat (`001/GSP/LAP/X/2026`) atau bentuk aman nama berkas (`001-GSP-LAP-X-2026`, seksi 17.8) |
+| `docNumber` | nomor dokumen tepat (`<nomorDokumen>`, mis. pola `NNN/GSP/LAP/X/2026`) atau bentuk aman nama berkas (pola `NNN-GSP-LAP-X-2026`, seksi 17.8) |
 | `kind` | `agentWorkReport` |
 | `status` | satu atau beberapa status dipisah koma (maks 8), mis. `blocked,needs-review` |
 | `cardId` | kartu `t_xxxxxxxx`; cocok dengan `cardIds` maupun `items[].key` berpola kartu |
@@ -2012,7 +2282,11 @@ Respons `200 { contracts, nextCursor }`. Setiap butir memuat `documentId`, `docN
 `kind`, `status`, `owner`, `taskRef`, `cardIds`, `dueOn`, `revisionNo`,
 `completeness: { status, missingRequired }`, `missionFolder`, `docKey`, `updatedAt`. `status` dapat
 `null` untuk laporan yang slot `record`-nya belum terisi. Dengan `cardId`, butir juga memuat
-`matchedItems: [{ key, status, pid, title }]`, yaitu butir laporan yang memegang kartu itu.
+`matchedItems: [{ key, status, pid, title }]`: butir `items[]` revisi terkini yang `key`-nya SAMA
+PERSIS dengan `cardId` yang dicari, urut posisi butir. Laporan ikut hasil bila kartu ada di
+`cardIds` ATAU menjadi `key` butir, sehingga laporan yang memuat kartu hanya di `cardIds` (tanpa butir
+berkunci kartu itu) muncul dengan `matchedItems: []`. Untuk status kerja kartu, baca `status` butir di
+`matchedItems`; `status` tingkat laporan adalah status laporan, bukan status kartu.
 
 ```bash
 curl -sS -H "x-internal-secret: $INTERNAL_API_SECRET" \
@@ -2063,7 +2337,7 @@ Setiap `outputs[]` render (juga R05 `outputs` dan R07) memuat `finalFileName`:
 
 ```text
 <nomor dokumen aman>_rev<revisi>_<YYYYMMDDTHHMMSSZ>_<sha8>.<ekstensi>
-001-GSP-LAP-X-2026_rev7_20261030T125539Z_ba290f88.html
+NNN-GSP-LAP-X-2026_rev7_20261030T125539Z_ba290f88.html
 ```
 
 Nomor dokumen aman = karakter di luar `A-Z a-z 0-9 . -` diganti `-`, tanda hubung beruntun
@@ -2102,10 +2376,10 @@ Markdown lokal yang memuat kiriman siap pakai. Bentuknya tetap:
 # DRAF Laporan kerja PSIKOTES-1008
 tujuan: catat kemajuan penulisan bab 2 kajian gardu
 langkah-berikut: kirim bab 3 sesudah data ukur tiba
-basis: cmvuz4mn70001v1jgoom5m4qw@rev7
+basis: GANTI-documentId@rev7
 
 ```json
-{ "$schema": "studio.slot/v2", "agentId": "gsp-document-writer", "target": { "documentId": "cmvuz4mn70001v1jgoom5m4qw" }, "slot": "record", "baseRevisionNo": 7,
+{ "$schema": "studio.slot/v2", "agentId": "gsp-document-writer", "target": { "documentId": "GANTI-documentId" }, "slot": "record", "baseRevisionNo": 7,
   "payload": { "type": "contractRecord", "status": "partial", "owner": "gsp-document-writer", "taskRef": "PSIKOTES-1008", "reportedAt": "2026-10-31T12:05+07:00", "cardIds": ["t_249c6b84"] } }
 ```
 ````
@@ -2116,18 +2390,42 @@ basis: cmvuz4mn70001v1jgoom5m4qw@rev7
 - **Blok** = pagar tepat tiga backtick + `json` di kolom 1, ditutup tiga backtick di kolom 1. Setiap
   blok satu objek JSON kiriman `studio.doc/v2`, `studio.chapter/v2`, atau `studio.slot/v2`. Pagar
   lain (`text`, empat backtick) dan teks di luar blok diabaikan. Maks 20 blok per draf.
-- Draf tidak pernah dikirim utuh. Blok dikirim satu per satu ke route kirimnya setelah lolos cek.
+- Draf sendiri tidak pernah dikirim sebagai satu badan. `studio-report` (seksi 17.0) mengirim
+  bloknya satu per satu ke route kirim masing-masing setelah lolos cek lokal.
 
-Periksa draf dengan CLI atau route; keduanya tidak menyimpan apa pun:
+Periksa draf dengan CLI atau route; keduanya tidak menyimpan apa pun. CLI dapat dijalankan dari
+direktori kerja mana pun (`npx tsx <repo>/scripts/studio/draft-check.ts draf.md`):
 
 ```bash
 # lokal: kepala, skema v2, pola, tanggal, kunci butir ganda (tanpa jaringan)
 npx tsx scripts/studio/draft-check.ts draf.md
-# server: setiap blok di-dry-run lewat R08, basis dibandingkan dengan revisi terkini
+# server: setiap blok di-dry-run lewat R08, basis dibandingkan dengan revisi terkini; hasil dibaca di layar
 npx tsx scripts/studio/draft-check.ts draf.md --remote "$HQ_URL" --json
-# cetak blok ke-1 persis seperti tertulis, lalu kirim
-npx tsx scripts/studio/draft-check.ts draf.md --emit 1 > blok1.json
+# cetak blok ke-1 persis seperti tertulis dan alirkan langsung ke route kirimnya (tanpa berkas)
+npx tsx scripts/studio/draft-check.ts draf.md --emit 1 | curl -sS -X POST "$HQ_URL/api/studio/slots" \
+  -H "Content-Type: application/json" -H "x-internal-secret: $INTERNAL_API_SECRET" --data-binary @-
 ```
+
+- **Simulasi berurutan.** Blok bab atau slot sesudah blok pembuat dokumen yang menarget
+  `mission.folder` + `docKey` sama (`docKey` kosong = slug templat) diperiksa sebagai bagian dokumen
+  yang akan dibuat blok itu, sehingga tidak lagi dijawab `META_REQUIRED_FOR_CREATE`. Keluaran manusia
+  `--remote` menandai blok itu "target: dokumen yang dibuat blok n". Aturan yang sama berlaku di R23,
+  karena keduanya memakai layanan pemeriksa yang sama. Satu draf berisi blok `record` beramplop buat
+  dan bab 1..5 bertarget misi + `docKey` yang sama (templat seksi 17.0) karenanya lolos sebelum
+  dokumennya ada.
+- **`--json` selalu JSON.** Hasil pemeriksaan dicetak tanpa medan `blocks[].payload`;
+  `--with-payload` (hanya bersama `--json`) menyertakannya, dan bentuknya sama persis dengan respons
+  R23. Galat fatal (kode keluar bukan hasil pemeriksaan) pun dicetak sebagai JSON
+  `{ "fatal": { "code", "message", "details"? } }` dengan kode `USAGE_ERROR`, `FILE_UNREADABLE`,
+  `SECRET_MISSING`, `REMOTE_UNREACHABLE`, `REMOTE_UNAUTHORIZED`, `RATE_LIMITED`, `REMOTE_ERROR`,
+  `REMOTE_BAD_RESPONSE`, `BLOCK_NOT_FOUND`, `PAYLOAD_TOO_LARGE`, atau `INTERNAL_ERROR`. Galat dari
+  jawaban server (`REMOTE_UNAUTHORIZED` untuk 401, `RATE_LIMITED` untuk 429, `REMOTE_ERROR`,
+  `REMOTE_BAD_RESPONSE`) membawa `details` = `{ httpStatus, serverCode?, correlationId? }`; `serverCode`
+  = `code` badan galat server. `--help --json` mencetak `{ "help": "..." }`.
+- **Batas waktu.** Setiap panggilan `--remote` dibatasi 60 detik (sebelumnya 30); server yang tidak
+  menjawab dalam batas itu = `REMOTE_UNREACHABLE` (keluar 2).
+- Keluaran `--json` dibaca langsung dari stdout (atau dialirkan ke pengurai), tidak dialihkan ke
+  berkas (aturan berkas seksi 17.0).
 
 `--remote` membaca rahasia dari env `INTERNAL_API_SECRET` dan tidak pernah mencetaknya, tetapi
 mengirimkannya sebagai header ke URL apa pun yang diberikan dan ikut mengalihkannya bila server
@@ -2135,7 +2433,7 @@ menjawab redirect. Arahkan `--remote` hanya ke server Studio lokal (`http://127.
 `http://localhost:<port>`), jangan ke host lain (risiko ini diterima pemilik sistem dengan syarat
 CLI hanya dipakai lokal, D-402). Kode keluar: `0` semua blok valid tanpa isu galat; `1` ada isu
 galat, blok tidak valid, atau draf melebihi batas (4 MiB, 2.000.000 karakter, 20 blok); `2` galat
-pemakaian, berkas, rahasia, atau jaringan. `--json` mencetak bentuk yang sama dengan respons R23.
+pemakaian, berkas, rahasia, atau jaringan.
 
 **R23 `POST /api/studio/drafts/check`** menerima badan `{ "markdown": "<isi draf>", "agentId"?: "<1..80>" }`
 (kunci lain `400 SCHEMA_INVALID`), menjalankan dry-run R08 per blok dalam transaksi baca-saja, dan
@@ -2158,8 +2456,12 @@ status HTTP:
 
 Draf di atas batas (badan 4 MiB, 2.000.000 karakter, 20 blok) ditolak `413 PAYLOAD_TOO_LARGE`
 dengan `details.reason` `DRAFT_TOO_LONG` atau `DRAFT_TOO_MANY_BLOCKS`. Kuota `validate` ditagih
-satu kali per blok yang di-dry-run, semuanya sebelum dry-run pertama; draf tanpa blok yang dapat
-di-dry-run tetap ditagih satu kali, sehingga setiap respons `200` R23 membawa header kuota.
+satu kali per dry-run yang dijalankan: satu per blok sebelum dry-run pertama, ditambah satu tepat
+sebelum setiap dry-run ulang bersimulasi. Bab atau slot sesudah blok pembuat dokumen yang belum ada
+di-dry-run dua kali (sekali biasa, sekali sebagai bagian dokumen yang akan dibuat), jadi ditagih dua.
+Draf tanpa blok yang dapat di-dry-run tetap ditagih satu kali (minimum satu), sehingga setiap respons
+`200` R23 membawa header kuota. Contoh: templat seksi 17.0 (record + bab 1..5, dokumen belum ada)
+memakan 11 kuota. Kuota habis di tengah = `429 RATE_LIMITED` sebelum dry-run berikutnya.
 
 Aturan `agentId` dan medan jam (D-393):
 
@@ -2168,18 +2470,20 @@ Aturan `agentId` dan medan jam (D-393):
   Tulis `agentId` di setiap blok agar hasil CLI dan R23 sama dan blok siap kirim apa adanya.
 - `completenessPreview.slots[].lastFilledAt` dan medan `at` mengikuti jam saat dry-run, jadi dua
   pemeriksaan draf yang sama tidak identik byte demi byte. Bandingkan hasil dengan medan jam itu
-  disamarkan. Hasil CLI `--remote --json` dan R23 identik setelah penyamaran bila `agentId` sama
-  dan R23 dipanggil dengan rahasia internal; pemanggil bersesi cookie tercatat sebagai
-  `user:<nama>`.
+  disamarkan. Hasil CLI `--remote --json --with-payload` dan R23 identik setelah penyamaran bila
+  `agentId` sama dan R23 dipanggil dengan rahasia internal; pemanggil bersesi cookie tercatat sebagai
+  `user:<nama>`. Untuk draf yang membuat dokumen baru, `submitPreview.slot.pid` blok pembuat juga
+  berbeda antar-panggilan (pid acak setiap dry-run pembuatan), jadi samarkan medan itu juga.
 
-Contoh R23 tanpa `jq` (Python membaca draf menjadi badan JSON):
+Contoh R23 tanpa `jq` dan tanpa berkas badan (Python membangun badan JSON dari draf dan
+mengalirkannya ke `curl` lewat stdin):
 
 ```bash
-python -c "import json,sys; print(json.dumps({'markdown': open(sys.argv[1], encoding='utf-8').read(), 'agentId': 'gsp-document-writer'}))" draf.md > badan.json
-curl -sS -X POST "$HQ_URL/api/studio/drafts/check" \
-  -H "Content-Type: application/json" \
-  -H "x-internal-secret: $INTERNAL_API_SECRET" \
-  --data-binary @badan.json
+python -c "import json,sys; print(json.dumps({'markdown': open(sys.argv[1], encoding='utf-8').read(), 'agentId': 'gsp-document-writer'}))" draf.md \
+  | curl -sS -X POST "$HQ_URL/api/studio/drafts/check" \
+      -H "Content-Type: application/json" \
+      -H "x-internal-secret: $INTERNAL_API_SECRET" \
+      --data-binary @-
 ```
 
 ### 17.10 `md2contract`: laporan Markdown lama ke JSON (uji banding dan draf saja)
@@ -2192,11 +2496,14 @@ uji banding format lama dan baru atau untuk menyiapkan draf; laporan lama tidak 
 ```bash
 npx tsx scripts/studio/md2contract.ts laporan.md --kind agentWorkReport \
   --mission 2026-10-31_misi_contoh --doc-key laporan-lama \
-  --status complete --reported-at 2026-10-31 --out laporan.json
+  --status complete --reported-at 2026-10-31
 ```
 
 - Opsi: `--kind` (wajib), `--mission`, `--doc-key` (hanya bersama `--mission`), `--doc-number`,
   `--doc-title`, `--status`, `--reported-at`, `--entry <n|last>`, `--strict`, `--out`.
+- Hasil dicetak ke stdout. Untuk menyiapkan draf, salin hasilnya ke blok `json` draf MD (seksi
+  17.9); jangan menyimpannya sebagai berkas `.json` (aturan berkas seksi 17.0). `--out` hanya untuk
+  uji banding di direktori sementara yang dihapus sesudahnya.
 - **Status dan waktu laporan tidak pernah ditebak.** Bila laporan tidak memuat status berpeta atau
   waktu laporan, dan `--status`/`--reported-at` tidak diberikan, CLI berhenti dengan kode `3` dan
   menyebut opsi yang harus diisi. Generator tidak mengisi status bawaan.
@@ -2236,7 +2543,7 @@ Respons route berkuota membawa dua header:
 | Kuota | Route | Bawaan |
 |---|---|---|
 | `render` | kiriman R04 POST, R12, R13; PATCH R06, R14, R16; R17 render, R07 render ulang, R09 artefak, R08 `?preview=html` | 30 per 60 detik |
-| `validate` | R08, R23 (satu per blok, minimal satu per panggilan), importer `?validate=1` | 120 per 60 detik |
+| `validate` | R08, R23 (satu per dry-run; bab atau slot sesudah blok pembuat dokumen yang belum ada dihitung dua; minimal satu per panggilan), importer `?validate=1` | 120 per 60 detik |
 | `import` | `POST /api/studio/import/markdown` | 60 per 60 detik |
 | `query` | R21 dan R22 (satu kuota bersama) | 120 per 60 detik |
 
@@ -2291,7 +2598,7 @@ Aturan: `form` wajib bila `code` = `"custom"` dan terlarang untuk kode lain; `or
 {
   "$schema": "studio.chapter/v2",
   "agentId": "gsp-document-writer",
-  "target": { "documentId": "cmvuz4mn70001v1jgoom5m4qw" },
+  "target": { "documentId": "GANTI-documentId" },
   "chapter": {
     "key": "3",
     "title": { "text": "Bukti" },
@@ -2315,6 +2622,37 @@ Aturan: `form` wajib bila `code` = `"custom"` dan terlarang untuk kode lain; `or
 ```
 
 ### 17.13 Kode galat baru dan urutan evaluasi
+
+**Bentuk galat.** Setiap galat Studio berbadan `{ error: <pesan>, code, details }` (seksi 12):
+`error` adalah STRING pesan, bukan objek, dan kode mesin ada di `code` tingkat atas. Pengurai klien
+membaca `body.code`, bukan `body.error.code` (yang selalu kosong). Id korelasi tidak ada di badan,
+melainkan di header respons `x-correlation-id`; sertakan nilai itu saat melaporkan galat.
+
+```text
+HTTP/1.1 400 Bad Request
+x-correlation-id: 044ab855-5f10-4c44-9374-b5d55e140b29
+
+{"error":"Kiriman tidak sesuai studio.chapter/v2; perbaiki medan yang disebut di details.",
+ "code":"SCHEMA_INVALID",
+ "details":[{"pointer":"/chapter/sections/0/blocks/0/items/0","keyword":"type","message":"must be object"}]}
+```
+
+Server mengirim `code` dan header `x-correlation-id` pada setiap galat selain `401` dan `405` (405 tanpa badan, seksi 16): log API server
+untuk cid `3b684687-59df-408a-a65d-f116efeb295d` (galat uji coba Hermes yang terbaca tanpa kode)
+memuat `code: SCHEMA_INVALID` status 400 di `/api/studio/chapters`, jadi kode yang hilang di sisi
+klien berasal dari pengurai yang membaca `error.code` (keputusan D-419). Contoh di atas diambil ulang
+dari server DEV pada 2026-10-31 (daftar `details` dipersingkat satu butir). `401` tetap
+`{"error":"Unauthorized"}` tanpa `code` dan tanpa `x-correlation-id` (seksi 2). `studio-report` dan
+`draft-check` sudah mencetak `code` dan cid ini (seksi 17.0, 17.9).
+
+`details` berbentuk menurut kode: larik isu `[{ pointer, keyword, message, checkId? }]` untuk
+`SCHEMA_INVALID` dan `REGISTRY_KIND_UNKNOWN`, objek untuk kode lain yang membawanya (tabel di bawah).
+R03 `GET /api/studio/registry` tanpa `kind` atau dengan `kind` tak dikenal menjawab
+`400 REGISTRY_KIND_UNKNOWN` dengan `details` berupa larik SATU isu `[{ pointer: "/query/kind", keyword
+("required" bila `kind` tidak ada, "enum" bila tak dikenal), message, received, validKinds, examples }]`.
+`details[0].validKinds` memuat ke-13 nilai `kind` yang sah dan `details[0].examples` contoh kueri, mis.
+`/api/studio/registry?kind=contracts`; pakai salah satunya, jangan menebak (diperiksa 2026-10-31,
+cid `bdad42bb-791e-478e-92f2-7735003c0f66`).
 
 Kode galat HTTP baru untuk laporan kerja dan `chart.custom` (semua `422`, badan
 `{ error, code, details }`):

@@ -31,7 +31,7 @@ import {
   CONTRACT_REPORTED_AT_PATTERN,
   FINAL_FILENAME_PATTERN,
 } from "../contract/env";
-import type { ContractKindDefV2 } from "../contract/types/v2/contract";
+import type { ContractKindDefV2, ContractKindExamplesV2 } from "../contract/types/v2/contract";
 
 /** sectionType slot catatan kontrak (§6.1, §6.2). */
 export const CONTRACT_RECORD_SECTION_TYPE = "contractRecord" as const;
@@ -177,6 +177,211 @@ const CONTRACT_VERDICT_ALIASES: Readonly<Record<string, ContractVerdict>> = {
   "NEEDS-REVIEW": "NEEDS_REVIEW",
 };
 
+/*
+ * U-03 (D-419; research/12 §6, §9): contoh kiriman siap salin agentWorkReport. Agen menyalin
+ * badan apa adanya lalu mengganti isinya; bentuk blok (`list.items: [{ text }]`, sel tabel
+ * `cells: [{ text }]`, `evidence[].note: { text }`) sudah benar. Konten saja (D-139): tanpa
+ * label, kolom, atau medan tampilan. Setiap contoh dijaga uji r2reg (skema v2 + dry-run R08).
+ *
+ * R2-F1 (D-424 #3, D-426): contoh TIDAK memuat ID dokumen atau pid nyata. Semua blok menarget
+ * misi + docKey contoh yang sama: record membuat dokumen baru, bab tanpa record ditolak
+ * `META_REQUIRED_FOR_CREATE`, sehingga salinan apa adanya tidak pernah menulis ke dokumen yang ada.
+ * `refs` dihapus (rujukan wajib nyata); bentuknya dijelaskan di `howTo`.
+ */
+const AGENT_WORK_REPORT_TARGET = { mission: { folder: "2026-10-31_misi_contoh" }, docKey: "laporan-kerja-penulis" };
+
+const AGENT_WORK_REPORT_EXAMPLES: ContractKindExamplesV2 = {
+  howTo: [
+    "Salin badan apa adanya, lalu ganti isinya; jangan ubah nama medan atau bentuk blok.",
+    "record: kiriman pertama ke POST /api/studio/slots; membuat dokumen baru. Ganti target.mission.folder dan target.docKey di record DAN di setiap bab, meta.title, dan seluruh payload (status, pelaku, taskRef, reportedAt, cardIds, items, evidence).",
+    'record.payload.refs tidak ada di contoh karena harus menunjuk dokumen nyata. Bila ada rujukan, tambahkan "refs": [{ "documentId": "<id dokumen nyata>", "pid": "<pid nyata>", "rel": "basis" }] dengan documentId + pid dari respons kirim, GET .../content, atau hit pencarian.',
+    'chapters["1"]..chapters["5"]: target sama dengan record (misi + docKey), jadi satu draf studio-report submit membuat dokumen lalu kelima bab. Lewat HTTP: satu POST /api/studio/chapters per bab SESUDAH record, dengan target yang sama atau { "documentId": document.id dari respons record }; bab sebelum record ditolak 400 META_REQUIRED_FOR_CREATE. chapter.key tetap sama dengan kunci contoh.',
+    'Blok list: items berupa objek { "text": "..." }, bukan string. Blok table: setiap baris { "cells": [{ "text": "..." }] }, baris judul memakai "kind": "header"; jumlah sel = jumlah columns.',
+    "Uji dulu tanpa menyimpan: POST /api/studio/validate dengan badan yang sama (dry-run R08).",
+  ],
+  record: {
+    $schema: "studio.slot/v2",
+    agentId: "gsp-document-writer",
+    target: AGENT_WORK_REPORT_TARGET,
+    template: { slug: "laporan-kerja-agen" },
+    meta: { title: "Laporan kerja penulisan kajian gardu Cikupa" },
+    slot: "record",
+    payload: {
+      type: "contractRecord",
+      status: "complete",
+      verdict: "PASS",
+      owner: "gsp-document-writer",
+      initiator: "gsp-master01",
+      taskRef: "PSIKOTES-1008",
+      reportedAt: "2026-10-31T16:40+07:00",
+      due: "2026-11-03",
+      phase: { from: "writing", to: "review" },
+      cardIds: ["t_249c6b84"],
+      evidence: [
+        {
+          kind: "file",
+          ref: "out/kajian-gardu-cikupa_bab2.json",
+          sha256: "55d324b1",
+          bytes: 48213,
+          line: 1,
+          item: "t_249c6b84",
+          note: { text: "Badan bab 2 yang dikirim." },
+        },
+        {
+          kind: "command",
+          ref: "npx tsx scripts/studio/draft-check.ts draf.md",
+          exitCode: 0,
+          item: "t_249c6b84",
+          note: { text: "Draf lolos tanpa isu sebelum dikirim." },
+        },
+        { kind: "correlation", ref: "3b684687-59df-408a-a65d-f116efeb295d", note: { text: "Kiriman bab 2 tersimpan." } },
+      ],
+      items: [
+        { key: "t_249c6b84", title: { text: "Tulis bab 2 kajian kondisi gardu" }, status: "done", owner: "gsp-document-writer", phase: "writing" },
+        { key: "BAB-3", title: { text: "Tabel temuan per gardu" }, status: "blocked", due: "2026-11-03", dependsOn: ["t_249c6b84"] },
+      ],
+    },
+  },
+  chapters: {
+    "1": {
+      $schema: "studio.chapter/v2",
+      agentId: "gsp-document-writer",
+      target: AGENT_WORK_REPORT_TARGET,
+      chapter: {
+        key: "1",
+        title: { text: "Ringkasan" },
+        sections: [
+          {
+            title: { text: "Hasil" },
+            blocks: [
+              { type: "paragraph", role: "lede", text: "Bab 2 kajian kondisi Gardu Induk Cikupa selesai ditulis, lolos pemeriksaan draf tanpa isu, dan tersimpan di Studio sebagai revisi baru laporan ini." },
+              { type: "paragraph", text: "Tabel temuan per gardu untuk bab 3 belum dapat ditulis karena data ukur suhu minyak dari tim lapangan belum diterima sampai laporan ini dikirim." },
+              { type: "list", items: [{ text: "Bab 2 lolos draft-check tanpa isu." }, { text: "Bab 3 terhambat data ukur lapangan." }] },
+            ],
+          },
+        ],
+      },
+    },
+    "2": {
+      $schema: "studio.chapter/v2",
+      agentId: "gsp-document-writer",
+      target: AGENT_WORK_REPORT_TARGET,
+      chapter: {
+        key: "2",
+        title: { text: "Rincian kerja" },
+        sections: [
+          {
+            title: { text: "Langkah" },
+            blocks: [
+              {
+                type: "list",
+                ordered: true,
+                items: [
+                  { text: "Baca data inspeksi 2026-10-20 dan catatan lapangan." },
+                  { text: "Tulis bab 2 sebagai draf Markdown, lalu jalankan draft-check." },
+                  { text: "Kirim bab 2 ke Studio dan catat cid respons." },
+                ],
+              },
+            ],
+          },
+          {
+            title: { text: "Berkas diubah" },
+            blocks: [
+              {
+                type: "table",
+                caption: { text: "Berkas yang ditulis pada tugas ini." },
+                columns: [{ role: "id" }, { role: "text" }],
+                rows: [
+                  { kind: "header", cells: [{ text: "Berkas" }, { text: "Perubahan" }] },
+                  { cells: [{ text: "out/kajian-gardu-cikupa_bab2.json" }, { text: "Badan bab 2 baru" }] },
+                  { cells: [{ text: "draf.md" }, { text: "Draf Markdown bab 2" }] },
+                ],
+                source: { text: "Catatan kerja gsp-document-writer, 2026-10-31." },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    "3": {
+      $schema: "studio.chapter/v2",
+      agentId: "gsp-document-writer",
+      target: AGENT_WORK_REPORT_TARGET,
+      chapter: {
+        key: "3",
+        title: { text: "Bukti" },
+        sections: [
+          {
+            title: { text: "Pemeriksaan" },
+            blocks: [
+              { type: "paragraph", text: "Setiap pemeriksaan dijalankan ulang sesudah kiriman terakhir, dan daftar bukti terstruktur beserta sha256 dan kode keluar tercatat di slot catatan laporan." },
+              {
+                type: "table",
+                caption: { text: "Hasil pemeriksaan sebelum kiriman." },
+                columns: [{ role: "text" }, { role: "numeral" }, { role: "text" }],
+                rows: [
+                  { kind: "header", cells: [{ text: "Pemeriksaan" }, { text: "Kode keluar" }, { text: "Hasil" }] },
+                  { cells: [{ text: "draft-check draf.md" }, { text: "0" }, { text: "Tanpa isu" }] },
+                  { cells: [{ text: "Dry-run validate bab 2" }, { text: "0" }, { text: "Sah" }] },
+                ],
+                source: { text: "Keluaran perintah pemeriksaan, 2026-10-31." },
+              },
+              { type: "paragraph", role: "note", text: "Studio tidak membuka berkas bukti yang dirujuk, sehingga rujukan pada tabel dan catatan hanya berfungsi sebagai petunjuk bagi pembaca dan pencarian." },
+            ],
+          },
+        ],
+      },
+    },
+    "4": {
+      $schema: "studio.chapter/v2",
+      agentId: "gsp-document-writer",
+      target: AGENT_WORK_REPORT_TARGET,
+      chapter: {
+        key: "4",
+        title: { text: "Isu terbuka" },
+        sections: [
+          {
+            title: { text: "Hambatan" },
+            blocks: [
+              { type: "paragraph", text: "Satu butir kerja masih terhambat karena menunggu masukan dari pihak di luar tim penulis, dan butir itu tidak dapat diselesaikan oleh agen sendiri." },
+              {
+                type: "list",
+                items: [
+                  { text: "BAB-3: data ukur suhu minyak TD-1 belum diterima dari tim lapangan." },
+                  { text: "Foto PMT-2 resolusi rendah; perlu foto ulang sebelum dipakai di bab 3." },
+                ],
+              },
+              { type: "paragraph", role: "pivot", text: "Tanpa data ukur dari tim lapangan, bab 3 hanya dapat dikirim sebagai draf dan laporan ini belum boleh dirender penuh untuk diterbitkan." },
+            ],
+          },
+        ],
+      },
+    },
+    "5": {
+      $schema: "studio.chapter/v2",
+      agentId: "gsp-document-writer",
+      target: AGENT_WORK_REPORT_TARGET,
+      chapter: {
+        key: "5",
+        title: { text: "Langkah berikut" },
+        sections: [
+          {
+            title: { text: "Rencana" },
+            blocks: [
+              {
+                type: "list",
+                ordered: true,
+                items: [{ text: "Minta data ukur TD-1 ke tim lapangan." }, { text: "Tulis dan kirim bab 3 setelah data diterima." }],
+              },
+              { type: "paragraph", role: "closingAction", text: "Controller diminta meneruskan permintaan data ukur suhu minyak TD-1 kepada tim lapangan paling lambat 2026-11-01 agar bab 3 dapat diselesaikan tepat waktu." },
+            ],
+          },
+        ],
+      },
+    },
+  },
+};
+
 const DEFS = {
   // CK-01 (§1.2, §6.3, §6.4).
   agentWorkReport: {
@@ -260,6 +465,7 @@ const DEFS = {
       verdicts: CONTRACT_VERDICT_ALIASES,
     },
     defaultFormats: CONTRACT_DEFAULT_RENDER_FORMATS,
+    examples: AGENT_WORK_REPORT_EXAMPLES,
   },
 } as const satisfies Record<ContractKind, ContractKindDefV2>;
 
