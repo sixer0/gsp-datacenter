@@ -26,6 +26,18 @@ export interface ContractImportOptions {
   reportedAt?: string;
   /** F2: entri ke-n (1-based) atau `last` (bawaan). Memaksa bentuk F2 bila diberikan. */
   entry?: number | "last";
+  /**
+   * R3-01 (U-15, D-435): alias TAMBAHAN di atas alias registri (`aliases.headerKeys` /
+   * `aliases.headings`), dipakai `studio-report` untuk laporan MD-native (nama medan CF dan judul
+   * outline CO). Alias registri menang bila kunci sama. Tanpa opsi ini keluaran tidak berubah
+   * (`md2contract` tidak memberikannya; golden dc24/dc35 tetap).
+   */
+  extraAliases?: {
+    /** Kunci kepala huruf kecil -> tujuan GF (`status`, `owner`, `taskRef`, `reportedAt`, `cardIds`, `verdict`). */
+    headerKeys?: Readonly<Record<string, string>>;
+    /** Judul `##` ternormalisasi (`normalizeHeading`) -> `content:<n>` / `references`. */
+    headings?: Readonly<Record<string, string>>;
+  };
 }
 
 export interface ContractImportWarning {

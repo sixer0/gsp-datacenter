@@ -123,23 +123,39 @@ export function findTables(lines: readonly string[], mask: readonly boolean[]): 
 
 // ── Nilai ────────────────────────────────────────────────────────────────
 
+/**
+ * Buang deret backtick di kedua tepi tanpa regex (R3-F #8): `/^`+|`+$/g` mencoba `` `+$ `` dari setiap
+ * posisi deret backtick di tengah nilai -> waktu kuadratik (40.000 backtick = 769 ms). Loop indeks linear.
+ */
+export function trimBackticks(t: string): string {
+  let a = 0;
+  let b = t.length;
+  while (a < b && t.charCodeAt(a) === 0x60) a++;
+  while (b > a && t.charCodeAt(b - 1) === 0x60) b--;
+  return a === 0 && b === t.length ? t : t.slice(a, b);
+}
+
 /** Buang pembungkus tampilan (`**`, `_`, backtick, kutip) di tepi nilai. */
 export function cleanValue(v: string): string {
   let t = v.trim();
   for (let k = 0; k < 3; k++) {
     const before = t;
     t = t.replace(/^\*{1,2}|\*{1,2}$/g, "").trim();
-    t = t.replace(/^`+|`+$/g, "").trim();
+    t = trimBackticks(t).trim();
     t = t.replace(/^["']|["']$/g, "").trim();
     if (t === before) break;
   }
   return t;
 }
 
-/** Pemisah alternatif sesudah spasi: `/`, `,` atau kata `atau`/`or`/`vs`/`versus` (DC35-F1). */
-const ALT_AFTER_SPACE_RE = /^(?:[/,]|(?:atau|or|vs\.?|versus)(?=\s|$))/i;
+/**
+ * Pemisah alternatif/majemuk sesudah spasi: `/`, `,`, `&`, atau kata `atau`/`or`/`vs`/`versus` (DC35-F1)
+ * dan `dan`/`and`/`serta` (R3-F #7, KD-42: `complete dan blocked`, `R3-01 dan R3-02` tidak dipotong ke token
+ * pertama, sama seperti `/`).
+ */
+const ALT_AFTER_SPACE_RE = /^(?:[/,&]|(?:atau|or|vs\.?|versus|dan|and|serta)(?=\s|$))/i;
 /** Pemisah lain sesudah spasi yang masih bisa mengawali kandidat alias kedua (`complete | blocked`). */
-const SEP_AFTER_SPACE_RE = /^[|;+&]\s*[*`]*/;
+const SEP_AFTER_SPACE_RE = /^[|;+]\s*[*`]*/;
 const LEAD_TOKEN_RE = /^[A-Za-z0-9_.-]+/;
 
 export type AliasToken = { token: string; compound: false } | { token: null; compound: true };
@@ -149,8 +165,9 @@ export type AliasToken = { token: string; compound: false } | { token: null; com
  * nilai, spasi, atau `(` (keterangan penulis, mis. `FAIL (satu FAIL ...)`, D-377 butir 2); penanda
  * tampilan `*`/backtick sesudah token diabaikan. Nilai majemuk -> `compound` (tidak ditebak):
  *   - token diikuti langsung pemisah apa pun (`PASS/FAIL`, `todo,blocked`, `complete|blocked`);
- *   - sesudah spasi ada pemisah alternatif `/`, `,`, `atau`, `or`, `vs` (`PASS / FAIL`, `PASS atau FAIL`);
- *   - sesudah spasi ada `|`, `;`, `+`, `&` yang diikuti token beralias lain (`complete | blocked`);
+ *   - sesudah spasi ada pemisah alternatif `/`, `,`, `&`, `atau`, `or`, `vs`, `dan`, `and`, `serta`
+ *     (`PASS / FAIL`, `PASS atau FAIL`, `complete dan blocked`; R3-F #7);
+ *   - sesudah spasi ada `|`, `;`, `+` yang diikuti token beralias lain (`complete | blocked`);
  *     `complete | Giliran: ...` tetap `complete` (pemisah medan, bukan alternatif; token yang diikuti
  *     `:` adalah label medan berikutnya, bukan kandidat).
  * `isAlias` memeriksa token di tabel alias pemanggil (dengan aturan huruf tabel itu).
@@ -178,7 +195,7 @@ export type PatternValue = { value: string; reason?: undefined } | { value: null
 /**
  * Medan berpola (owner C36, taskRef C35; D-405). Aturan token sama dengan `aliasTokenOf`: nilai
  * majemuk (`DC-03/DC-04`, `coder, verifier`) TIDAK dipotong ke token pertama -> `compound`; token yang
- * tidak cocok pola -> `pattern`. Kandidat kedua sesudah `| ; + &` dihitung hanya bila mirip kunci
+ * tidak cocok pola -> `pattern`. `dan`/`and`/`serta`/`&` = majemuk (R3-F #7). Kandidat kedua sesudah `| ; +` dihitung hanya bila mirip kunci
  * (cocok pola dan memuat angka), agar prosa sesudah pemisah medan tidak dianggap nilai kedua.
  */
 function patternValueOf(v: string, re: RegExp, lower: boolean): PatternValue {

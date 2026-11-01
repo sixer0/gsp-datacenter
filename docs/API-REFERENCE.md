@@ -488,6 +488,16 @@ Catatan status kode per 2026-10-23 (tabel di atas = target register
   itu `OUT_NAME_UNSAFE` keluar 2; sel `--timing` berawalan formula diberi `'`. `draft-check`: batas
   waktu 30 -> 60 s; galat fatal dari jawaban server membawa `details` { httpStatus, serverCode?,
   correlationId? }. R23: tagihan per dry-run (baris R23 di atas).
+- Per 2026-11-01 (R3, D-436/D-439/D-440/D-441/D-443): `studio-report` menerima laporan MD biasa
+  (tanpa blok json) di `submit`/`update`; perintah baru `template` (placeholder `<isi: ...>`, laporan
+  berplaceholder ditolak `TEMPLATE_PLACEHOLDER`) dan `check <laporan.md> [--remote]` (konversi +
+  dry-run R08, nol tulis). `update` wajib basis (`basis: <documentId>@rev<n>` dicetak submit/update,
+  atau `--base-rev`; tanpa basis `BASIS_MISSING`), mengirim hanya bagian yang diubah sejak basis
+  (R20 `?rev=n`), dan menolak bagian yang juga diubah pihak lain (`BASE_CONFLICT`, tanpa kiriman);
+  opsi `--section`, `--force-latest`, `--doc-key`, `--format`. Butir kerja harus tabel (record yang
+  akan kehilangan items/evidence/refs ditolak `RECORD_FIELDS_DROPPED`); `## Rujukan` tabel ->
+  `record.refs`; `Initiator:` dipetakan; `--agent-id` menang atas `agentId:` kepala. CLI bukan route;
+  tabel route tidak berubah. Resep agen: panduan seksi 17.0.
 
 **Route internal UI (bukan untuk agen):**
 

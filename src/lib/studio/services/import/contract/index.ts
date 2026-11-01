@@ -77,6 +77,13 @@ const FALLBACK_TITLE = "Laporan kerja agen";
 const FIRST_EXTRA_CHAPTER_KEY = 6;
 const REFERENCE_MAX_ENTRIES = 500;
 
+/**
+ * Tujuan medan kepala yang dipetakan `applyField` (GF). Satu sumber untuk alias tambahan md-report
+ * (R3-F #9). `initiator` (R3-F, D-440) hanya tercapai bila alias kepala mengarah ke sana (registri GF
+ * tidak memetakannya, jadi keluaran md2contract tanpa `extraAliases` tidak berubah).
+ */
+export const MD2CONTRACT_RECORD_TARGETS = ["status", "verdict", "owner", "initiator", "taskRef", "reportedAt", "cardIds"] as const;
+
 const GL13_RE = /^(\d{4}-\d{2}-\d{2})[ T]([01]\d|2[0-3]):([0-5]\d)/;
 const LABEL_RE = /^([A-Z][A-Z_]*):(?:\s+(.*))?$/;
 const DISPLAY_NUMBER_RE = /^[([]?(?:\d{1,3}|[A-Za-z])[.)\]]\s+/;
@@ -126,6 +133,7 @@ class Run {
   status: AgentWorkReportStatus | null = null;
   verdict: ContractVerdict | null = null;
   owner: string | null = null;
+  initiator: string | null = null;
   taskRef: string | null = null;
   reportedAt: string | null = null;
   phase: ContractPhaseV2 | null = null;
@@ -218,6 +226,12 @@ class Run {
         if (v.value === null) return this.patternUnmapped("owner", key, raw, line, v.reason, "C36 actor pattern");
         return this.setOnce("owner", v.value, key, raw, line, source);
       }
+      case "initiator": {
+        // R3-F (D-440): pemberi tugas = pola aktor C36, aturan majemuk sama dengan owner.
+        const v = actorValueOf(raw);
+        if (v.value === null) return this.patternUnmapped("initiator", key, raw, line, v.reason, "C36 actor pattern");
+        return this.setOnce("initiator", v.value, key, raw, line, source);
+      }
       case "taskRef": {
         const v = taskRefValueOf(raw);
         if (v.value === null) return this.patternUnmapped("taskRef", key, raw, line, v.reason, "C35 key pattern");
@@ -244,7 +258,7 @@ class Run {
     }
   }
 
-  private setOnce<F extends "status" | "verdict" | "owner" | "taskRef" | "reportedAt">(field: F, value: NonNullable<Run[F]>, key: string, raw: string, line: number, source: string): boolean {
+  private setOnce<F extends "status" | "verdict" | "owner" | "initiator" | "taskRef" | "reportedAt">(field: F, value: NonNullable<Run[F]>, key: string, raw: string, line: number, source: string): boolean {
     if (this[field] !== null) {
       this.note("FIELD_DUPLICATE", line, `${field} already set; "${key}" value kept as text`);
       return false;
@@ -266,7 +280,7 @@ class Run {
    * CW-04 (skema tidak menampung teks utuh: pola tanpa `/`, `,`, spasi); baris sumber tetap teks (bab 1
    * untuk kepala/label), tidak dipotong ke token pertama (KD-42).
    */
-  private patternUnmapped(field: "owner" | "taskRef", key: string, raw: string, line: number, reason: "compound" | "pattern", rule: string): boolean {
+  private patternUnmapped(field: "owner" | "initiator" | "taskRef", key: string, raw: string, line: number, reason: "compound" | "pattern", rule: string): boolean {
     const value = cleanValue(raw);
     const why = reason === "compound" ? "is compound (several values)" : `does not match ${rule}`;
     this.warn("CONTRACT_FIELD_UNMAPPED", line, `${field} from "${key}" ${why}: "${value}"; not guessed (KD-42), kept as text`, { scope: "record", field, key, value, reason });
@@ -637,7 +651,17 @@ function assertInput(markdown: unknown, opts: ContractImportOptions): ContractKi
   if (opts.entry !== undefined && opts.entry !== "last" && !(Number.isInteger(opts.entry) && opts.entry >= 1)) {
     throw new ContractImportError("MD2CONTRACT_USAGE", `entry must be a positive integer or "last"`);
   }
-  return def;
+  const extra = opts.extraAliases;
+  if (!extra || (!extra.headerKeys && !extra.headings)) return def;
+  // R3-01: alias tambahan di bawah alias registri (registri menang); def registri tidak diubah.
+  return {
+    ...def,
+    aliases: {
+      ...def.aliases,
+      headerKeys: { ...(extra.headerKeys ?? {}), ...def.aliases.headerKeys },
+      headings: { ...(extra.headings ?? {}), ...def.aliases.headings },
+    },
+  };
 }
 
 /** Validasi lokal `studio.doc/v2` dengan validator v2 repo (ajv bersama), tanpa DB. */
@@ -733,6 +757,7 @@ export function markdownToContract(markdown: string, opts: ContractImportOptions
     status: run.status as AgentWorkReportStatus,
     ...(run.verdict ? { verdict: run.verdict } : {}),
     ...(run.owner ? { owner: run.owner } : {}),
+    ...(run.initiator ? { initiator: run.initiator } : {}),
     ...(run.taskRef ? { taskRef: run.taskRef } : {}),
     reportedAt: run.reportedAt as string,
     ...(run.phase ? { phase: run.phase } : {}),

@@ -433,3 +433,74 @@ Dasar: D-422 (keputusan USER, ambang KE-1 dipisah), D-423 (alat dan lembar diter
 | §8.1 | Identitas baris CLI dari `STUDIO_TIMING_*`, bukan `TRIAL_*`; CLI tanpa `src=`/`inv=`/kunci berkas; `trial-log` dari `TRIAL_*`; CLI tidak membaca `STUDIO_TIMING_CSV` | `studio-report.ts:772-785`; `ab2.py:225`, `:976-981` |
 | §9 | P-1, P-2, P-3, P-5, P-6 terpenuhi; P-4 menunggu R2-06; P-8 sebagian; P-9 baru menunggu R2-07; P-7 menambah keputusan cache tsx | D-423; D-419 (R2-06, R2-07 gelombang 2) |
 | §5.4, §5.5, §10, §11, §12, §13, §14 | Catatan penggantian R-4; FACTS2 selesai + RK-F2; AS-6, RK-7, RK-8 baru; AC dan rekomendasi diperbarui | D-423; manifest 05 §2, §8 |
+
+## 17. Lampiran: Amandemen asal-usul (D-435)
+
+Ditulis R3-02 (data-analyst, 2026-10-31). Dasar: keputusan USER D-435 (`decisions.md:440`) atas temuan H-1 verifikasi DC-47b (`verification/03_document_contract_verification_r2.md:217`; opsi (b) `:231`). Label tetap: **amandemen pasca-hasil**. Aturan ditambahkan sesudah hasil uji ulang terlihat, atas keputusan USER, karena verifier tidak berwenang mengubah aturan gerbang (`03:155`). Lampiran ini hanya menambah pengecualian (6) pada daftar pengecualian D_raw,B §6.5. Isi §1-§16 tidak diubah.
+
+### 17.1 Aturan: pengecualian (6) asal-usul
+
+Berkas baru atau berubah di S1-S4 dalam jendela run B dikecualikan dari D_raw,B bila terbukti TIDAK dibuat, ditulis, atau dibaca oleh run itu. Kedua bukti berikut wajib:
+
+| Bukti | Isi wajib | Bentuk yang dikutip |
+|---|---|---|
+| (A) Log sesi Hermes | `state.db` profil (`C:/Users/TRIAL/AppData/Local/hermes/profiles/gsp-master01/state.db`) dibuka baca-saja. Untuk sesi run (`hermes_session_id` di `<run>_meta.txt`), seluruh pesan (kolom `tool_calls`, `content`, `tool_name`) memuat 0 rujukan ke basename berkas, nama folder induknya, dan setiap cardId yang tercantum di berkas itu | Teks kueri, jumlah pesan sesi, jumlah tool call sesi, jumlah rujukan per kata cari |
+| (B) Waktu folder | Folder induk berkas sudah aktif sebelum START harness run itu, yaitu minimal satu berkas lain di folder yang sama dengan `mtime` atau `birthtime` lebih awal daripada START harness | Baris `disk_<run>_new_S3S4.txt` run sebelumnya, snapshot pre, atau listing, beserta waktu UTC dan START harness dari `timing.csv` |
+
+Bukti pendukung (dicatat bila ada, tidak wajib): isi berkas memuat 0 token lembar fakta run itu, atau isinya jelas milik pekerjaan lain (kartu lain).
+
+Pengecualian gugur, dan berkas tetap dihitung, bila salah satu keadaan berikut berlaku:
+- Bukti (A) atau (B) tidak ada.
+- Log sesi run itu tidak terbaca atau tidak lengkap.
+- Sesi memuat tool call yang menulis ke `%TEMP%` atau workspace dengan path dinamis (mis. `tempfile`, nama acak) yang tidak dapat diselesaikan dari argumen, KECUALI isi berkas terbukti tidak memuat token lembar fakta run itu.
+
+Beban bukti ada pada pengecualian: bila ragu, berkas dihitung. Berkas yang dikecualikan tidak dihapus dari daftar. Berkas itu didaftar dengan label `asal_luar` beserta bukti (A) dan (B) di analisis, lalu dicek ulang verifier.
+
+Cakupan: hanya D_raw (KE-5). F_name, F_sha, ambang KE-5, dan aturan vonis gabungan `11:174-180` tidak berubah.
+
+Kueri acuan untuk bukti (A), dipakai di uji ketiga (research/15 §6.3):
+
+```sql
+-- state.db dibuka file:...?mode=ro. Bila baris sesi mungkin masih di WAL,
+-- baca salinan state.db + state.db-wal + state.db-shm (bukan mode immutable).
+SELECT COUNT(*) FROM messages WHERE session_id = :sid;
+SELECT id, role, timestamp, tool_name FROM messages
+ WHERE session_id = :sid
+   AND (COALESCE(tool_calls,'') || ' ' || COALESCE(content,'')) LIKE '%' || :kata || '%';
+-- :kata = basename, nama folder induk, setiap cardId di berkas (satu kueri per kata)
+```
+
+Skema tabel `messages` (`id`, `session_id`, `role`, `content`, `tool_call_id`, `tool_calls`, `tool_name`, `timestamp REAL`, ...) dibaca dari teks `CREATE TABLE messages` di `state.db` (Grep, baca saja).
+
+### 17.2 Penerapan pada `C:/Users/TRIAL/AppData/Local/Temp/t_aa9282e4/lapor_comment.md` (R6B)
+
+| Butir | Isi | Sumber |
+|---|---|---|
+| Berkas | 2548 B, sha256 `9e3c3e8f…`. Muncul di S3 jendela R6B (mtime 2026-10-31 08:28:45Z; jendela R6B 08:26:14-08:38:50Z). `classify` DC-01 memberi kelas K4; 0 kecocokan pola | `03:79`, `:85`; `disk_R6B_new_S3S4.txt:25` |
+| (A) Log sesi | `state.db` gsp-master01 sesi R6B `20261031_152618_525915` (= `hermes_session_id` R6B) berisi 66 pesan dengan 0 rujukan ke `t_aa9282e4` maupun `lapor_comment.md`. Dibuka `mode=ro&immutable=1` | `03:87`; laporan 05 `:1` (id sesi) |
+| (B) Waktu folder | Folder `t_aa9282e4/` sudah aktif sebelum START harness R6B: `cmp_ship.py`, `probe_strip.py`, dan `real.docx` bertanggal 15:25:52-15:25:57 +0700 = 08:25:52-08:25:57Z. START harness R6B = 08:26:14Z (timing.csv L161, epoch 1793435174,500) | `03:86`; `disk_R5B_new_S3S4.txt:29-31`; research/14 `:94` |
+| Pendukung | Isinya laporan kartu lain ("LAPOR-SELESAI vonis defect-proposal updateFields … STATUS: complete") dengan 0 token R-6. Nama `lapor_comment.md` adalah konvensi pekerja kanban (gsp-worker, gsp-worker-fast, gsp-system-manager, gspuser02) | `03:86-87`; research/14 `:255` |
+| Celah yang dicatat | Tampilan `immutable` tidak membaca WAL, dan penulis berkas tidak ditemukan. Jumlah 66 pesan konsisten dengan 32 tool call sesi R6B yang dihitung verifier. Isi kartu lain menutup kemungkinan berkas ditulis skrip R6B lewat path dinamis, karena keluaran R6B akan memuat isi R-6 | `03:87`, `:142` |
+
+Hasil penerapan:
+1. (A) dan (B) terpenuhi, sehingga berkas berlabel `asal_luar` dan dikecualikan.
+2. D_raw,R6B = 0, jadi D_raw,B = 0 / 0 / 0.
+3. F_name dan F_sha tetap 3/3 (research/14 §4.5), sehingga **KE-5 LULUS**.
+4. Gerbang keras D-362 menjadi 4/4 LULUS: skema 18/18 valid, retrieval 5/5, 0 berkas mentah, kelengkapan 100% (`03:149-152`).
+
+### 17.3 Vonis uji ulang: TERKUNCI NETRAL
+
+| Metrik | Hasil | Sumber |
+|---|---|---|
+| KE-1 (a) komposisi pertama | GAGAL: median r1 2,050 (ambang <= 1,00) | research/14 §4.1.2; dihitung ulang `03:140` |
+| KE-1 (b) siklus pembaruan | GAGAL: median r2 4,296 (ambang <= 0,70); maks 5,980 (> 1,00) | sama |
+| KE-6 | GAGAL: FD_B 2/1/2 lulus, tetapi median FL_B 1 > FL_A 0 | research/14 §4.6; arah dikonfirmasi `03:142` |
+| KE-2 (advisori) | GAGAL: median 3,00 | research/14 §4.2 |
+| KE-3, KE-4, KE-5, KE-7 | LULUS (KE-5 lewat §17.2) | research/14 §0; `03` B1, B3, B5 |
+| MU-1/MU-2 | W 14/1, R4B 18/1, R5B 16/1, R6B 18/1, M 18/2; porsi aktor = 1 4/5, median revisi 18 | `03:112-121` |
+
+Menurut `11:178-180`, gerbang keras lulus sementara KE-1 dan KE-6 gagal, sehingga vonisnya **NETRAL** ("andal tetapi tidak lebih hemat"). Vonis ini dikunci dengan label "NETRAL (amandemen asal-usul pasca-hasil, keputusan USER D-435)" dan tidak dibuka lagi. Vonis harfiah tanpa amandemen (TIDAK EFEKTIF, `03:154`) tetap tercatat berdampingan sebagai riwayat. KE-1 dan KE-6 kini berada di siklus 2 dari 3 (`03:238`). Uji ketiga (research/15) adalah siklus terakhir sebelum eskalasi ke USER. Sejak protokol r3, aturan §17.1 berlaku sejak awal, sehingga tidak lagi bersifat pasca-hasil.
+
+### 17.4 Collection Log lampiran
+
+Read utuh `decisions.md:420-441`, `verification/03_document_contract_verification_r2.md`, research/14, laporan 05; Grep teks `CREATE TABLE messages` di `state.db` gsp-master01 (baca saja); Read `Temp/dc47b/fl.py` (pola kueri verifier, baca saja). Tidak ada shell dan tidak ada kueri SQL baru yang dijalankan analis. Angka (A) dan (B) dikutip dari verifikasi DC-47b.
