@@ -9,6 +9,7 @@ import type { ParamDef } from "@/lib/studio/contract/types/params";
 import type { StudioTemplateV2, TemplateSlotDef } from "@/lib/studio/contract/types/v2/template";
 import type { EssentialKnob, SkeletonResponse, TemplateDetailV2, TemplateListItem } from "./api";
 import { valuesEqual, type ParamRecord } from "./values";
+import { actorLabel, withRawId } from "@/components/studio/shared/labels";
 
 export type { ParamRecord };
 
@@ -62,7 +63,8 @@ export function knobValueLabel(k: EssentialKnob, v: ParamValue | undefined): str
   if (opt) return opt.label;
   if (k.control === "bool") return v === true ? "Ya" : "Tidak";
   if (k.control === "number" && typeof v === "number") return k.keys[0]?.includes("size") ? `${NUM.format(v)} pt` : NUM.format(v);
-  if (k.control === "color" && typeof v === "string") return v.toUpperCase();
+  // UI-02 (UA-m10): tampilkan heks dengan "#" (format simpan tetap tanpa "#").
+  if (k.control === "color" && typeof v === "string") return `#${v.trim().replace(/^#/, "").toUpperCase()}`;
   if (typeof v === "string" || typeof v === "number") return String(v);
   return "nilai khusus";
 }
@@ -222,10 +224,13 @@ export function isOwner(createdBy: string | null | undefined, username: string |
   return who === username;
 }
 
-/** Nama pembuat untuk layar (tanpa awalan jenis pemanggil). */
+/**
+ * Nama pembuat untuk layar (tanpa awalan jenis pemanggil). UI-02 (UA-M06): lewat `actorLabel`
+ * agar "seed-studio" tampil "Sistem (bawaan)" dan agen bernama tampilan; "user:budi" -> "budi".
+ */
 export function creatorLabel(createdBy: string | null | undefined): string {
   if (!createdBy) return "-";
-  return createdBy.includes(":") ? createdBy.slice(createdBy.indexOf(":") + 1) : createdBy;
+  return actorLabel(createdBy);
 }
 
 export interface Editability {
@@ -244,7 +249,7 @@ export function editabilityOf(t: TemplateListItem, viewer: { isAdmin: boolean; u
   if (t.isCanonical) return { canEdit: false, reason: "Templat kanonik hanya dapat diubah admin. Buat salinan untuk menyesuaikan.", offerCopy: true };
   if (t.restricted) return { canEdit: false, reason: "Templat ini terbatas; hanya admin yang dapat mengubahnya.", offerCopy: false };
   if (!isOwner(t.createdBy, viewer.username)) {
-    return { canEdit: false, reason: `Templat ini dibuat oleh ${creatorLabel(t.createdBy)}. Buat salinan untuk menyesuaikan.`, offerCopy: true };
+    return { canEdit: false, reason: `Templat ini dibuat oleh ${withRawId(creatorLabel(t.createdBy), t.createdBy)}. Buat salinan untuk menyesuaikan.`, offerCopy: true };
   }
   return { canEdit: true, reason: null, offerCopy: false };
 }

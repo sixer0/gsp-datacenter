@@ -239,6 +239,10 @@ tidak pernah dengan parameter; medan tampilan ditolak `400 SCHEMA_INVALID`
 pid, galat): `docs/STUDIO-AGENT-GUIDE.md`. Kontrak: `src/lib/studio/contract/**`; konstanta route
 `STUDIO_ROUTES` (`contract/env.ts`); skema JSON: `GET /api/studio/registry?kind=schema`.
 
+**Server MCP Studio.** Server MCP `studio` (jalur utama laporan kerja agen ber-MCP) membungkus route
+Studio yang sama di bagian ini, bukan API terpisah: kontrak, autentikasi, kuota, dan galatnya identik.
+Daftar alat dan pemetaan alat ke route (R03, R04, R05, R08, R10, R12, R13, R15, R17, R20 sampai R22; `studio_document_get` memakai R20 untuk `view=content` dan R05 untuk `view=summary`): `docs/STUDIO-MCP.md`.
+
 **Auth (semua route, termasuk GET):** `requireSession` di baris pertama handler. Sesi NextAuth,
 cookie `gsp_hq_session`, atau header `x-internal-secret: <INTERNAL_API_SECRET>` (agent; kirim
 `agentId` di badan sebagai label). Anonim → `401 {"error":"Unauthorized"}`. `createdBy`,

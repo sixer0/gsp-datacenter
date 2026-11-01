@@ -145,9 +145,8 @@ const ADMIN_CALLER: StudioCaller = { kind: "ADMIN_SESSION", requester: SEED_ACTO
 /** Templat uji manual UT-01: profil visual Manual 000 tanpa pelepas penegakan (tidak terbatas). */
 const DATUM_GSP_SLUG = "datum-gsp";
 const DATUM_GSP_NAME = "DATUM GSP (profil Manual DATUM 2.6.0)";
-const DATUM_GSP_DESCRIPTION =
-  "Profil tampilan Manual DATUM 2.6.0 (gaya datum-house-style 2.6.0; format terukur Manual 000) untuk dokumen DOCUMENT. " +
-  "Semua cek penolak DATUM berlaku penuh (tanpa lint.enforcementOverride), jadi dapat dipakai semua peran yang berhak.";
+// UI-02 (UA-M07): teks tampilan awam (satu kalimat); rincian teknis ada di changeNote/kode.
+const DATUM_GSP_DESCRIPTION = "Dokumen resmi GSP mengikuti Manual DATUM 2.6.0; semua pemeriksaan standar berlaku.";
 /**
  * Override yang DIBUANG: pelepas penegakan lint. `lint.enforcementOverride`
  * profil benchmark me-release DATUM-04/DATUM-09/G3 khusus agar doc.json
@@ -532,7 +531,7 @@ const PRESET_MIGRATIONS: readonly PresetMigrationSpec[] = [
     templateSlug: CANONICAL_SLUG,
     presetSlug: "datum-kanonik-preset",
     presetName: "DATUM Kanonik",
-    presetDescription: "Preset gaya DATUM Kanonik: nilai bawaan registri parameter (profil datum-kanonik). Dipilih satu kali per templat.",
+    presetDescription: "Gaya DATUM dengan nilai bawaan standar; pilihan aman untuk templat baru.",
     decided: {},
     delta: [],
     dropPrefixes: [],
@@ -544,8 +543,7 @@ const PRESET_MIGRATIONS: readonly PresetMigrationSpec[] = [
     templateSlug: DATUM_GSP_SLUG,
     presetSlug: "datum-gsp-preset",
     presetName: "GSP DATUM",
-    presetDescription:
-      "Preset gaya GSP DATUM: profil tampilan Manual DATUM 2.6.0 (format terukur Manual 000) tanpa pelepas penegakan lint; huruf tebal blok register BM (P4S-13), lembar simbol pas-halaman, rel bukti chip framePr (HS rev B).",
+    presetDescription: "Gaya GSP DATUM: format terukur Manual DATUM untuk dokumen resmi GSP.",
     // D-151 (P4S-13 BM), D-165 KT-7 (fit true), research/09 §8.1 (`table.widthClass` full menggantikan override P5-14 = 166),
     // D-327 (rel framePr HS rev B; baseline v1 mewarisi table3col dari profil Manual 000).
     decided: { [REGISTER_BOLD_KEY]: BM_REGISTER_BOLD_FIELDS, "symbol.sheet.fit": true, "table.widthClass": "full", [RAIL_RENDERER_KEY]: "framePr" },
@@ -1055,7 +1053,7 @@ async function importManual000V2(tx: Tx, prep: Awaited<ReturnType<typeof prepare
   const preset = await ensurePreset(tx, {
     slug: presetSlug,
     name: "DATUM Manual 000",
-    description: "Preset gaya DATUM Manual 000 (terbatas, hanya ADMIN): nilai terukur benchmark Manual 000 termasuk pelepas penegakan lint benchmark.",
+    description: "Gaya acuan Manual 000 untuk pengujian format terukur (khusus admin).",
     layer: presetProfile.profile.overrides,
     ownRoleFormats: (presetProfile.profile.roleFormats ?? {}) as Record<string, unknown>,
     skeletonSlots: presetSkeleton,
@@ -1069,7 +1067,7 @@ async function importManual000V2(tx: Tx, prep: Awaited<ReturnType<typeof prepare
   const r = await ensureSkeletonVersion(tx, {
     slug: MANUAL000_SLUG,
     name: existing?.name ?? "DATUM Manual 000",
-    description: existing?.description ?? "Templat benchmark Manual 000 (preset DATUM Manual 000 + kerangka 6 slot)",
+    description: existing?.description ?? "Templat acuan Manual 000 untuk pengujian format terukur (khusus admin).",
     preset: { slug: presetSlug, version: preset.version },
     essentials: keep(def.essentials),
     advanced: keep(def.advanced),
@@ -1183,8 +1181,7 @@ const CONTRACT_TEMPLATES: readonly ContractTemplateSpec[] = [
     kind: "agentWorkReport",
     slug: "laporan-kerja-agen",
     name: "Laporan Kerja Agen",
-    description:
-      "Templat jenis kontrak agentWorkReport (CK-01): laporan kerja tiap agen, tier bawaan NOTA, kode jenis LAP, preset gaya GSP DATUM. Kerangka: catatan laporan, isi laporan (bab wajib 1-5), referensi.",
+    description: "Laporan kerja tiap agen: catatan laporan, isi laporan (bab 1-5), dan referensi.",
     presetSlug: "datum-gsp-preset",
     slots: [
       { slotKey: "record", sectionType: "contractRecord", label: "Catatan Laporan", position: 1, required: true, positionLocked: true, repeatable: false, contentMode: "INPUT", tiers: [], admits: [] },

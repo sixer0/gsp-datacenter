@@ -250,14 +250,80 @@ export function versionLabel(n: number | null | undefined): string {
 export function actorLabel(by: string | null | undefined): string {
   const s = (by ?? "").trim();
   if (!s || s.toLowerCase() === "system" || s.toLowerCase() === "sistem") return "Sistem";
+  if (SEED_ACTORS.has(s.toLowerCase())) return "Sistem (bawaan)";
   const i = s.indexOf(":");
   if (i <= 0) return s;
   const kind = s.slice(0, i).toLowerCase();
   const who = s.slice(i + 1).trim();
-  if (kind === "agent") return who ? `Agen ${who}` : "Agen";
+  if (kind === "agent") return who ? `Agen ${agentDisplayName(who)}` : "Agen";
   if (kind === "user") return who || "Pengguna";
   if (kind === "system") return "Sistem";
   return who || s;
+}
+
+/**
+ * UI-04 (M-2): teks tooltip ID mentah ("ID: agent:hermes-gsp-master01"); undefined bila kosong.
+ * Nama tampilan agen/misi bersifat heuristik dan lossy, jadi ID asli harus tetap terjangkau.
+ */
+export function rawIdTitle(raw: string | null | undefined): string | undefined {
+  const s = (raw ?? "").trim();
+  return s ? `ID: ${s}` : undefined;
+}
+
+/** Nama tampilan + ID mentah dalam kurung bila berbeda (untuk `title`/`aria-label` berupa kalimat). */
+export function withRawId(label: string, raw: string | null | undefined): string {
+  const s = (raw ?? "").trim();
+  return s && s !== label ? `${label} (ID: ${s})` : label;
+}
+
+/** `actorLabel` + ID mentah bila berbeda: "Agen GSP Master 01 (ID: agent:hermes-gsp-master01)". */
+export function actorLabelWithId(by: string | null | undefined): string {
+  return withRawId(actorLabel(by), by);
+}
+
+/** Pelaku seed/sistem bawaan (UI-02, UA-M06): "seed-studio" -> "Sistem (bawaan)". */
+const SEED_ACTORS: ReadonlySet<string> = new Set(["seed-studio", "seed", "studio-seed", "system:seed"]);
+
+/** Singkatan yang ditulis kapital penuh dalam nama tampilan agen. */
+const AGENT_ACRONYMS: ReadonlySet<string> = new Set(["gsp", "ai", "hq", "mcp", "qa"]);
+
+/**
+ * Nama tampilan agen (UI-02, UA-M06). Prefiks runtime `hermes-` dibuang (itu nama mesin,
+ * bukan agen). Profil GSP dibaca sebagai nama: "hermes-gsp-master01" -> "GSP Master 01",
+ * "gsp-worker-fast" -> "GSP Worker Fast". ID lain tetap apa adanya (mis. "analis-01"),
+ * karena tidak ada registri nama tampilan yang lebih baik; ID mentah tetap ada di tooltip.
+ */
+export function agentDisplayName(id: string): string {
+  const raw = id.trim();
+  const core = raw.replace(/^hermes[-_]/i, "");
+  if (!core) return raw;
+  if (!/^gsp[-_]/i.test(core)) return core;
+  return core
+    .split(/[-_\s]+/)
+    .flatMap((w) => w.split(/(?<=[A-Za-z])(?=\d)/))
+    .filter(Boolean)
+    .map((w) => (AGENT_ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : /^\d+$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+/**
+ * UI-02 (UA-M07): deskripsi awam templat/gaya bawaan (satu kalimat). Deskripsi DB bawaan seed
+ * memuat jargon internal (jumlah parameter, kode keputusan, nama medan); deskripsi asli tetap
+ * tersedia sebagai tooltip. Templat buatan pengguna memakai deskripsinya sendiri.
+ */
+export const BUILTIN_TEMPLATE_DESCRIPTION: Readonly<Record<string, string>> = {
+  "datum-kanonik": "Gaya resmi DATUM dengan nilai bawaan; templat turunan mengikuti gaya ini.",
+  "datum-kanonik-preset": "Gaya DATUM dengan nilai bawaan standar; pilihan aman untuk templat baru.",
+  "datum-gsp-preset": "Gaya GSP DATUM: format terukur Manual DATUM untuk dokumen resmi GSP.",
+  "datum-manual-000-preset": "Gaya acuan Manual 000 untuk pengujian format terukur (khusus admin).",
+  "datum-gsp": "Dokumen resmi GSP mengikuti Manual DATUM 2.6.0; semua pemeriksaan standar berlaku.",
+  "datum-manual-000": "Templat acuan Manual 000 untuk pengujian format terukur (khusus admin).",
+  "laporan-kerja-agen": "Laporan kerja tiap agen: catatan laporan, isi laporan (bab 1-5), dan referensi.",
+};
+
+export function templateDescription(slug: string | null | undefined, description: string | null | undefined): string {
+  const builtin = slug ? BUILTIN_TEMPLATE_DESCRIPTION[slug] : undefined;
+  return builtin ?? (description ?? "").trim();
 }
 
 /** Satu bagian tata bahasa `changeScope` (register §9.5). */

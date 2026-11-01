@@ -75,7 +75,7 @@ const GRID: ParamDef[] = [
     classNote: "T (SR-01 PC-02): moda A = lebar - dalam - talang - rel - luar; moda B = lebar - dalam - luar",
   }),
   d("P4G-04", "grid.gutterMm", "Talang (mm)", "mm", 6, "DT-10", "L722, TK83", "B", { range: { min: 0, step: 0.5 } }),
-  d("P4G-05", "grid.evidenceRailMm", "Rel bukti (mm)", "mm", 32, "DT-10", "L722, TK84, SK38-44", "B", {
+  d("P4G-05", "grid.evidenceRailMm", "Lebar kolom catatan bukti (mm)", "mm", 32, "DT-10", "L722, TK84, SK38-44", "B", {
     range: { min: 0, step: 0.5 },
     classNote: "angka atau 0 (moda B)",
   }),
@@ -130,7 +130,7 @@ const GRID: ParamDef[] = [
     derive: "pageWidthCheck",
     classNote: "210 = 24 + 128 + 6 + 32 + 20; harus sama dengan lebar halaman",
   }),
-  d("P4G-16", "layout.railMode", "Moda rel bukti", "enum", "auto", "RAIL-BUKTI-DUA-MODA", "SK36-49", "B", {
+  d("P4G-16", "layout.railMode", "Kolom catatan bukti", "enum", "auto", "RAIL-BUKTI-DUA-MODA", "SK36-49", "B", {
     enum: ["auto", "A", "B"],
     derive: "railMode",
     conflictRef: "K-11",
@@ -196,16 +196,16 @@ const RULES: ParamDef[] = [
 // ── 3.3.7 Enam perangkat tanda tangan (27) ───────────────────────────────
 
 const SIGNATURE: ParamDef[] = [
-  d("P4S-01", "device.datumRule.enabled", "Datum Rule aktif", "bool", true, "DT-13", "L765", "B"),
-  d("P4S-02", "device.datumRule.weightMm", "Tebal Datum Rule (mm)", "mm", 0.2, "DT-13", "L765", "T", {
+  d("P4S-01", "device.datumRule.enabled", "Garis penanda di atas judul", "bool", true, "DT-13", "L765", "B"),
+  d("P4S-02", "device.datumRule.weightMm", "Tebal garis penanda (mm)", "mm", 0.2, "DT-13", "L765", "T", {
     derive: "ruleWeightFromHair",
     classNote: "= rules.hairMm",
   }),
-  d("P4S-03", "device.datumRule.ticks", "Jumlah tik Datum Rule", "int", 12, "DT-13", "L765, L821", "T", {
+  d("P4S-03", "device.datumRule.ticks", "Jumlah tik garis penanda", "int", 12, "DT-13", "L765, L821", "T", {
     derive: "ticksFromSubcolumns",
     classNote: "12 batas kolom = grid.subcolumns",
   }),
-  d("P4S-04", "device.datumRule.frontSegmentMm", "Segmen depan Datum Rule (mm)", "mm", 9, "Tabel 4.7 no. 4", "L821", "B", {
+  d("P4S-04", "device.datumRule.frontSegmentMm", "Segmen depan garis penanda (mm)", "mm", 9, "Tabel 4.7 no. 4", "L821", "B", {
     range: { min: 0, step: 0.5 },
     classNote: "pejal",
   }),
@@ -213,7 +213,7 @@ const SIGNATURE: ParamDef[] = [
   d(
     "P4S-06",
     "device.datumRule.placements",
-    "Penempatan Datum Rule",
+    "Penempatan garis penanda",
     "list",
     ["atas judul bab", "sampul", "pembatas"],
     "Tabel 4.6-4.7",
@@ -224,14 +224,14 @@ const SIGNATURE: ParamDef[] = [
       classNote: "subset; di interior hanya atas judul bab",
     },
   ),
-  d("P4S-07", "device.evidenceRail.enabled", "Rel bukti aktif", "bool", true, "DT-13", "L768", "B", {
+  d("P4S-07", "device.evidenceRail.enabled", "Kolom catatan bukti aktif", "bool", true, "DT-13", "L768", "B", {
     conflictRef: "K-11",
     classNote: "B (konflik K-11); moda rel diatur layout.railMode (P4G-16)",
   }),
   d(
     "P4S-08",
     "device.evidenceRail.contents",
-    "Isi rel bukti",
+    "Isi kolom catatan bukti",
     "list",
     ["tanda", "digraf Admiralty", "sumber", "REQ", "batang revisi"],
     "Tabel 4.6",
@@ -239,7 +239,7 @@ const SIGNATURE: ParamDef[] = [
     "B",
     { enum: ["tanda", "digraf Admiralty", "sumber", "REQ", "batang revisi"], classNote: "subset" },
   ),
-  d("P4S-09", "device.evidenceRail.emptyAllowed", "Rel bukti kosong diizinkan", "bool", true, "DT-43", "L784-785, L4649", "K", {
+  d("P4S-09", "device.evidenceRail.emptyAllowed", "Kolom catatan bukti boleh kosong", "bool", true, "DT-43", "L784-785, L4649", "K", {
     conflictRef: "K-11",
     classNote: "K (konflik K-11); DT-43 berlaku hanya di dalam moda A per halaman",
   }),
@@ -285,7 +285,7 @@ const SIGNATURE: ParamDef[] = [
     "K",
     { classNote: "medan NUMPAGES (E-06)" },
   ),
-  d("P4S-15", "device.sealBand.enabled", "Pita segel aktif", "bool", true, "DT-13", "L774", "B", {
+  d("P4S-15", "device.sealBand.enabled", "Tampilkan pita segel", "bool", true, "DT-13", "L774", "B", {
     classNote: "halaman pembungkus saja",
   }),
   d("P4S-16", "device.sealBand.heightMm", "Tinggi pita segel (mm)", "mm", 5, "Tabel 4.6", "L774", "B", {
@@ -300,19 +300,19 @@ const SIGNATURE: ParamDef[] = [
     enum: ["kendali salinan bernomor"],
     classNote: "tetap",
   }),
-  d("P4S-20", "device.spine.enabled", "String punggung aktif", "bool", true, "DT-13", "L777", "B"),
-  d("P4S-21", "device.spine.face", "Wajah string punggung", "tokenRef", "mono", "Tabel 4.6", "L777", "B"),
-  d("P4S-22", "device.spine.sizePt", "Ukuran string punggung (pt)", "pt", 6, "Tabel 4.6", "L777", "B", {
+  d("P4S-20", "device.spine.enabled", "Tampilkan teks tepi sampul", "bool", true, "DT-13", "L777", "B"),
+  d("P4S-21", "device.spine.face", "Jenis huruf teks tepi sampul", "tokenRef", "mono", "Tabel 4.6", "L777", "B"),
+  d("P4S-22", "device.spine.sizePt", "Ukuran teks tepi sampul (pt)", "pt", 6, "Tabel 4.6", "L777", "B", {
     range: { min: 1, step: 0.5 },
   }),
-  d("P4S-23", "device.spine.rotationDeg", "Putaran string punggung (derajat)", "deg", 90, "Tabel 4.6", "L777, L4525-4526", "B", {
+  d("P4S-23", "device.spine.rotationDeg", "Putaran teks tepi sampul (derajat)", "deg", 90, "Tabel 4.6", "L777, L4525-4526", "B", {
     range: { min: 0, max: 90, step: 90 },
     classNote: "0 atau 90; python-docx mencetak mendatar",
   }),
   d(
     "P4S-24",
     "device.spine.fields",
-    "Medan string punggung",
+    "Isi teks tepi sampul",
     "list",
     ["jenis", "subjek", "bahasa", "revisi", "bulan", "tahun"],
     "Tabel 4.6",
@@ -323,7 +323,7 @@ const SIGNATURE: ParamDef[] = [
   d(
     "P4S-25",
     "device.spine.placements",
-    "Penempatan string punggung",
+    "Penempatan teks tepi sampul",
     "list",
     ["margin luar sampul", "pembatas"],
     "Tabel 4.6",
@@ -408,18 +408,18 @@ const COVER: ParamDef[] = [
     gapRef: "G-02",
     classNote: "manual: rentang 24-26 pt; G-02: nilai pilihan 24",
   }),
-  d("P4V-07", "cover.kicker.colour", "Warna kicker sampul", "tokenRef", "seal", "4.8", "L794-795", "B", {
+  d("P4V-07", "cover.kicker.colour", "Warna teks jenis dokumen", "tokenRef", "seal", "4.8", "L794-795", "B", {
     classNote: "seal = marun",
   }),
-  d("P4V-08", "cover.kicker.text", "Teks kicker jenis dokumen", "string", "", "4.8", "L5, L794; research/04 T004", "B", {
+  d("P4V-08", "cover.kicker.text", "Teks jenis dokumen", "string", "", "4.8", "L5, L794; research/04 T004", "B", {
     classNote:
       "diisi per dokumen dari jenis dokumen; contoh Manual 000: STANDAR · MANUAL KOMPREHENSIF · PANDUAN SKILL DATUM GSP",
   }),
-  d("P4V-09", "cover.standfirst.italic", "Standfirst miring", "bool", true, "4.8", "L795", "B"),
+  d("P4V-09", "cover.standfirst.italic", "Paragraf pengantar miring", "bool", true, "4.8", "L795", "B"),
   d("P4V-10", "cover.scopeLine", "Baris cakupan sumber", "string", "", "4.8", "L14-15, L796; research/04 T002", "B", {
     classNote: "diisi per dokumen; contoh Manual 000: Menyatukan DATUM House Style Explained Rev A · Panduan Jenis Chart v1.1 · ...",
   }),
-  d("P4V-11", "cover.datumRule.widthMm", "Lebar Datum Rule sampul (mm)", "mm", 166, "4.8", "L794", "T", {
+  d("P4V-11", "cover.datumRule.widthMm", "Lebar garis penanda sampul (mm)", "mm", 166, "4.8", "L794", "T", {
     derive: "coverRuleWidth",
     classNote: "= grid.fullSpanMm",
   }),
@@ -530,10 +530,10 @@ const ANATOMY: ParamDef[] = [
     derive: "runningHeadRule",
     classNote: "= rules.hair",
   }),
-  d("P4A-04", "chapter.kicker.pattern", "Pola kicker bab", "string", "BAB {n}", "Tabel 4.7 no. 3", "L819", "B", {
+  d("P4A-04", "chapter.kicker.pattern", "Label nomor bab", "string", "BAB {n}", "Tabel 4.7 no. 3", "L819", "B", {
     classNote: "kapital amber renggang",
   }),
-  d("P4A-05", "chapter.datumRule.onlyAboveChapterTitle", "Datum Rule hanya di atas judul bab", "bool", true, "Tabel 4.7 no. 4", "L821", "K"),
+  d("P4A-05", "chapter.datumRule.onlyAboveChapterTitle", "Garis penanda hanya di atas judul bab", "bool", true, "Tabel 4.7 no. 4", "L821", "K"),
   d("P4A-06", "caption.position", "Posisi caption tabel", "enum", "above", "DT-15", "L836, L888", "K", {
     enum: ["above"],
   }),

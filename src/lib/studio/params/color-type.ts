@@ -60,7 +60,7 @@ const P4C: readonly ParamDef[] = [
   c(1, "color.wrapper.paper", "Kertas pembungkus", "hex", "FBFAF7", "DT-05", "L615, TK16; research/04 T031", WRAP),
   c(2, "color.wrapper.ink", "Tinta pembungkus (judul, nilai blok kendali)", "hex", "14110F", "-", "L616, TK17; research/04 T031", WRAP),
   c(3, "color.wrapper.body", "Prosa pembungkus", "hex", "33302C", "-", "L617, TK18; research/04 T031", WRAP),
-  c(4, "color.wrapper.meta", "Label, alamat, string punggung", "hex", "7A756E", "-", "L618, TK19; research/04 T031", WRAP),
+  c(4, "color.wrapper.meta", "Label, alamat, teks tepi sampul", "hex", "7A756E", "-", "L618, TK19; research/04 T031", WRAP),
   c(5, "color.wrapper.rule", "Garis rambut pembungkus", "hex", "C4BEB4", "-", "L619, TK20; research/04 T031", WRAP),
   c(6, "color.wrapper.seal", "Pita segel dan klasifikasi", "hex", "6E1420", "-", "L620, L595, TK21; research/04 T031", WRAP),
   c(7, "color.wrapper.cream", "Krem pembungkus (tanpa peran)", "hex", "F6E9E9", "-", "TK22 saja", {
@@ -77,14 +77,14 @@ const P4C: readonly ParamDef[] = [
     conflictRef: "K-07",
     classNote: "B (konflik K-07, E-07): rona 5,3 % di bawah lantai fotokopi 15 %; zebra memakai token zebra15 (P4C-30)",
   }),
-  c(14, "color.interior.signal", "Aksen tunggal (tanda DITURUNKAN)", "hex", "B45309", "-", "L635-636, TK31; research/04 T031", REK),
+  c(14, "color.interior.signal", "Warna aksen", "hex", "B45309", "-", "L635-636, TK31; research/04 T031", REK),
   c(15, "color.interior.alert", "Rahasia, ASUMSI, batas terlampaui", "hex", "9B1C1C", "-", "L636-637, TK32; research/04 T031", REK),
   c(16, "color.interior.verd", "Jalur verifikasi, tautan sheet, arah membaik", "hex", "2F6F6B", "R-02", "L637-638, L646, TK33; research/04 T031", REK),
   c(17, "color.interior.link", "Biru hyperlink dokumen", "hex", "0563C1", "-", "TK34 saja", {
     conflictRef: "K-04",
     classNote: "B (konflik K-04): hanya hyperlink dokumen; dilarang di chart dan diagram (R-02)",
   }),
-  c(18, "color.brief.ground", "Latar command brief gelap", "hex", "0E1216", "DT-05", "L642, TK37; research/04 T031"),
+  c(18, "color.brief.ground", "Warna latar ringkasan komando (gelap)", "hex", "0E1216", "DT-05", "L642, TK37; research/04 T031"),
   c(19, "color.brief.accent", "Aksen pada latar gelap", "hex", "D98324", "-", "L644, TK38; research/04 T031"),
   c(20, "color.retired", "Warna pensiun (dilarang dipakai)", "list", ["1A2B4A", "C9A84C"], "DT-07", "L648-651, TK41-42", { class: "K" }),
   c(21, "color.maxValuesPerPage", "Maksimum nilai warna per halaman", "int", 5, "DT-06, lint 14", "L648-649, L3966", {
@@ -126,13 +126,13 @@ const P4C: readonly ParamDef[] = [
 
 /** P4T dasar: tipografi (18). Tabel 4.3 = research/04 T032. */
 const P4T_BASE: readonly ParamDef[] = [
-  t(1, "type.face.serif", "Wajah huruf baca (serif)", "string", "IBM Plex Serif", "DT-08", "L661, TK48; research/04 T032"),
-  t(2, "type.face.condensed", "Wajah huruf struktural (condensed)", "string", "IBM Plex Sans Condensed", "DT-08", "L659, TK49; research/04 T032", {
+  t(1, "type.face.serif", "Jenis huruf baca (serif)", "string", "IBM Plex Serif", "DT-08", "L661, TK48; research/04 T032"),
+  t(2, "type.face.condensed", "Jenis huruf struktural (condensed)", "string", "IBM Plex Sans Condensed", "DT-08", "L659, TK49; research/04 T032", {
     classNote: "nama kanonik; profil Manual 000 (S95) memakai 'IBM Plex Sans Cond'",
   }),
-  t(3, "type.face.mono", "Wajah huruf data (mono)", "string", "IBM Plex Mono", "DT-08", "L663, TK50; research/04 T032"),
-  t(4, "type.face.workbookUi", "Wajah huruf UI workbook", "string", "IBM Plex Sans", "DT-08", "L665, TK51; research/04 T032"),
-  t(5, "type.face.symbolGlyph", "Wajah huruf simbol dan glif provenans", "string", "DejaVu Sans", "R-14", "L667-670, L4291-4292; research/04 T032", {
+  t(3, "type.face.mono", "Jenis huruf data (mono)", "string", "IBM Plex Mono", "DT-08", "L663, TK50; research/04 T032"),
+  t(4, "type.face.workbookUi", "Jenis huruf UI workbook", "string", "IBM Plex Sans", "DT-08", "L665, TK51; research/04 T032"),
+  t(5, "type.face.symbolGlyph", "Jenis huruf simbol dan glif provenans", "string", "DejaVu Sans", "R-14", "L667-670, L4291-4292; research/04 T032", {
     conflictRef: "K-18",
     classNote: "B (tidak ada di tokens, konflik K-18): ikut R-14 dan kode, ditanam ke berkas",
   }),
@@ -156,8 +156,8 @@ const P4T_BASE: readonly ParamDef[] = [
   t(14, "type.forbiddenBodyFaces", "Wajah dilarang untuk badan", "list", ["Calibri", "Times New Roman", "Aptos", "Arial"], "DT-08, lint 05", "L670, TK43; research/04 T032", {
     class: "K",
   }),
-  t(15, "type.tracking.displayTighter", "Pelacakan rapat huruf tampilan (em)", "em", -0.012, "-", "TK59 saja"),
-  t(16, "type.tracking.microLabelWider", "Pelacakan renggang label mikro (em)", "em", 0.09, "-", "TK59, L703"),
+  t(15, "type.tracking.displayTighter", "Jarak antarhuruf judul tampilan (rapat) (em)", "em", -0.012, "-", "TK59 saja"),
+  t(16, "type.tracking.microLabelWider", "Jarak antarhuruf label kecil (renggang)", "em", 0.09, "-", "TK59, L703"),
   t(17, "type.baselinePt", "Garis dasar (pt)", "pt", 13.5, "DT-10", "L682, L722, TK60", {
     class: "T",
     derive: "baselineFromBodyLeading",

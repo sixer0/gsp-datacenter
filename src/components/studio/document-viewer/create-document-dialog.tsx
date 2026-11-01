@@ -128,7 +128,7 @@ export function CreateDocumentDialog({
             list={`${ids}-ml`}
             value={mission}
             onChange={(e) => setMission(e.target.value.toLowerCase())}
-            placeholder="2026-10-23_misi_a"
+            placeholder="mis. 2026-10-23_nama-misi…"
             aria-invalid={missionInvalid || undefined}
             aria-describedby={`${ids}-mh`}
             className={FIELD}

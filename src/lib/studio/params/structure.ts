@@ -80,7 +80,7 @@ export const PARAMS_STRUCTURE: readonly ParamDef[] = [
     enum: PAPER_SIZES,
     classNote: "A4 210x297, A3 297x420, A5 148x210, Letter 215,9x279,4, Legal 215,9x355,6, F4 215x330 mm (hipotesis KC-11)",
   }),
-  s(45, "page.orientation", "Orientasi halaman", "enum", "portrait", `${SR01} R-45; D-158`, {
+  s(45, "page.orientation", "Orientasi", "enum", "portrait", `${SR01} R-45; D-158`, {
     enum: PAGE_ORIENTATIONS,
     classNote: "boleh ditimpa per slot (cakupan slot); landscape menukar lebar dan tinggi",
   }),
@@ -120,7 +120,7 @@ export const PARAMS_STRUCTURE: readonly ParamDef[] = [
     enum: WIDTH_CLASSES,
     classNote: "text = kolom teks, full = bentang penuh; mm diturunkan (figureWidthFromClass -> P5-14)",
   }),
-  s(56, "chart.widthClass", "Lebar chart", "enum", "text", `${SR59} N15; research/08 A26`, {
+  s(56, "chart.widthClass", "Lebar grafik", "enum", "text", `${SR59} N15; research/08 A26`, {
     enum: WIDTH_CLASSES,
     classNote: "text = kolom teks, full = bentang penuh; mm diturunkan (figureWidthFromClass -> P7-20)",
   }),
@@ -128,7 +128,7 @@ export const PARAMS_STRUCTURE: readonly ParamDef[] = [
     enum: WIDTH_CLASSES,
     classNote: "text = kolom teks, full = bentang penuh; mm diturunkan (figureWidthFromClass -> P9-36)",
   }),
-  s(58, "appendix.kicker.pattern", "Pola label nomor lampiran", "string", null, `${SR59} N17; engine/docx/blocks/structure.ts`, {
+  s(58, "appendix.kicker.pattern", "Label nomor lampiran", "string", null, `${SR59} N17; engine/docx/blocks/structure.ts`, {
     pattern: "\\{n\\}",
     classNote: "wajib memuat {n}; null = turunan kata LAMPIRAN dari pola bab (perilaku sekarang)",
   }),

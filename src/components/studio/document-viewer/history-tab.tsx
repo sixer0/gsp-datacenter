@@ -17,12 +17,12 @@ import { errorMessages } from "@/components/studio/shared/error-messages";
 import { ErrorView } from "@/components/studio/shared/error-view";
 import { isStudioApiError } from "@/components/studio/shared/http";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { RELEASE_LABEL, RELEASE_TONE, actorLabel, changeImpactLabel, changeWhatLabel, formatDateTime, versionLabel } from "@/components/studio/shared/labels";
+import { RELEASE_LABEL, RELEASE_TONE, actorLabel, changeImpactLabel, changeWhatLabel, formatDateTime, rawIdTitle, versionLabel } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { DiffView } from "@/components/studio/revision/diff-view";
 import { diffWithLatest, listRevisions, renderRevision } from "./doc-api";
-import { changedLabel, incompleteReportOf, missingLabel, scopeResolvers } from "./doc-model";
+import { changedLabel, incompleteReportOf, isAutoChangeWhy, missingLabel, scopeResolvers } from "./doc-model";
 import { useDocPage } from "./doc-context";
 
 const PAGE = 20;
@@ -35,6 +35,23 @@ function CompareSheet({ id, from, to, onClose }: { id: string; from: number; to:
       {q.error && !q.data && <ErrorView variant="inline" error={q.error} onRetry={q.retry} cooldown={q.cooldown} title="Perbandingan tidak dapat dimuat" />}
       {q.data && <DiffView docId={id} diff={q.data.diff} />}
     </Sheet>
+  );
+}
+
+/**
+ * UI-02 (UA-M04): versi terbaru menampilkan tombol langsung; versi lama melipat tombol ke
+ * satu menu "Tindakan" agar daftar panjang tidak dipenuhi tiga tombol per kartu.
+ */
+function RowActions({ latest, children }: { latest: boolean; children: React.ReactNode }) {
+  if (latest) return <div className="flex flex-wrap items-center gap-2">{children}</div>;
+  return (
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md py-1 text-[12.5px] text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] [&::-webkit-details-marker]:hidden">
+        Tindakan
+        <span aria-hidden className="transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <div className="mt-2 flex flex-wrap items-center gap-2">{children}</div>
+    </details>
   );
 }
 
@@ -78,19 +95,31 @@ function RevisionRow({ r, latest, onCompare }: { r: RevisionSummary; latest: num
         <span className="text-[13.5px] font-medium text-[var(--text)]">{versionLabel(r.revisionNo)}</span>
         {isLatest && <Pill tone="accent">Terbaru</Pill>}
         <span className="text-[12.5px] text-[var(--text-2)]">{formatDateTime(r.createdAt)}</span>
-        <span className="text-[12.5px] text-[var(--text-2)]">{actorLabel(r.createdBy)}</span>
+        <span className="text-[12.5px] text-[var(--text-2)]" title={rawIdTitle(r.createdBy)}>
+          {actorLabel(r.createdBy)}
+        </span>
         <span className="text-[12.5px] text-[var(--text)]">{changedLabel(r.changedAddresses, slotLabels)}</span>
-        <Pill tone={RELEASE_TONE[r.releaseStatus]}>{RELEASE_LABEL[r.releaseStatus]}</Pill>
+        {/* UI-02 (UA-m15): status versi lama = status saat itu, bukan proses yang masih berjalan. */}
+        {isLatest ? (
+          <Pill tone={RELEASE_TONE[r.releaseStatus]}>{RELEASE_LABEL[r.releaseStatus]}</Pill>
+        ) : (
+          <span className="text-[12px] text-[var(--text-2)]">Status saat itu: {RELEASE_LABEL[r.releaseStatus].toLowerCase()}</span>
+        )}
       </div>
       <dl className="grid gap-x-4 gap-y-0.5 text-[12.5px] sm:grid-cols-[auto_minmax(0,1fr)]">
         <dt className="text-[var(--text-2)]">Apa yang diubah</dt>
         <dd className="text-[var(--text)]">{changeWhatLabel(r.changeWhat, resolvers)}</dd>
-        <dt className="text-[var(--text-2)]">Mengapa</dt>
-        <dd className="text-[var(--text)]">{r.changeWhy || "-"}</dd>
+        {/* UI-02 (UA-M04): alasan bawaan otomatis sama di semua kiriman agen -> tidak ditampilkan. */}
+        {!isAutoChangeWhy(r.changeWhy) && (
+          <>
+            <dt className="text-[var(--text-2)]">Mengapa</dt>
+            <dd className="text-[var(--text)]">{r.changeWhy || "-"}</dd>
+          </>
+        )}
         <dt className="text-[var(--text-2)]">Dampaknya</dt>
         <dd className="text-[var(--text)]">{changeImpactLabel(r.changeImpact, resolvers)}</dd>
       </dl>
-      <div className="flex flex-wrap items-center gap-2">
+      <RowActions latest={isLatest}>
         {!isLatest && (
           <Button size="sm" onClick={() => navigate({ tab: "baca", versi: r.revisionNo, p: null, target: null })} className="whitespace-nowrap">
             <Eye className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -107,7 +136,7 @@ function RevisionRow({ r, latest, onCompare }: { r: RevisionSummary; latest: num
           <FileOutput className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
           {busy ? "Berkas sedang dibuat…" : "Buat berkas dari versi ini"}
         </Button>
-      </div>
+      </RowActions>
       {error && (
         <p role="alert" className="text-[12.5px] text-[var(--down)]">
           {error}
@@ -116,6 +145,7 @@ function RevisionRow({ r, latest, onCompare }: { r: RevisionSummary; latest: num
       <InfoTeknis
         items={{
           "Revisi induk": r.parentRevisionNo,
+          "Alasan (mentah)": isAutoChangeWhy(r.changeWhy) ? r.changeWhy : null,
           "Nomor berubah": r.changedAddresses.join(", "),
           Pelaku: r.createdBy,
           "Dampak (mentah)": r.changeImpact !== changeImpactLabel(r.changeImpact, resolvers) ? r.changeImpact : null,

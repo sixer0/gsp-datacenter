@@ -16,7 +16,8 @@ import { FilePlus2, LayoutTemplate } from "lucide-react";
 import type { OutputFileDto } from "@/lib/studio/contract/types/api";
 import { Button, EmptyState, Panel, Pill, Skeleton } from "@/components/ui/kit";
 import { ErrorView } from "@/components/studio/shared/error-view";
-import { formatDateTime, missionLabel, versionLabel } from "@/components/studio/shared/labels";
+import { formatDateTime, missionLabel, rawIdTitle, versionLabel } from "@/components/studio/shared/labels";
+import { MissionName } from "@/components/studio/shared/raw-id";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { useViewer } from "@/components/studio/shared/use-viewer";
 import { STUDIO_NAV } from "@/lib/studio/contract/ui";
@@ -51,7 +52,8 @@ function EngineChip() {
       ) : (
         pill
       )}
-      {!ready && !isAdmin && <span className="text-[12px] text-[var(--text-2)]">Berkas baru mungkin tertunda; hubungi admin.</span>}
+      {/* UI-02 (UA-M12): kalimat sama dengan halaman Sistem. UI-04 (M-3): tidak ada kanal pemberitahuan; jangan klaim pemberitahuan terkirim. */}
+      {!ready && !isAdmin && <span className="text-[12px] text-[var(--text-2)]">PDF sementara tertunda; Word dan halaman web tetap dibuat. Status ini juga tampil untuk admin di halaman Sistem.</span>}
     </div>
   );
 }
@@ -67,7 +69,7 @@ function DocLine({ doc }: { doc: DocumentListItem }) {
           >
             {doc.title}
           </Link>
-          <span className="text-[12px] text-[var(--text-2)]" title={doc.missionFolder ?? undefined}>
+          <span className="text-[12px] text-[var(--text-2)]" title={rawIdTitle(doc.missionFolder)}>
             {missionLabel(doc.missionFolder)}
           </span>
         </p>
@@ -92,7 +94,7 @@ function CompleteLine({ doc }: { doc: DocumentListItem }) {
           {doc.title}
         </Link>
         <p className="text-[12px] text-[var(--text-2)]">
-          {missionLabel(doc.missionFolder)} · {pdf ? `Berkas lengkap, ${versionLabel(doc.currentRevisionNo).toLowerCase()}` : q.isLoading ? "Memeriksa berkas…" : "Belum ada berkas lengkap"}
+          <MissionName folder={doc.missionFolder} /> · {pdf ? `Berkas lengkap, ${versionLabel(doc.currentRevisionNo).toLowerCase()}` : q.isLoading ? "Memeriksa berkas…" : "Belum ada berkas lengkap"}
         </p>
       </div>
       {pdf && <FileActions file={pdf} onOpen={setPreview} />}

@@ -22,7 +22,7 @@
  * pemeriksaan standar hanya di "Info teknis" (ADMIN). Galat lewat `shared/http`
  * + `ErrorView` (coba ulang berjeda 3/6/12 s, maks 3).
  */
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { CheckCircle2, Info, Loader2 } from "lucide-react";
 import type { TemplatePreviewPaneProps } from "@/lib/studio/contract/ui";
 import type { ValidationIssue } from "@/lib/studio/contract/types/api";
@@ -32,10 +32,10 @@ import { STUDIO_TIERS, type StudioTier } from "@/lib/studio/contract/enums";
 import { ErrorView } from "@/components/studio/shared/error-view";
 import { isStudioApiError, type StudioApiError } from "@/components/studio/shared/http";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { TERMS, TIER_LABEL } from "@/components/studio/shared/labels";
+import { TERMS, TIER_HINT, TIER_LABEL } from "@/components/studio/shared/labels";
 import { fetchTemplateRef, isAbort, postValidatePreviewV2, postValidatePreviewWithRoles, type DraftTemplateBody, type PreviewValidateResponse } from "./api";
 import { paramKeyFromPointer } from "./param-tools";
-import { listPreviewUnits, previewSrcDoc } from "./preview-html";
+import { fitZoom, listPreviewUnits, maxPageWidthMm, previewSrcDoc } from "./preview-html";
 import { SAMPLE_DOCUMENT, withDraft } from "./sample-document";
 import { sampleDocumentV2 } from "./sample-document-v2";
 
@@ -59,7 +59,7 @@ export {
   type ParamSearchOptions,
 } from "./param-tools";
 export { fetchParamRegistry, type PreviewApiError, type PreviewValidateResponse } from "./api";
-export { listPreviewUnits, previewSrcDoc, type PreviewUnit } from "./preview-html";
+export { fitZoom, listPreviewUnits, maxPageWidthMm, previewSrcDoc, type PreviewUnit } from "./preview-html";
 
 /** Ringkasan hasil validasi untuk pemanggil. */
 export interface TemplatePreviewResult {
@@ -139,6 +139,20 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
   const [unitChoice, setUnitChoice] = useState<string>("");
   const [refNonce, setRefNonce] = useState(0);
   const [valNonce, setValNonce] = useState(0);
+  // UI-02 (UA-M01): skala-agar-muat. Lebar panel diukur di induk (iframe tetap tanpa skrip).
+  const [fit, setFit] = useState(true);
+  const [boxWidth, setBoxWidth] = useState(0);
+  const frameBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = frameBoxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setBoxWidth((prev) => (Math.abs(prev - w) >= 1 ? w : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // ── 1. Templat -> slug (validate merujuk templat lewat slug) ──────────
   const refKey = `${templateId}#${versionNo ?? ""}#${refNonce}`;
@@ -229,7 +243,11 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
   const lastHtml = lastOk?.html ?? null;
   const units = useMemo(() => (lastHtml ? listPreviewUnits(lastHtml) : []), [lastHtml]);
   const unitKey = unitChoice && units.some((u) => u.key === unitChoice) ? unitChoice : null;
-  const srcDoc = useMemo(() => (lastHtml ? previewSrcDoc(lastHtml, unitKey) : null), [lastHtml, unitKey]);
+  const pageMm = useMemo(() => (lastHtml ? maxPageWidthMm(lastHtml) : null), [lastHtml]);
+  // Sisakan ruang bilah gulir vertikal iframe (~16 px) agar halaman tidak terpotong.
+  const zoom = fit ? fitZoom(boxWidth - 16, pageMm) : 1;
+  const srcDoc = useMemo(() => (lastHtml ? previewSrcDoc(lastHtml, unitKey, zoom) : null), [lastHtml, unitKey, zoom]);
+  const canFit = pageMm !== null && fitZoom(boxWidth - 16, pageMm) < 1;
   const stale = loading || !!valError || (result !== null && !result.previewHtml);
   const ids = `tpv-${templateId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 
@@ -290,11 +308,15 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
                     tier === t ? "border-[var(--accent)] text-[var(--text)]" : "border-[var(--line)] text-[var(--text-2)] hover:border-[var(--line-strong)]"
                   }`}
                 >
-                  <input type="radio" name={`${ids}-tier`} value={t} checked={tier === t} onChange={() => setTier(t)} className="sr-only" />
+                  <input type="radio" name={`${ids}-tier`} value={t} checked={tier === t} onChange={() => setTier(t)} className="sr-only" aria-describedby={`${ids}-tier-hint`} />
                   {TIER_LABEL[t]}
                 </label>
               ))}
             </div>
+            {/* UI-02 (UA-m12): arti tingkat terbitan tampil, bukan hanya di tooltip. */}
+            <p id={`${ids}-tier-hint`} className="mt-1 text-[11.5px] text-[var(--text-3)]">
+              {STUDIO_TIERS.map((t) => `${TIER_LABEL[t]} = ${TIER_HINT[t].toLowerCase()}`).join(" · ")}
+            </p>
           </fieldset>
         )}
       </div>
@@ -319,7 +341,20 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
         <ErrorView variant="inline" error={valError} title="Pratinjau tidak dapat dibuat" onRetry={() => setValNonce((n) => n + 1)} />
       )}
 
-      <div className="relative min-h-[420px] overflow-hidden rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--studio-paper)]">
+      {canFit && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-[var(--text-2)]">
+          <span>{fit ? `Diperkecil ${Math.round(zoom * 100)}% agar halaman muat di panel.` : "Ukuran asli; geser ke samping untuk melihat seluruh halaman."}</span>
+          <button
+            type="button"
+            onClick={() => setFit((f) => !f)}
+            className="rounded-[var(--r-sm)] border border-[var(--line)] px-2.5 py-1 text-[12px] text-[var(--text)] hover:border-[var(--line-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          >
+            {fit ? "Ukuran asli (100%)" : "Sesuaikan lebar"}
+          </button>
+        </div>
+      )}
+
+      <div ref={frameBoxRef} className="relative min-h-[420px] overflow-hidden rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--studio-paper)]">
         {srcDoc ? (
           <iframe
             title="Pratinjau dokumen contoh"

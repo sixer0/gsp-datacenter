@@ -18,10 +18,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FilePlus2, FolderOpen, RefreshCw, Search } from "lucide-react";
 import { Button, EmptyState, Panel, Pill, Skeleton } from "@/components/ui/kit";
-import { CompletenessRail } from "@/components/studio/shared/completeness-rail";
+import { CompletenessRail, RailLegend, buildRailSegments } from "@/components/studio/shared/completeness-rail";
+import { progressText, requiredProgress } from "@/components/studio/shared/completeness-text";
 import { errorMessages } from "@/components/studio/shared/error-messages";
 import { ErrorView } from "@/components/studio/shared/error-view";
-import { COMPLETENESS_STATUS_LABEL, RELEASE_LABEL, RELEASE_TONE, actorLabel, formatDateTime, missionLabel, slotLabel } from "@/components/studio/shared/labels";
+import { COMPLETENESS_STATUS_LABEL, RELEASE_LABEL, RELEASE_TONE, actorLabel, formatDateTime, missionLabel, rawIdTitle, slotLabel } from "@/components/studio/shared/labels";
 import { RefreshingIndicator } from "@/components/studio/shared/notice";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { STUDIO_NAV } from "@/lib/studio/contract/ui";
@@ -76,8 +77,9 @@ export function RowCompleteness({ doc }: { doc: DocumentListItem }) {
         <Skeleton className="h-[6px] w-full max-w-[22rem]" />
       ) : null}
       <p className="text-[12.5px] text-[var(--text-2)]">
+        {/* UI-02 (UA-M05): status "Lengkap" sudah di pil; baris ini hanya rincian, termasuk opsional kosong. */}
         {doc.completeness.status === "COMPLETE" ? (
-          <span className="text-[var(--text)]">Lengkap</span>
+          report && report.slots.length > 0 ? progressText(requiredProgress(buildRailSegments(report))) : "Semua bagian wajib terisi"
         ) : missing.length ? (
           <>Belum: {missing.slice(0, 4).join(", ")}{missing.length > 4 ? `, dan ${missing.length - 4} lainnya` : ""}</>
         ) : (
@@ -86,7 +88,7 @@ export function RowCompleteness({ doc }: { doc: DocumentListItem }) {
       </p>
       {last && (
         <p className="text-[12px] text-[var(--text-2)]">
-          Terakhir: {last.what} oleh {actorLabel(last.by)}, {formatDateTime(last.at)}
+          Terakhir: {last.what} oleh <span title={rawIdTitle(last.by)}>{actorLabel(last.by)}</span>, {formatDateTime(last.at)}
         </p>
       )}
     </div>
@@ -327,13 +329,15 @@ export function DocumentList() {
         </Panel>
       )}
 
+      {groups.length > 0 && <RailLegend />}
+
       {groups.map((g) => {
         const complete = g.docs.filter((d) => d.completeness.status === "COMPLETE").length;
         return (
           <Panel key={g.key} className="p-0">
             <section aria-label={g.folder ? missionLabel(g.folder) : "Tanpa misi"}>
               <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--line)] px-4 py-3 sm:px-5">
-                <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[var(--text)]" title={g.folder ?? undefined}>
+                <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[var(--text)]" title={rawIdTitle(g.folder)}>
                   {g.folder ? missionLabel(g.folder) : "Tanpa misi"}
                 </h2>
                 <p className="num text-[12px] text-[var(--text-2)]">

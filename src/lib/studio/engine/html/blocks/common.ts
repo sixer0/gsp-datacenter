@@ -26,7 +26,7 @@ export function el(ctx: RenderContext, tag: string, o: ElOptions, inner: string)
   const rf = o.role ? roleFormat(ctx, o.role) : {};
   const para = mergePara(rf.para, o.format);
   const run = mergeRun(rf[o.roleRun ?? "run"], o.run);
-  const rs = runStyle(run);
+  const rs = runStyle(run, 0, ctx.tpl);
   const decl = [...paraDecl(para), ...rs.decl];
   if (rf.cell?.shading?.fill && !para.shading) {
     // Peran tingkat sel membawa shading; elemen non-sel memakainya sebagai latar.

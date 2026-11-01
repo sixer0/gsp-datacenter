@@ -10,7 +10,8 @@
 import { Skeleton } from "@/components/ui/kit";
 import { Sheet } from "@/components/studio/shared/dialog";
 import { ErrorView } from "@/components/studio/shared/error-view";
-import { actorLabel, formatDateTime, versionLabel } from "@/components/studio/shared/labels";
+import { formatDateTime, versionLabel } from "@/components/studio/shared/labels";
+import { ActorName } from "@/components/studio/shared/raw-id";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { contentPlain, TextDiff } from "@/components/studio/revision/text-diff";
 import { Button } from "@/components/ui/kit";
@@ -91,7 +92,7 @@ export function ParagraphHistory({
                   <span className="font-medium">{versionLabel(e.revisionNo)}</span>
                   <span className="text-[var(--text-2)]">
                     {" "}
-                    · {formatDateTime(e.at)} · {actorLabel(e.by)}
+                    · {formatDateTime(e.at)} · <ActorName by={e.by} />
                     {!prev ? " (dibuat)" : ""}
                     {e.retired ? " (dihapus)" : ""}
                   </span>

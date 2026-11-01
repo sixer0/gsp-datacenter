@@ -11,20 +11,13 @@ import { Check, ClipboardCopy } from "lucide-react";
 import type { CompletenessReportV2, SlotStatusV2 } from "@/lib/studio/contract";
 import { Button, EmptyState, Panel, Pill } from "@/components/ui/kit";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { SLOT_STATE_LABEL, SLOT_STATE_TONE, actorLabel, formatDateTime, slotLabel } from "@/components/studio/shared/labels";
+import { SLOT_STATE_LABEL, SLOT_STATE_TONE, actorLabel, actorLabelWithId, formatDateTime, rawIdTitle, slotLabel } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { errorMessages } from "@/components/studio/shared/error-messages";
 import { renderDocument } from "./doc-api";
 import { missingSummaryText, type RenderResponse } from "./doc-model";
 import { useDocPage } from "./doc-context";
 import { outcomeOf, pdfNotReadyOf, type RenderOutcomeInput } from "./render-card-outcome";
-
-function initials(by: string): string {
-  const parts = by.split(/[-_.\s]+/).filter(Boolean);
-  const letters = parts.filter((p) => /[a-z]/i.test(p)).map((p) => p[0]!.toUpperCase());
-  const digits = parts.filter((p) => /^\d+$/.test(p)).join("");
-  return (letters.slice(-2).join("") + (digits ? String(Number(digits)) : "")) || by.slice(0, 3);
-}
 
 /** FIX-F (D-314): pengisi slot dalam label awam (`actorLabel`, D-297), bukan nilai mentah `agent:<id>`. */
 export function slotFillerText(by: string | null | undefined): string {
@@ -144,7 +137,7 @@ function ChapterChips({ slot, report, onOpen }: { slot: SlotStatusV2; report: Co
             <button
               type="button"
               onClick={() => onOpen(k)}
-              title={p ? `${name}: diisi oleh ${actorLabel(p.by)}, ${formatDateTime(p.at)}` : `${name}: belum ada`}
+              title={p ? `${name}: diisi oleh ${actorLabelWithId(p.by)}, ${formatDateTime(p.at)}` : `${name}: belum ada`}
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                 p
                   ? "border-[color-mix(in_srgb,var(--up)_35%,transparent)] text-[var(--text)]"
@@ -153,7 +146,8 @@ function ChapterChips({ slot, report, onOpen }: { slot: SlotStatusV2; report: Co
             >
               <span className="font-medium">{name}</span>
               <span className="text-[var(--text-2)]">
-                {p ? `· ${initials(actorLabel(p.by).replace(/^Agen /, ""))} ${formatDateTime(p.at).split(", ")[1] ?? ""}` : "· belum ada"}
+                {/* UI-02 (UA-M06): inisial agen tidak bermakna; jam saja, nama lengkap di tooltip. */}
+                {p ? `· ${formatDateTime(p.at).split(", ")[1] ?? ""}` : "· belum ada"}
               </span>
             </button>
           </li>
@@ -231,7 +225,7 @@ export function CompletenessTab() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--text-2)]">{auto ? "dibuat sistem" : slotFillerText(s.lastFilledBy)}</td>
+                    <td className="px-4 py-3 text-[var(--text-2)]" title={auto ? undefined : rawIdTitle(s.lastFilledBy)}>{auto ? "dibuat sistem" : slotFillerText(s.lastFilledBy)}</td>
                     <td className="px-4 py-3 text-[var(--text-2)]">{s.lastFilledAt ? formatDateTime(s.lastFilledAt) : "-"}</td>
                     <td className="px-4 py-3 text-[12px] text-[var(--text-2)]">
                       {draftable(s) ? <DraftButton scope="slot" keyName={s.slotKey} label={slotLabel(s.slotKey, s.label)} /> : prog ? <ChapterChips slot={s} report={report} onOpen={(k) => navigate({ tab: "baca", target: `${s.slotKey}:${k}` })} /> : "-"}
@@ -258,7 +252,7 @@ export function CompletenessTab() {
                   </button>
                   <Pill tone={SLOT_STATE_TONE[s.state]}>{SLOT_STATE_LABEL[s.state]}</Pill>
                 </div>
-                <p className="text-[12px] text-[var(--text-2)]">
+                <p className="text-[12px] text-[var(--text-2)]" title={s.state === "AUTO_READY" ? undefined : rawIdTitle(s.lastFilledBy)}>
                   {s.state === "AUTO_READY" ? "Dibuat sistem" : s.lastFilledBy ? `Diisi oleh ${actorLabel(s.lastFilledBy)}, ${formatDateTime(s.lastFilledAt)}` : "Belum ada pengisi"}
                 </p>
                 {prog && <ChapterChips slot={s} report={report} onOpen={(k) => navigate({ tab: "baca", target: `${s.slotKey}:${k}` })} />}

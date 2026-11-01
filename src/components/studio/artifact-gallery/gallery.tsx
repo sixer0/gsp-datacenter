@@ -19,7 +19,8 @@ import { Sheet } from "@/components/studio/shared/dialog";
 import { errorMessages } from "@/components/studio/shared/error-messages";
 import { ErrorView } from "@/components/studio/shared/error-view";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { RELEASE_LABEL, RELEASE_TONE, formatDateTime, missionLabel } from "@/components/studio/shared/labels";
+import { RELEASE_LABEL, RELEASE_TONE, formatDateTime, missionLabel, rawIdTitle } from "@/components/studio/shared/labels";
+import { MissionName } from "@/components/studio/shared/raw-id";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import {
   artifactsUrl,
@@ -101,7 +102,7 @@ function FilterForm({
           className={inputCls}
           value={draft.mission}
           onChange={(e) => set("mission", e.target.value)}
-          placeholder="2026-10-22_nama-misi"
+          placeholder="mis. 2026-10-22_nama-misi…"
           autoComplete="off"
         />
       </div>
@@ -177,7 +178,7 @@ function DetailSheet({ item, onClose }: { item: ArtifactListItem | null; onClose
             </div>
             <div className="flex gap-2">
               <dt className="text-[var(--text-2)]">Misi</dt>
-              <dd className="break-words" title={item.missionFolder ?? undefined}>
+              <dd className="break-words" title={rawIdTitle(item.missionFolder)}>
                 {missionLabel(item.missionFolder)}
               </dd>
             </div>
@@ -223,7 +224,7 @@ function ArtifactCard({ item, onOpen }: { item: ArtifactListItem; onOpen: () => 
         </h3>
         <p className="truncate text-[11.5px] text-[var(--text-3)]">
           {item.label ? `${item.label} · ` : ""}
-          {missionLabel(item.missionFolder)} · {formatDateTime(item.createdAt)}
+          <MissionName folder={item.missionFolder} /> · {formatDateTime(item.createdAt)}
         </p>
       </div>
       <div className="mt-auto">
@@ -301,7 +302,7 @@ export function ArtifactGallery({ charts }: { charts: readonly ChartDef[] | null
               <EmptyState
                 icon={<Shapes className="h-6 w-6" aria-hidden />}
                 title="Belum ada artefak"
-                hint="Ubah filter, atau buat artefak baru dari templat di tab Buat."
+                hint="Ubah filter, atau buat artefak baru dari templat di tab Buat artefak."
               />
             </Panel>
           ) : (

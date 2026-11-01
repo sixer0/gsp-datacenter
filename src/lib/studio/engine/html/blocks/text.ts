@@ -35,7 +35,7 @@ import { datumRuleHtml, isDevice, renderDevice } from "./device";
 import { attr, escapeHtml, finite } from "./escape";
 import { DEFAULT_MD_ROLES, hasInline, inlineHtml, runHtml, type HtmlRun } from "./inline";
 import { baseRun, semanticRuns, semanticTransform } from "./semantic";
-import { mergePara, roleFormat, runStyle, classStyle } from "./style";
+import { mergePara, roleFormat, runStyle, classStyle, wrapperScope } from "./style";
 
 // ── Paragraf ─────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ export function railHtml(ctx: RenderContext, rail: readonly RailLine[]): string 
     let glyph = "";
     if (mark) {
       const gr = roleFormat(ctx, "rail.mark").glyphRun?.[mark];
-      const st = runStyle(gr);
+      const st = runStyle(gr, 0, ctx.tpl);
       const { cls, style } = classStyle([C.railGlyph, ...st.classes], st.decl);
       glyph = `<span${attr("class", cls)}${attr("style", style)}${attr("data-mark", mark)}>${escapeHtml(PROVENANCE_GLYPHS[mark])}</span> `;
     }
@@ -100,7 +100,7 @@ export function railHtml(ctx: RenderContext, rail: readonly RailLine[]): string 
       typeof line.label === "string" && line.label ? line.label : mark && !Array.isArray(line.runs) && !line.text ? mark : "";
     let label = "";
     if (labelText) {
-      const st = runStyle(mark ? markLabelProps(ctx, mark) : undefined);
+      const st = runStyle(mark ? markLabelProps(ctx, mark) : undefined, 0, ctx.tpl);
       const { cls, style } = classStyle(st.classes, st.decl);
       const text = escapeHtml(labelText);
       label = `${cls || style ? `<span${attr("class", cls)}${attr("style", style)}>${text}</span>` : text} `;
@@ -177,7 +177,7 @@ export const renderList: HtmlBlockRenderer = (block, ctx) => {
     if (isObj(item.marker)) {
       marker = runHtml(item.marker as HtmlRun);
     } else {
-      const st = runStyle(markerFmt);
+      const st = runStyle(markerFmt, 0, ctx.tpl);
       const { cls, style } = classStyle(st.classes, st.decl);
       const text = escapeHtml(numbered ? `${i + 1}.` : "•");
       marker = cls || style ? `<span${attr("class", cls)}${attr("style", style)}>${text}</span>` : text;
@@ -213,7 +213,7 @@ export const renderAside: HtmlBlockRenderer = (block, ctx) => {
   const paras = body.map((para, i) => {
     let prefix = "";
     if (numbered) {
-      const st = runStyle(numberFmt);
+      const st = runStyle(numberFmt, 0, ctx.tpl);
       const { cls, style } = classStyle([C.asideNumber, ...st.classes], st.decl);
       prefix = `<span${attr("class", cls)}${attr("style", style)}>${i + 1}.</span><span class="${C.tab}">\t</span>`;
     }
@@ -373,8 +373,8 @@ function chapterHead(block: NormBlock, ctx: RenderContext, kind: "chapter" | "ap
 /** Kepala bab: kicker (BAB n), Datum Rule selebar kolom teks turunan, judul. Seksi dan blok dirender sebagai NormBlock terpisah. */
 export const renderChapter: HtmlBlockRenderer = (block, ctx) => chapterHead(block, ctx, "chapter");
 
-/** Pembuka lampiran: kicker LAMPIRAN X, Datum Rule, judul. */
-export const renderAppendix: HtmlBlockRenderer = (block, ctx) => chapterHead(block, ctx, "appendix");
+/** Pembuka lampiran: kicker LAMPIRAN X, Datum Rule, judul (rantai format pembungkus = DOCX `renderAppendixOpener`, ENG-01). */
+export const renderAppendix: HtmlBlockRenderer = (block, ctx) => chapterHead(block, wrapperScope(ctx), "appendix");
 
 export const renderSection: HtmlBlockRenderer = (block, ctx) => {
   const s = contentOf<Section>(ctx, block);
@@ -382,7 +382,7 @@ export const renderSection: HtmlBlockRenderer = (block, ctx) => {
   if (!hasInline(s.title)) return reportBad(ctx, block, "tanpa title");
   const number = typeof s.number === "string" && s.number ? s.number : (block.address ?? "");
   const rf = roleFormat(ctx, "section.heading");
-  const ns = runStyle(rf.numberRun);
+  const ns = runStyle(rf.numberRun, 0, ctx.tpl);
   const n = classStyle([C.sectionNumber, ...ns.classes], ns.decl);
   const numberHtml = number ? `<span${attr("class", n.cls)}${attr("style", n.style)}>${escapeHtml(number)}</span><span class="${C.tab}">\t</span>` : "";
   return el(

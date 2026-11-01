@@ -369,7 +369,7 @@ export function CreateArtifactPanel({
               className={inputCls}
               value={mission}
               onChange={(e) => setMission(e.target.value)}
-              placeholder="2026-10-22_nama-misi"
+              placeholder="mis. 2026-10-22_nama-misi…"
               autoComplete="off"
             />
           </div>

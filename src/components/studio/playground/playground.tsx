@@ -22,7 +22,7 @@ import { STUDIO_MAX_JSON_BYTES } from "@/lib/studio/contract/env";
 import { Button, EmptyState, Panel, Pill, SectionHeader, Skeleton } from "@/components/ui/kit";
 import { ConfirmDialog } from "@/components/studio/shared/dialog";
 import { ErrorView } from "@/components/studio/shared/error-view";
-import { formatBytes, missionLabel } from "@/components/studio/shared/labels";
+import { formatBytes, missionLabel, withRawId } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { useViewer } from "@/components/studio/shared/use-viewer";
@@ -52,18 +52,22 @@ export function DeveloperTools() {
   }
   if (error) return <ErrorView error={error} title="Peran Anda tidak dapat diperiksa" />;
   if (!isAdmin) {
+    // UI-02 (UA-m03): judul halaman (H1) tetap dirender untuk non-admin; kartu akses di bawahnya.
     return (
-      <Panel>
-        <EmptyState
-          title="Halaman ini khusus admin"
-          hint="Dokumen dikirim oleh agen; Anda dapat meninjaunya di Dokumen."
-          action={
-            <Button variant="primary" href="/studio/documents">
-              Buka Dokumen
-            </Button>
-          }
-        />
-      </Panel>
+      <div className="space-y-6">
+        <SectionHeader label="Alat developer" title="Uji kiriman agen tanpa memengaruhi alur kerja" />
+        <Panel>
+          <EmptyState
+            title="Halaman ini khusus admin"
+            hint="Dokumen dikirim oleh agen; Anda dapat meninjaunya di Dokumen."
+            action={
+              <Button variant="primary" href="/studio/documents">
+                Buka Dokumen
+              </Button>
+            }
+          />
+        </Panel>
+      </div>
     );
   }
   return <PlaygroundWorkspace />;
@@ -240,7 +244,7 @@ function PlaygroundWorkspace() {
     : target?.docNumber
       ? `dokumen ${target.docNumber}`
       : target?.missionFolder
-        ? missionLabel(target.missionFolder)
+        ? withRawId(missionLabel(target.missionFolder), target.missionFolder)
         : "dokumen di JSON";
   const vCd = actions.cooldowns.validate;
   const sCd = actions.cooldowns.submit;

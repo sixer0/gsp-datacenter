@@ -13,6 +13,7 @@ import type { ParamValue } from "@/lib/studio/contract/types/common";
 import { PAPER_SIZE_MM, type PaperSize } from "@/lib/studio/contract/enums";
 import { Pill } from "@/components/ui/kit";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
+import { templateDescription } from "@/components/studio/shared/labels";
 import { getTemplateDetail, type PresetItem } from "./api";
 
 /**
@@ -133,8 +134,13 @@ function StyleCard({
         </div>
         <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
           {portrait.paper} {ORIENT_LABEL(portrait.landscape)}
-          {preset.description ? ` · ${preset.description}` : ""}
         </p>
+        {/* UI-02 (UA-M07): deskripsi awam, maks 2 baris; deskripsi asli di tooltip. */}
+        {templateDescription(preset.slug, preset.description) && (
+          <p className="mt-0.5 line-clamp-2 text-[12px] text-[var(--text-2)]" title={preset.description ?? undefined}>
+            {templateDescription(preset.slug, preset.description)}
+          </p>
+        )}
         {preset.restricted && (
           <Pill tone="warn" className="mt-1.5">
             <Lock className="h-3 w-3" strokeWidth={2} aria-hidden /> Terbatas, khusus admin

@@ -84,7 +84,7 @@ const P5: readonly ParamDef[] = [
   }),
   make("P5-15", "table.rowCellCount.equalsHeader", "Jumlah sel baris sama dengan kepala", "bool", true, "K", "datumcheck G1", "L4028"),
   make("P5-16", "table.cellText.fitsColumn", "Teks sel muat dalam kolom", "bool", true, "K", "datumcheck G3", "L4029-4030"),
-  make("P5-17", "caption.required", "Caption wajib, di atas tabel", "bool", true, "K", "DT-15, lint 30", "L888-889, L4003"),
+  make("P5-17", "caption.required", "Keterangan tabel wajib, di atas tabel", "bool", true, "K", "DT-15, lint 30", "L888-889, L4003"),
   make("P5-18", "caption.identifier.style", "Gaya pengenal caption", "tokenRef", "condensedCaps", "T", "DT-15", "L889-890, L859", {
     derive: "captionIdentifierStyle",
     classNote: 'condensed kapital berspasi, mis. "T A B E L 5 . 1"; diturunkan dari peran caption (P4T-S08)',
@@ -262,7 +262,7 @@ const P6: readonly ParamDef[] = [
     enum: ["kemhanTni", "polri", "anri"],
     classNote: "kemhanTni = Permenhan 26/2017 Ps 3; polri = Perkap 1/2023 Ps 79; anri = ANRI 5/2021 Ps 104-109 (internal GSP)",
   }),
-  make("P6-02", "classification.level", "Tingkat klasifikasi", "enum", "Terbatas", "K", "DT-28", "L1079-1086, L4294-4296; research/04 T048", {
+  make("P6-02", "classification.level", "Klasifikasi bawaan", "enum", "Terbatas", "K", "DT-28", "L1079-1086, L4294-4296; research/04 T048", {
     enum: ["Biasa", "Terbatas", "Rahasia", "Sangat Rahasia"],
     classNote: "skema kemhanTni tanpa Terbatas; polri dan anri memuat keempatnya",
   }),

@@ -23,7 +23,7 @@ import { ErrorView } from "@/components/studio/shared/error-view";
 import { FORMAT_LABEL, formatBytes, formatDateTime, versionLabel } from "@/components/studio/shared/labels";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { getDocument, listRevisions } from "./doc-api";
-import { fileGroupOf, type FileGroupInfo } from "./doc-model";
+import { fileFormatsNote, fileGroupOf, type FileGroupInfo } from "./doc-model";
 import { useDocPage } from "./doc-context";
 
 const FORMAT_ORDER: Record<string, number> = { PDF: 0, DOCX: 1, HTML: 2, SVG: 3, PNG: 4 };
@@ -249,6 +249,8 @@ export function VersionFiles({
               <span className="text-[12px] text-[var(--text-2)]">
                 {versionLabel(versionNo)}
                 {when ? ` · ${formatDateTime(when)}` : ""}
+                {/* UI-02 (UA-M12): sebut format yang benar-benar ada, bukan hanya "lengkap". */}
+                {fileFormatsNote(g.files.map((f) => f.format)) ? ` · ${fileFormatsNote(g.files.map((f) => f.format))}` : ""}
               </span>
             </div>
           )}

@@ -121,7 +121,7 @@ const P3: ParamDef[] = [
   p3("P3-21", "doc.monthRoman", "Bulan Romawi", "string", "I-XII", "T", "6.3", "L1139-1140",
     { derive: "monthRoman", classNote: "dari tanggal (Perkap 1/2023)" }),
   p3("P3-22", "doc.revision", "Huruf revisi", "string", "A", "K", "3.6", "L17, L548-551", { classNote: "huruf revisi ARSIP" }),
-  p3("P3-23", "doc.language", "Bahasa dokumen", "enum", "ID", "B", "R-16", "L20, L4298-4300, L4488",
+  p3("P3-23", "doc.language", "Bahasa", "enum", "ID", "B", "R-16", "L20, L4298-4300, L4488",
     { enum: ["ID", "EN"], classNote: "EN: usulan P-08 belum berlaku" }),
   p3("P3-24", "doc.changeLog.required", "Catatan perubahan wajib", "bool", true, "K", "3.6", "L550-551", { classNote: "apa, mengapa, dampak" }),
 ];
@@ -407,7 +407,7 @@ const PAPD: ParamDef[] = [
       "idiom korespondensi Inggris",
       "pasangan sementara",
     ], "K", "-", "L4940-4962", { classNote: "6 kelas" }),
-  pD("PD-01", "sourceRegister.columns", "Kolom register sumber", "list",
+  pD("PD-01", "sourceRegister.columns", "Kolom daftar sumber", "list",
     ["DOKUMEN", "VERSI/TANGGAL", "BAHASA/HALAMAN", "KLASIFIKASI", "DIPAKAI DI"], "B", "-", "L5008-5030; research/04 T150"),
 ];
 

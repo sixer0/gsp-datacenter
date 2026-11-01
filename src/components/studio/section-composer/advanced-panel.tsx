@@ -14,6 +14,8 @@ import type { ParamValue } from "@/lib/studio/contract/types/common";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { TIER_HINT, TIER_LABEL } from "@/components/studio/shared/labels";
 import { getAdvancedKeys, type SlotKindDef } from "./api";
+import { getParamRegistry } from "@/components/studio/template-editor/api";
+import { paramDisplayLabel } from "@/components/studio/template-editor/param-labels";
 import { Switch } from "./knob-control";
 import { contentModeText, type Slot } from "./model";
 
@@ -41,19 +43,30 @@ function showValue(v: ParamValue): string {
   return typeof v === "string" ? v : JSON.stringify(v);
 }
 
+const fetchParams = (signal: AbortSignal) => getParamRegistry(signal);
+
 function AdvancedKeys({ slot, onPatch }: { slot: Slot; onPatch: (next: Slot) => void }) {
   const [query, setQuery] = useState("");
   const keysQ = useStudioQuery(`registry:advanced:${slot.sectionType}`, (s) => getAdvancedKeys(slot.sectionType, s), {
     source: "section-composer.advanced-keys",
   });
+  // UI-02 (UA-M10, L41-L42): label awam dari registri parameter (kunci yang sama, cache bersama editor).
+  const paramsQ = useStudioQuery("template-editor:params", fetchParams, { source: "section-composer.params" });
+  const labelOf = useMemo(() => {
+    const m = new Map((paramsQ.data ?? []).map((d) => [d.key, d.label] as const));
+    // UI-04 (M-1): nilai di panel ini tampil mentah tanpa satuan -> akhiran "(mm)" label dipertahankan.
+    return (key: string) => paramDisplayLabel(key, m.get(key), null);
+  }, [paramsQ.data]);
   const advanced = slot.advanced;
   const entries = Object.entries(advanced ?? {});
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q || !keysQ.data) return [];
     const used = new Set(Object.keys(advanced ?? {}));
-    return keysQ.data.filter((d) => !used.has(d.key) && (d.key.toLowerCase().includes(q) || d.id.toLowerCase().includes(q))).slice(0, 8);
-  }, [query, keysQ.data, advanced]);
+    return keysQ.data
+      .filter((d) => !used.has(d.key) && (d.key.toLowerCase().includes(q) || d.id.toLowerCase().includes(q) || labelOf(d.key).toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [query, keysQ.data, advanced, labelOf]);
 
   const setEntry = (key: string, value: ParamValue | undefined) => {
     const adv: Record<string, ParamValue> = { ...(slot.advanced ?? {}) };
@@ -69,10 +82,13 @@ function AdvancedKeys({ slot, onPatch }: { slot: Slot; onPatch: (next: Slot) => 
       <ul className="space-y-1.5">
         {entries.map(([k, v]) => (
           <li key={k} className="flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 break-all font-mono text-[11.5px] text-[var(--text-2)]">{k}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] text-[var(--text)]">{labelOf(k)}</span>
+              <span className="block break-all font-mono text-[11px] text-[var(--text-3)]">{k}</span>
+            </span>
             <input
               key={showValue(v)}
-              aria-label={`Nilai ${k}`}
+              aria-label={`Nilai ${labelOf(k)}`}
               defaultValue={showValue(v)}
               onBlur={(e) => setEntry(k, parseValue(e.target.value))}
               className={`${INPUT} w-48 font-mono text-[12px]`}
@@ -80,7 +96,7 @@ function AdvancedKeys({ slot, onPatch }: { slot: Slot; onPatch: (next: Slot) => 
             <button
               type="button"
               onClick={() => setEntry(k, undefined)}
-              aria-label={`Hapus pengaturan ${k}`}
+              aria-label={`Hapus pengaturan ${labelOf(k)}`}
               className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-2)] hover:bg-[var(--surface-2)] hover:text-[var(--down)] ${FOCUS}`}
             >
               <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
@@ -95,7 +111,7 @@ function AdvancedKeys({ slot, onPatch }: { slot: Slot; onPatch: (next: Slot) => 
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari nama pengaturan"
+            placeholder="Cari nama, kunci, atau ID pengaturan…"
             className={`${INPUT} mt-1 block w-full max-w-sm`}
           />
         </label>
@@ -113,7 +129,10 @@ function AdvancedKeys({ slot, onPatch }: { slot: Slot; onPatch: (next: Slot) => 
                   className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[var(--surface-2)] ${FOCUS}`}
                 >
                   <Plus className="h-3.5 w-3.5 shrink-0 text-[var(--text-2)]" strokeWidth={2} aria-hidden />
-                  <span className="min-w-0 break-all font-mono text-[11.5px] text-[var(--text)]">{d.key}</span>
+                  <span className="min-w-0">
+                    <span className="block text-[12.5px] text-[var(--text)]">{labelOf(d.key)}</span>
+                    <span className="block break-all font-mono text-[11px] text-[var(--text-3)]">{d.key}</span>
+                  </span>
                   {d.class === "K" && <span className="ml-auto text-[11px] text-[var(--text-2)]">standar DATUM</span>}
                 </button>
               </li>
@@ -184,7 +203,7 @@ export function AdvancedPanel({ slot, kind, onPatch }: { slot: Slot; kind: SlotK
                 </label>
                 <label className="flex items-center justify-between gap-3 text-[13px] text-[var(--text)]">
                   {`Maksimum ${unit}`}
-                  <input type="number" min={0} value={slot.maxItems ?? ""} onChange={(e) => setCount("maxItems", e.target.value)} className={`${INPUT} num w-20`} placeholder="-" />
+                  <input type="number" min={0} value={slot.maxItems ?? ""} onChange={(e) => setCount("maxItems", e.target.value)} className={`${INPUT} num w-28`} placeholder="Tanpa batas" />
                 </label>
               </>
             )}

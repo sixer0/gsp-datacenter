@@ -16,7 +16,7 @@ import { CompletenessRail } from "@/components/studio/shared/completeness-rail";
 import { ConfirmDialog } from "@/components/studio/shared/dialog";
 import { errorMessages } from "@/components/studio/shared/error-messages";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { COMPLETENESS_STATUS_LABEL, RELEASE_LABEL, RELEASE_TONE, TIER_HINT, TIER_LABEL, missionLabel, versionLabel } from "@/components/studio/shared/labels";
+import { COMPLETENESS_STATUS_LABEL, RELEASE_LABEL, RELEASE_TONE, TIER_HINT, TIER_LABEL, missionLabel, rawIdTitle, versionLabel } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { STUDIO_NAV } from "@/lib/studio/contract/ui";
 import { patchStructure } from "./doc-api";
@@ -228,7 +228,7 @@ export function DocumentHead() {
             <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
             <Link
               href={docsWithMission}
-              title={doc.missionFolder ?? undefined}
+              title={rawIdTitle(doc.missionFolder)}
               className="rounded hover:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               {mission}

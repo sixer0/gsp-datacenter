@@ -27,17 +27,18 @@ export interface LockInfo {
 export function lockOf(def: ParamDef, value: ParamValue | undefined, isAdmin: boolean, tier: StudioTier | undefined): LockInfo {
   if (def.class === "T") {
     const cls = effectiveClass(def, value ?? null, tier);
-    if (cls === "B") return { cls: "B", editable: true, reason: `Pengecualian kelas T untuk tier ${tier ?? "tertentu"}: ${def.classNote ?? ""}`.trim() };
+    // UI-02 (L19): alasan dalam bahasa awam; nama fungsi/kode keputusan tidak tampil.
+    if (cls === "B") return { cls: "B", editable: true, reason: `Untuk tingkat ${tier ?? "ini"}, pengaturan ini boleh diubah.` };
     return {
       cls: "T",
       editable: false,
-      reason: `Kelas T: dihitung mesin${def.derive ? ` (fungsi ${def.derive})` : ""} dan dihitung ulang saat versi disimpan; tidak dapat ditimpa siapa pun.`,
+      reason: "Dihitung otomatis dari pengaturan lain saat versi disimpan; tidak dapat diubah.",
     };
   }
   if (def.class === "K") {
     return isAdmin
-      ? { cls: "K", editable: true, reason: "Kelas K terbuka karena sesi ADMINISTRATOR (KT-16)." }
-      : { cls: "K", editable: false, reason: "Kelas K (kunci DATUM): hanya sesi ADMINISTRATOR yang dapat mengubah (KT-16)." };
+      ? { cls: "K", editable: true, reason: "Pengaturan standar DATUM; dapat diubah karena Anda admin." }
+      : { cls: "K", editable: false, reason: "Pengaturan standar DATUM hanya dapat diubah admin." };
   }
   const cls = effectiveClass(def, value ?? null, tier);
   return { cls, editable: true, reason: null };

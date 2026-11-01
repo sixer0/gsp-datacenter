@@ -16,7 +16,8 @@ import { expandParamRef } from "./param-ref";
 import { ParamControl, ReadonlyValue } from "./param-control";
 import { lockOf } from "./param-rules";
 import { ClassBadge, inputCls } from "./shared";
-import { formatValue, groupParams, hasOwn, valuesEqual, type ParamRecord } from "./values";
+import { namespaceLabel, paramDisplayLabel } from "./param-labels";
+import { formatValue, groupParams, hasOwn, unitOf, valuesEqual, type ParamRecord } from "./values";
 
 const SEARCH_LIMIT = 150;
 
@@ -119,13 +120,13 @@ export function ParamEditor(p: ParamEditorProps) {
           aria-label="Saring kelas parameter"
         >
           <option value="all">Semua kelas ({p.registry.length})</option>
-          <option value="B">B · bebas ({counts.B})</option>
-          <option value="K">K · kunci ({counts.K})</option>
-          <option value="T">T · terhitung ({counts.T})</option>
+          <option value="B">Bebas diubah ({counts.B})</option>
+          <option value="K">Standar DATUM, admin ({counts.K})</option>
+          <option value="T">Dihitung otomatis ({counts.T})</option>
         </select>
         <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-[var(--text-2)]">
           <label className="inline-flex items-center gap-1.5">
-            <input type="checkbox" checked={onlyOverridden} onChange={(e) => setOnlyOverridden(e.target.checked)} /> Hanya override
+            <input type="checkbox" checked={onlyOverridden} onChange={(e) => setOnlyOverridden(e.target.checked)} /> Hanya yang diubah di templat ini
           </label>
           <label className="inline-flex items-center gap-1.5">
             <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Tampilkan nonaktif
@@ -190,7 +191,7 @@ export function ParamEditor(p: ParamEditorProps) {
                   </span>
                   <span className="flex items-center gap-2 text-[12px] text-[var(--text-3)]">
                     {changed > 0 && <Pill tone="accent">{changed} diubah</Pill>}
-                    {total} parameter · {g.namespaces.length} namespace
+                    {total} pengaturan · {g.namespaces.length} kelompok
                   </span>
                 </button>
               </h3>
@@ -209,7 +210,7 @@ export function ParamEditor(p: ParamEditorProps) {
                           disabled={searching}
                         >
                           {nsOpen ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
-                          <span className="font-mono">{ns.namespace}</span>
+                          <span title={ns.namespace}>{namespaceLabel(ns.namespace)}</span>
                           <span className="text-[var(--text-3)]">({ns.defs.length})</span>
                         </button>
                         {nsOpen && (
@@ -293,22 +294,27 @@ function ParamRow({ def, ...p }: ParamEditorProps & { def: ParamDef }) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div id={labelId} className="text-[13px] font-medium text-[var(--text)]">
-            {def.label}
+            {paramDisplayLabel(def.key, def.label, unitOf(def.type))}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-[var(--text-3)]">
-            <span className="font-mono">{def.key}</span>
-            <span>· {def.id}</span>
-            {def.ruleRef && def.ruleRef !== "-" && <span>· {def.ruleRef}</span>}
-          </div>
+          {/* UI-02 (L15, L18): identitas teknis + catatan kelas pindah ke Info teknis per baris. */}
+          <details className="mt-0.5 text-[11.5px] text-[var(--text-3)]">
+            <summary className="cursor-pointer select-none">Info teknis</summary>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono">{def.key}</span>
+              <span>· {def.id}</span>
+              {def.ruleRef && def.ruleRef !== "-" && <span>· {def.ruleRef}</span>}
+            </div>
+            {def.classNote && <div className="mt-0.5">Catatan: {def.classNote}</div>}
+          </details>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <ClassBadge cls={lock.cls} title={def.classNote ? `Catatan kelas: ${def.classNote}` : undefined} />
-          {overridden && <Pill tone="accent">override</Pill>}
+          <ClassBadge cls={lock.cls} />
+          {overridden && <Pill tone="accent">diubah di templat</Pill>}
           {changed && <Pill tone="warn">diubah</Pill>}
           {def.inactive && <Pill>nonaktif</Pill>}
-          {def.rek && <Pill>REK</Pill>}
+          {def.rek && <Pill>Rekomendasi</Pill>}
           {def.unreadable && <Pill tone="down">tak terbaca</Pill>}
-          {def.conflictRef && <Pill tone="warn">konflik {def.conflictRef}</Pill>}
+          {def.conflictRef && <Pill tone="warn">Bertentangan dengan aturan {def.conflictRef}</Pill>}
         </div>
       </div>
 
@@ -335,21 +341,20 @@ function ParamRow({ def, ...p }: ParamEditorProps & { def: ParamDef }) {
         {!isComputed && (
           <div className="flex flex-wrap items-center gap-2 text-[var(--text-3)]">
             <span>
-              Induk: <span className="font-mono text-[var(--text-2)]">{formatValue(parentValue)}</span>
+              Nilai gaya: <span className="font-mono text-[var(--text-2)]">{formatValue(parentValue)}</span>
             </span>
             {overridden && lock.editable && (
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[var(--accent)] hover:bg-[var(--surface-1)]"
                 onClick={() => p.onReset(def.key)}
-                aria-label={`Reset ${def.label} ke nilai induk`}
+                aria-label={`Kembalikan ${paramDisplayLabel(def.key, def.label, unitOf(def.type))} ke nilai gaya`}
               >
-                <RotateCcw className="h-3 w-3" aria-hidden /> Reset ke induk
+                <RotateCcw className="h-3 w-3" aria-hidden /> Kembalikan ke nilai gaya
               </button>
             )}
           </div>
         )}
-        {def.classNote && <div className="text-[var(--text-3)]">Catatan: {def.classNote}</div>}
         {lock.reason && (
           <div className={`flex items-center gap-1 ${lock.editable ? "text-[var(--text-3)]" : "text-[var(--warn)]"}`}>
             {!lock.editable && <Lock className="h-3 w-3" aria-hidden />}

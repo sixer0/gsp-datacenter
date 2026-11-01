@@ -757,8 +757,13 @@ export function ReaderTab() {
           const secNo = sec.id ? numbers.number.get(sec.id) ?? `${c.key}.${si + 1}` : `${c.key}.${si + 1}`;
           return (
             <section key={sec.id ?? si} className="mt-6" aria-label={`Subbab ${secNo}`}>
-              <h4 id={targetId(`${t}:${si + 1}`)} tabIndex={-1} className="mb-2 text-[15px] font-semibold outline-none">
-                <span className="mr-2 tabular-nums">{secNo}</span>
+              <h4
+                id={targetId(`${t}:${si + 1}`)}
+                tabIndex={-1}
+                className="mb-2 text-[15px] font-semibold outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                {/* UI-02 (UA-m09): spasi nyata agar nama aksesibel "1.1 Ringkasan", bukan "1.1Ringkasan". */}
+                <span className="mr-2 tabular-nums">{secNo}</span>{" "}
                 <InlineText value={sec.title} />
               </h4>
               <div className="space-y-2">{sec.blocks.map((b, bi) => renderBlock(b, `${c.key}-${si}-${b.id ?? bi}`))}</div>

@@ -45,8 +45,8 @@ export interface TemplateStepperProps {
 
 export function TemplateStepper({ templateId, current, statuses = {}, onNavigate, className = "" }: TemplateStepperProps) {
   return (
-    <nav aria-label="Langkah mengatur templat" className={`overflow-x-auto ${className}`}>
-      <ol className="flex min-w-max items-center gap-1.5 text-[13px]">
+    <nav aria-label="Langkah mengatur templat" className={`overflow-x-auto [mask-image:linear-gradient(to_right,#000_85%,transparent)] sm:[mask-image:none] ${className}`}>
+      <ol className="flex min-w-max items-center gap-1.5 pr-10 text-[13px] sm:pr-0">
         {TEMPLATE_STEPS.map((s, i) => {
           const href = templateStepHref(templateId, s.id);
           const active = s.id === current;

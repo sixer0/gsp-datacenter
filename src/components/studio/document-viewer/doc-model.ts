@@ -467,9 +467,12 @@ export function numberLabel(addr: string, slotLabels?: ReadonlyMap<string, strin
 /** Lingkup awam dari daftar nomor yang berubah (R07 `changedAddresses`). */
 export function changedLabel(addrs: readonly string[], slotLabels?: ReadonlyMap<string, string>): string {
   if (addrs.length === 0) return "Dokumen";
-  if (addrs.length === 1) return numberLabel(addrs[0], slotLabels);
-  const first = addrs.slice(0, 2).map((a) => numberLabel(a, slotLabels));
-  return addrs.length > 2 ? `${first.join(", ")} dan ${addrs.length - 2} lainnya` : first.join(", ");
+  // UI-02 (UA-M03): beberapa medan `F:<slot>/<medan>` memetakan ke label bagian yang sama;
+  // deduplikasi SETELAH pemetaan, baru dipotong 2 + "dan n lainnya".
+  const labels = [...new Set(addrs.map((a) => numberLabel(a, slotLabels)))];
+  if (labels.length === 1) return labels[0];
+  const first = labels.slice(0, 2);
+  return labels.length > 2 ? `${first.join(", ")} dan ${labels.length - 2} lainnya` : first.join(", ");
 }
 
 /** Penerjemah kode lingkup untuk label bersama (`shared/labels.ts`). */
@@ -487,6 +490,31 @@ export function scopeResolvers(slotLabels?: ReadonlyMap<string, string>, numbers
 /** Lingkup awam dari `changeScope` (tata bahasa register §9.5); pemeta di `shared/labels.ts`. */
 export function changeScopeLabel(scope: string | null | undefined, slotLabels?: ReadonlyMap<string, string>, numbers?: ReadonlyMap<string, string>): string | null {
   return sharedChangeScopeLabel(scope, scopeResolvers(slotLabels, numbers));
+}
+
+/**
+ * UI-02 (UA-M04): alasan perubahan bawaan yang ditulis server untuk kiriman otomatis
+ * (`services/submit/change.ts`, `services/ingest/repository.ts`). Sama di semua versi,
+ * jadi tidak informatif di Riwayat.
+ */
+const AUTO_CHANGE_WHY: ReadonlySet<string> = new Set(["Kiriman agen (otomatis)", "Kiriman ingest (otomatis)"]);
+
+export function isAutoChangeWhy(why: string | null | undefined): boolean {
+  return AUTO_CHANGE_WHY.has((why ?? "").trim());
+}
+
+const DOC_FORMATS = ["PDF", "DOCX", "HTML"] as const;
+const DOC_FORMAT_SHORT: Readonly<Record<(typeof DOC_FORMATS)[number], string>> = { PDF: "PDF", DOCX: "Word", HTML: "HTML" };
+
+/**
+ * UI-02 (UA-M12): catatan format satu kelompok berkas dokumen, mis. "HTML tersedia; PDF/Word
+ * belum ada". null bila ketiganya ada atau tidak ada satu pun (kelompok gambar).
+ */
+export function fileFormatsNote(formats: readonly string[]): string | null {
+  const have = DOC_FORMATS.filter((f) => formats.includes(f));
+  const missing = DOC_FORMATS.filter((f) => !formats.includes(f));
+  if (have.length === 0 || missing.length === 0) return null;
+  return `${have.map((f) => DOC_FORMAT_SHORT[f]).join(", ")} tersedia; ${missing.map((f) => DOC_FORMAT_SHORT[f]).join("/")} belum ada`;
 }
 
 /** Ringkas `addressMap` jadi kalimat "Penomoran bergeser: 3.2.3 menjadi 3.2.4". */

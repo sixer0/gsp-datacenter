@@ -23,6 +23,7 @@ import {
   type ParaFormat,
   type PartSpec,
   type RenderContext,
+  type RoleFormat,
   type RoleKey,
   type SignatureBlock,
   type TableBlock,
@@ -49,7 +50,7 @@ import { assetDataUri, datumRuleHtml, DECORATIVE_IMG_ATTRS, isDevice, renderDevi
 import { attr, escapeHtml, finite, num } from "./escape";
 import { DEFAULT_MD_ROLES, hasInline, inlineHtml, inlinePlain } from "./inline";
 import { baseRun, semanticTransform } from "./semantic";
-import { roleFormat } from "./style";
+import { blockScope, roleFormat, wrapperScope } from "./style";
 import {
   renderAside,
   renderAssumptionInline,
@@ -169,7 +170,10 @@ function frontItemHtml(parent: NormBlock, ctx: RenderContext, item: unknown, ind
   if (type === "colophon") return colophonHtml(ctx, item as unknown as Colophon, address);
   if (type === "signatureBlock") return signatureHtml(ctx, item as unknown as SignatureBlock, address);
   const own = OWN_TEXT[type];
-  if (own) return own(childBlock(parent, type, item, index, type === "spacer" ? null : address), ctx);
+  // ENG-01: paragraf pembungkus = DOCX `roleParagraphXml` (rantai pembungkus); unsur lain
+  // didelegasikan DOCX ke renderer blok (`delegateBlock`; spacer = paragraf tanpa peran),
+  // jadi dirender dengan rantai blok isi.
+  if (own) return own(childBlock(parent, type, item, index, type === "spacer" ? null : address), type === "paragraph" ? ctx : blockScope(ctx));
   if (TABLE_TYPES.has(type)) return tableHtml(parent, ctx, item as unknown as TableBlock, index, address);
   const other = htmlTables[type as keyof typeof htmlTables];
   if (other) return other(childBlock(parent, type, item, index, address), ctx);
@@ -346,7 +350,8 @@ function explicitCoverHtml(block: NormBlock, ctx: RenderContext, fp: FrontPage):
   return (app.before.length > 0 ? coverAuto(block, ctx, {}, app.before) : "") + body + (app.after.length > 0 ? coverAuto(block, ctx, {}, app.after) : "");
 }
 
-export const renderCover: HtmlBlockRenderer = (block, ctx) => {
+export const renderCover: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
   const fp = contentOf<FrontPage>(ctx, block);
   if (!fp) return "";
   const inner =
@@ -363,7 +368,8 @@ function hasText(v: unknown): v is Inline {
   return hasInline(v) && inlinePlain(v).trim() !== "";
 }
 
-export const renderControlSheet: HtmlBlockRenderer = (block, ctx) => {
+export const renderControlSheet: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
   const fp = contentOf<FrontPage>(ctx, block);
   if (!fp) return "";
   const prefix = frontAddressPrefix(block, "controlSheet");
@@ -455,7 +461,9 @@ function chapterTitleEntries(ctx: RenderContext): TocRowHtml[] {
 function tocCellHtml(ctx: RenderContext, role: RoleKey, cls: string, inner: string, col: number): string {
   const parentRole = TOC_ROLE_PARENT[role];
   if (!parentRole) return el(ctx, "td", { classes: [cls], role }, inner);
-  const own = roleFormat(ctx, role);
+  // ENG-01: `own` = sub-objek yang DITULIS templat untuk peran ini; `parent` = format EFEKTIF
+  // peran bab (benchmark <- katalog <- templat), sama dengan DOCX `roleFormat` FIX-TL.
+  const own: RoleFormat = ctx.tpl?.roleFormats?.[role] ?? {};
   const parent = roleFormat(ctx, parentRole);
   if (!isTocSectionRole(role)) {
     return el(ctx, "td", { classes: [cls], role, format: own.para ? undefined : parent.para, run: own.run ? undefined : parent.run }, inner);
@@ -474,7 +482,8 @@ function tocCellHtml(ctx: RenderContext, role: RoleKey, cls: string, inner: stri
   return el(ctx, "td", { classes: [cls], role, format: { ...(own.para ? {} : para), indLeftTw: undefined }, run }, body);
 }
 
-export const renderToc: HtmlBlockRenderer = (block, ctx) => {
+export const renderToc: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
   const t = contentOf<TocSpec>(ctx, block);
   if (!t) return "";
   const parts: string[] = [];
@@ -510,7 +519,8 @@ function partLedeK2Format(ctx: RenderContext): ParaFormat | undefined {
   return reserve !== undefined && roleFormat(ctx, "part.lede").para?.indRightTw === reserve ? { indRightTw: undefined } : undefined;
 }
 
-export const renderPartDivider: HtmlBlockRenderer = (block, ctx) => {
+export const renderPartDivider: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
   const p = contentOf<PartSpec>(ctx, block);
   if (!p) return "";
   const partAnchor = typeof p.id === "string" ? tocAnchorId("st-part", p.id) : undefined;
@@ -553,7 +563,8 @@ export const renderPartDivider: HtmlBlockRenderer = (block, ctx) => {
 
 // ── Blok tanda tangan ────────────────────────────────────────────────────
 
-export const renderSignatureBlock: HtmlBlockRenderer = (block, ctx) => {
+export const renderSignatureBlock: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
   const s = contentOf<SignatureBlock>(ctx, block, "signatureBlock");
   if (!s) return "";
   if (!Array.isArray(s.roles) || s.roles.length === 0) return reportBad(ctx, block, "roles kosong");

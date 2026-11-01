@@ -11,10 +11,11 @@ import { Pill } from "@/components/ui/kit";
 export const inputCls =
   "w-full rounded-lg border border-[var(--line)] bg-[var(--surface-1)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus-visible:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)] disabled:opacity-60";
 
+/** UI-02 (L12): kelas izin parameter dalam kata awam (kode B/K/T hanya di Info teknis). */
 export const CLASS_LABEL: Record<"B" | "K" | "T", string> = {
-  B: "B · bebas",
-  K: "K · kunci",
-  T: "T · terhitung",
+  B: "Bebas diubah",
+  K: "Standar DATUM (admin)",
+  T: "Dihitung otomatis",
 };
 
 export function ClassBadge({ cls, title }: { cls: "B" | "K" | "T"; title?: string }) {

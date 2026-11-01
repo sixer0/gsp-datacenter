@@ -22,7 +22,8 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   return (
     <ViewerProvider>
       <NoticeProvider>
-        <div className="studio-root mx-auto w-full max-w-6xl">
+        {/* UI-02 (UA-m01): antarmuka Studio berbahasa Indonesia (root app di luar cakupan tetap lang="en"). */}
+        <div lang="id" className="studio-root mx-auto w-full max-w-6xl">
           <header className="mb-6 space-y-3">
             <div>
               <span className="eyebrow">Studio Dokumen</span>

@@ -214,8 +214,10 @@ describe('peran entri TOC per tingkat (sumber bersama DOCX + HTML)', () => {
     expect(htmlCells(canon, 'toc.sectionPage')).toHaveLength(3);
     for (const c of [...htmlCells(canon, 'toc.sectionLabel'), ...htmlCells(canon, 'toc.sectionTitle')]) expect(c).toContain(pad);
     for (const c of htmlCells(canon, 'toc.sectionPage')) expect(c).not.toContain('padding-left');
-    // kanonik: peran bab tanpa ukuran eksplisit -> section relatif 1em - 1pt
-    for (const c of htmlCells(canon, 'toc.sectionTitle')) expect(c).toContain('font-size:calc(1em - 1pt)');
+    // kanonik (ENG-01, D-463): ukuran bab efektif = benchmark/katalog seperti DOCX -> section = ukuran bab - 1 pt
+    const canonChSz = /font-size:([\d.]+)pt/.exec(htmlCells(canon, 'toc.chapterTitle')[0])?.[1];
+    expect(canonChSz).toBeDefined();
+    for (const c of htmlCells(canon, 'toc.sectionTitle')) expect(c).toContain(`font-size:${Number(canonChSz) - 1}pt`);
     // bab 2 + lampiran A memakai peran bab (lampiran tanpa peran templat sendiri)
     expect(htmlCells(canon, 'toc.chapterLabel')).toHaveLength(3);
     expect(htmlCells(canon, 'toc.appendixLabel')).toHaveLength(0);

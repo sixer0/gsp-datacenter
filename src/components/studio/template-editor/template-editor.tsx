@@ -632,7 +632,7 @@ function SettingsStep({
       <div className="min-w-0 space-y-4">
         <Panel className="p-5">
           <h2 className="text-[15px] font-semibold text-[var(--text)]">Pengaturan</h2>
-          <p className="mt-1 text-[12.5px] text-[var(--text-2)]">Berlaku untuk seluruh dokumen yang memakai templat ini. Pratinjau di samping ikut berubah.</p>
+          <p className="mt-1 text-[12.5px] text-[var(--text-2)]">Berlaku untuk seluruh dokumen yang memakai templat ini. Pratinjau ikut berubah.</p>
           {knobs.length === 0 ? (
             <p className="mt-4 text-[13px] text-[var(--text-2)]">Daftar pengaturan belum tersedia. Muat ulang halaman atau hubungi admin.</p>
           ) : (

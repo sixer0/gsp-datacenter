@@ -141,8 +141,9 @@ describe('DOCX: sampul explicit fixture SERAH v1 dan TOC/ruleIndex v2', () => {
     expect(paras).toContain('Bagian I');
     // HTML: sel label entri bagian dan kicker pembatas bagian sama-sama "Bagian I".
     const html = await assembleHtml(makeCtx(r.snapshot as unknown as NormDocSnapshot, tpl).ctx, { preview: false });
-    expect(html).toMatch(/data-level="part"><td class="st-toc-label" data-role="toc.partLabel">Bagian I<\/td>/);
-    expect(html).toMatch(/st-part-kicker" data-role="wrapper.kicker">Bagian I<\/p>/);
+    // ENG-01 (D-463): sel dan kicker kini membawa kelas/gaya peran (fallback benchmark seperti DOCX).
+    expect(html).toMatch(/data-level="part"><td class="st-toc-label[^"]*"(?: style="[^"]*")? data-role="toc.partLabel">Bagian I<\/td>/);
+    expect(html).toMatch(/st-part-kicker[^"]*"(?: style="[^"]*")? data-role="wrapper.kicker">Bagian I<\/p>/);
   }, 60_000);
 
   const RULE: TemplateSlotDef = {

@@ -170,7 +170,7 @@ const P7: readonly ParamDef[] = [
     conflictRef: "K-13",
     classNote: "KT-08: satu gradasi putih (kertas) ke signal; ramp paper-ink200-ink400-ink900 kode skill tidak dipakai",
   }),
-  d("P7-28", "chart.dashboardTiles.allowedInDocument", "Tile dan gauge dalam dokumen", "bool", false, "K", "CH-13, lint 01, R-04", "L1531-1533, L4248-4250", {
+  d("P7-28", "chart.dashboardTiles.allowedInDocument", "Ubin dan meteran dasbor dalam dokumen", "bool", false, "K", "CH-13, lint 01, R-04", "L1531-1533, L4248-4250", {
     classNote: "tile dan gauge hanya di layar hidup",
   }),
   d("P7-29", "chart.specialOnlyIfDefaultFails", "Chart khusus hanya bila default gagal", "bool", true, "K", "CH-14", "L1249-1251", {
@@ -435,7 +435,7 @@ const P9: readonly ParamDef[] = [
     classNote: "= baseline (P4T-17), dilepas lewat helper",
     derive: "diagramLineSpacing",
   }),
-  d("P9-52", "diagram.mermaidInDeliverable", "Mermaid dalam deliverable", "bool", false, "K", "DT-35, lint 31", "L2237-2239", {
+  d("P9-52", "diagram.mermaidInDeliverable", "Diagram Mermaid dalam berkas hasil", "bool", false, "K", "DT-35, lint 31", "L2237-2239", {
     classNote: "Mermaid untuk draf saja",
   }),
   d("P9-53", "diagram.figmaCopy.reviewOnly", "Salinan Figma hanya untuk tinjauan", "bool", true, "K", "9.5", "L2241-2245", {

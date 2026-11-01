@@ -56,7 +56,7 @@ function UserStatusCard({ data }: { data: RenderEnvStatusResponse }) {
           <p className="text-[13px] leading-relaxed text-[var(--text-2)]">
             {ready
               ? "Berkas dibuat normal."
-              : `Masalah terlihat pada pemeriksaan pukul ${time}. Pembuatan PDF mungkin tertunda; Word dan halaman web tetap dibuat. Admin sudah dapat melihat masalah ini di halaman Sistem.`}
+              : `Masalah terlihat pada pemeriksaan pukul ${time}. PDF sementara tertunda; Word dan halaman web tetap dibuat. Status ini juga tampil untuk admin di halaman Sistem.`}
           </p>
           <p className="text-[12px] text-[var(--text-2)]">Diperiksa {formatDateTime(data.readiness.checkedAt)}</p>
         </div>

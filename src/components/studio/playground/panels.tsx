@@ -22,8 +22,8 @@ import {
   COMPLETENESS_STATUS_LABEL,
   RELEASE_LABEL,
   RELEASE_TONE,
-  missionLabel,
 } from "@/components/studio/shared/labels";
+import { MissionName } from "@/components/studio/shared/raw-id";
 import type { CooldownState } from "@/components/studio/shared/use-cooldown";
 import type { ActionFailure } from "./use-playground-actions";
 import type { SubmitResultV2, ValidateResultV2 } from "./types";
@@ -233,7 +233,7 @@ export function SubmitResultPanel({ result }: { result: SubmitResultV2 }) {
         <div className="min-w-0 flex-1 space-y-1">
           <h3 className="text-[14px] font-semibold text-[var(--text)]">{headline}</h3>
           <p className="text-[12.5px] text-[var(--text-2)]">
-            {doc.docNumber} · {missionLabel(doc.missionFolder)}
+            {doc.docNumber} · <MissionName folder={doc.missionFolder} />
             {result.rebased ? " · digabung di atas versi terbaru" : ""}
           </p>
         </div>

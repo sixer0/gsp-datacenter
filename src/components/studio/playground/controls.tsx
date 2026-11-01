@@ -134,7 +134,7 @@ export function SubmissionPanel({
             id="pg-folder"
             value={overrides.missionFolder}
             onChange={(e) => set("missionFolder", e.target.value)}
-            placeholder="2026-10-23_nama-misi"
+            placeholder="mis. 2026-10-23_nama-misi…"
             aria-invalid={!!errors.missionFolder}
             aria-describedby={errors.missionFolder ? "pg-folder-err" : undefined}
             className={`${FIELD} ${errors.missionFolder ? "border-[var(--down)]" : ""}`}

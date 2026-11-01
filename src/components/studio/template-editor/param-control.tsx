@@ -14,6 +14,7 @@ import type { ParamValue } from "@/lib/studio/contract/types/common";
 import type { ParamDef } from "@/lib/studio/contract/types/params";
 import { inputCls } from "./shared";
 import { NUMERIC_TYPES, toCssHex, unitOf } from "./values";
+import { derivedUnit, enumOptionLabel, pairLabels, rangeText } from "./param-labels";
 
 export interface ParamControlProps {
   def: ParamDef;
@@ -69,11 +70,8 @@ function NumberControl({ def, value, disabled, labelId, describedBy, onChange, o
         }}
       />
       {unit && <span className="text-[12px] text-[var(--text-3)]">{unit}</span>}
-      {def.range && (def.range.min !== undefined || def.range.max !== undefined) && (
-        <span className="text-[11.5px] text-[var(--text-3)]">
-          rentang {def.range.min ?? "−∞"} – {def.range.max ?? "∞"}
-        </span>
-      )}
+      {/* UI-02 (L25): "1-90 mm" / "minimal 1" / "maksimal 90", tanpa simbol tak terbatas. */}
+      {rangeText(def.range, unit) && <span className="text-[11.5px] text-[var(--text-3)]">{rangeText(def.range, unit)}</span>}
     </div>
   );
 }
@@ -189,7 +187,7 @@ function MultiSelectControl({ def, value, disabled, labelId, onChange, onInvalid
               onChange(options.filter((o) => next.has(o)));
             }}
           />
-          <span className="font-mono">{opt}</span>
+          <span>{enumOptionLabel(def.key, opt)}</span>
         </label>
       ))}
     </div>
@@ -223,11 +221,15 @@ function TwoNumberControl({ def, value, disabled, labelId, describedBy, onChange
     disabled,
     "aria-describedby": describedBy,
   };
+  // UI-04 (M-1): tipe pair/range tidak bersatuan; satuan diturunkan dari label/kunci (mis. customSizeMm -> mm).
+  const unit = unitOf(def.type) || derivedUnit(def.key, def.label);
+  const aria = (l: string) => (unit ? `${l} (${unit})` : l);
   return (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby={labelId}>
-      <input {...common} aria-label={labels[0]} value={a} onChange={(e) => { setA(e.target.value); commit(e.target.value, b); }} />
+      <input {...common} aria-label={aria(labels[0])} value={a} onChange={(e) => { setA(e.target.value); commit(e.target.value, b); }} />
       <span className="text-[12px] text-[var(--text-3)]">–</span>
-      <input {...common} aria-label={labels[1]} value={b} onChange={(e) => { setB(e.target.value); commit(a, e.target.value); }} />
+      <input {...common} aria-label={aria(labels[1])} value={b} onChange={(e) => { setB(e.target.value); commit(a, e.target.value); }} />
+      {unit && <span className="text-[12px] text-[var(--text-2)]">{unit}</span>}
     </div>
   );
 }
@@ -312,10 +314,10 @@ export function ParamControl(props: ParamControlProps) {
           onChange(e.target.value);
         }}
       >
-        {!opts.includes(cur) && <option value={cur}>{cur || "(kosong)"}</option>}
+        {!opts.includes(cur) && <option value={cur}>{cur ? enumOptionLabel(def.key, cur) : "(kosong)"}</option>}
         {opts.map((o) => (
           <option key={o} value={o}>
-            {o}
+            {enumOptionLabel(def.key, o)}
           </option>
         ))}
       </select>
@@ -329,12 +331,12 @@ export function ParamControl(props: ParamControlProps) {
   }
   if (t === "range") {
     const v = Array.isArray(value) ? value : def.default;
-    if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number")) return <TwoNumberControl {...props} labels={["Min", "Maks"]} />;
+    if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number")) return <TwoNumberControl {...props} labels={["Minimal", "Maksimal"]} />;
     return <JsonControl {...props} />;
   }
   if (t === "pair") {
     const v = Array.isArray(value) ? value : def.default;
-    if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number")) return <TwoNumberControl {...props} labels={["Pertama", "Kedua"]} />;
+    if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number")) return <TwoNumberControl {...props} labels={pairLabels(def.key)} />;
     if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "string")) return <TwoTextControl {...props} />;
     return <JsonControl {...props} />;
   }

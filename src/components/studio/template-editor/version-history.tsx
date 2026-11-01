@@ -18,6 +18,7 @@ import { formatDateTime } from "@/components/studio/shared/labels";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { getEssentials, getTemplateDetail, type EssentialKnob, type TemplateDetailV2 } from "./api";
 import { creatorLabel, knobKey, knobValueLabel } from "./model";
+import { ActorName } from "@/components/studio/shared/raw-id";
 import { diffRecords, formatValue, valuesEqual } from "./values";
 
 interface HistoryData {
@@ -131,7 +132,7 @@ function HistoryBody({ data }: { data: HistoryData }) {
                   </p>
                   <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-[var(--text-2)]">{v.changeNote}</p>
                   <p className="mt-1 text-[12px] text-[var(--text-2)]">
-                    {creatorLabel(v.createdBy)} · {formatDateTime(v.createdAt)}
+                    <ActorName by={v.createdBy} text={creatorLabel(v.createdBy)} /> · {formatDateTime(v.createdAt)}
                   </p>
                 </div>
                 <Button size="sm" href={`${editorHref}${v.versionNo === latest ? "" : `?version=${v.versionNo}`}`}>

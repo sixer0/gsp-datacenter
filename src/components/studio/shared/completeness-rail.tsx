@@ -26,7 +26,8 @@ import type {
   CompletenessSlotSummary,
   CompletenessSummary as ContractCompletenessSummary,
 } from "@/lib/studio/contract/types/v2";
-import { COMPLETENESS_STATUS_LABEL, SLOT_STATE_LABEL, actorLabel, formatDateTime, missingLabels, repeatItemLabel, slotLabel } from "./labels";
+import { COMPLETENESS_STATUS_LABEL, SLOT_STATE_LABEL, actorLabel, actorLabelWithId, formatDateTime, missingLabels, repeatItemLabel, slotLabel } from "./labels";
+import { progressText, requiredProgress } from "./completeness-text";
 
 // ── Tipe (kontrak SR-04) ─────────────────────────────────────────────────
 
@@ -132,10 +133,15 @@ export function railStats(segments: readonly RailSegment[]): RailStats {
   };
 }
 
-/** "7 dari 9 bagian terisi; belum diisi: Lembar kendali, Bab 4". */
+/**
+ * "5 dari 6 bagian wajib terisi, 1 opsional kosong; belum diisi: Lembar kendali".
+ * UI-04 (L-3): angka sama dengan teks terlihat (`requiredProgress`), bukan semua segmen.
+ */
 export function railAriaLabel(segments: readonly RailSegment[]): string {
-  const { done, total, missing } = railStats(segments);
-  const head = `${done} dari ${total} bagian terisi`;
+  const { missing } = railStats(segments);
+  const p = requiredProgress(segments);
+  const n = (x: number) => x.toLocaleString("id-ID");
+  const head = `${n(p.requiredDone)} dari ${n(p.requiredTotal)} bagian wajib terisi${p.optionalEmpty > 0 ? `, ${n(p.optionalEmpty)} opsional kosong` : ""}`;
   return missing.length ? `${head}; belum diisi: ${missing.join(", ")}` : head;
 }
 
@@ -158,6 +164,21 @@ function segmentStyle(state: RailSegment["state"]): React.CSSProperties {
     case "OPTIONAL_EMPTY":
       return { background: "transparent", border: "1px solid var(--line-strong)" };
   }
+}
+
+/** UI-02 (UA-m13): legenda kecil arti segmen bilah (warna + pola), sekali di atas daftar. */
+export function RailLegend({ className = "" }: { className?: string }) {
+  const items: ReadonlyArray<RailSegment["state"]> = ["FILLED", "AUTO_READY", "PARTIAL", "EMPTY", "OPTIONAL_EMPTY"];
+  return (
+    <ul aria-label="Arti warna bilah kelengkapan" className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-[var(--text-2)] ${className}`}>
+      {items.map((st) => (
+        <li key={st} className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="inline-block h-[6px] w-4 rounded-[2px]" style={segmentStyle(st)} />
+          {SLOT_STATE_LABEL[st]}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export type RailSize = "list" | "md" | "sm";
@@ -186,7 +207,7 @@ export function CompletenessRail({ summary, size = "md", onSegmentClick, classNa
     <div className={`flex w-full items-stretch gap-[2px] ${HEIGHT[size]}`}>
       {segments.map((seg) => {
         const style = segmentStyle(seg.state);
-        const full = `${seg.label}: ${SLOT_STATE_LABEL[seg.state]}${seg.by ? `, diisi oleh ${actorLabel(seg.by)}` : ""}${seg.at ? `, ${formatDateTime(seg.at)}` : ""}`;
+        const full = `${seg.label}: ${SLOT_STATE_LABEL[seg.state]}${seg.by ? `, diisi oleh ${actorLabelWithId(seg.by)}` : ""}${seg.at ? `, ${formatDateTime(seg.at)}` : ""}`;
         if (!interactive) {
           return <span key={seg.key} className="min-w-[3px] flex-1 rounded-[2px] motion-safe:transition-[background-color,border-color] motion-safe:duration-300" style={style} />;
         }
@@ -217,6 +238,8 @@ export function CompletenessRail({ summary, size = "md", onSegmentClick, classNa
                   {seg.by ? ` · ${actorLabel(seg.by)}` : ""}
                   {seg.at ? ` · ${formatDateTime(seg.at)}` : ""}
                 </span>
+                {/* UI-04 (M-2): ID mentah pengisi tetap terbaca (nama tampilan lossy). */}
+                {seg.by && seg.by.trim() !== actorLabel(seg.by) && <span className="block break-all font-mono text-[10.5px] text-[var(--text-3)]">ID: {seg.by.trim()}</span>}
               </span>
             )}
           </span>
@@ -256,11 +279,9 @@ export function CompletenessRail({ summary, size = "md", onSegmentClick, classNa
       </div>
       <p className="text-[12px] text-[var(--text-2)]">
         <span className="font-medium text-[var(--text)]">{COMPLETENESS_STATUS_LABEL[summary.status]}</span>
-        {": "}
-        <span className="num">
-          {stats.done} dari {stats.total}
-        </span>{" "}
-        bagian
+        {" · "}
+        {/* UI-02 (UA-M05): hitung bagian wajib; opsional kosong disebut, bukan dihitung kurang. */}
+        <span className="num">{progressText(requiredProgress(segments))}</span>
         {summary.revisionNo !== undefined ? ` · versi ${summary.revisionNo.toLocaleString("id-ID")}` : ""}
       </p>
     </div>

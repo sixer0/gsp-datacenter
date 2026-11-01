@@ -40,9 +40,10 @@ export function StudioSubnav() {
   const entries = studioNavFor(isAdmin, STUDIO_NAV);
   const main = entries.filter((e) => e.audience === "all");
   const admin = entries.filter((e) => e.audience === "admin");
+  // UI-02 (UA-m06): gradasi tepi kanan di ponsel sebagai isyarat dapat digeser.
   return (
-    <nav aria-label="Navigasi Studio" className="-mx-1 overflow-x-auto">
-      <ul className="flex min-w-max items-center gap-1 px-1 py-1">
+    <nav aria-label="Navigasi Studio" className="-mx-1 overflow-x-auto [mask-image:linear-gradient(to_right,#000_85%,transparent)] sm:[mask-image:none]">
+      <ul className="flex min-w-max items-center gap-1 py-1 pl-1 pr-10 sm:pr-1">
         {main.map((entry) => (
           <li key={entry.href}>
             <NavPill entry={entry} active={isActive(entry, pathname)} />

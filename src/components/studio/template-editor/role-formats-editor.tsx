@@ -13,6 +13,7 @@ import type { RoleFormat, RoleFormatMap } from "@/lib/studio/contract/engine";
 import { Pill } from "@/components/ui/kit";
 import { inputCls } from "./shared";
 import { toCssHex, valuesEqual } from "./values";
+import { formatLineSpacing, lineSpacingUnit, roleDisplayLabel, roleEnumLabel, roleGroupLabel, RUN_PART_LABELS, twToPtLabel } from "./role-format-labels";
 
 type Field =
   | { name: string; label: string; kind: "tw" | "int" | "halfPt"; min?: number; max?: number }
@@ -25,41 +26,45 @@ type Field =
 const PARA_FIELDS: readonly Field[] = [
   { name: "spacingBeforeTw", label: "Spasi sebelum", kind: "tw", min: 0 },
   { name: "spacingAfterTw", label: "Spasi sesudah", kind: "tw", min: 0 },
-  { name: "lineTw", label: "Jarak baris", kind: "tw", min: 0 },
-  { name: "lineRule", label: "Aturan baris", kind: "enum", options: ["auto", "exact", "atLeast"] },
+  // UI-02 (L26): batas = skema kontrak `lineTw` 20-1440; label dinamis menurut aturan baris.
+  { name: "lineTw", label: "Jarak baris", kind: "tw", min: 20, max: 1440 },
+  { name: "lineRule", label: "Aturan jarak baris", kind: "enum", options: ["auto", "exact", "atLeast"] },
   { name: "jc", label: "Perataan", kind: "enum", options: ["left", "right", "center", "both"] },
   { name: "indLeftTw", label: "Inden kiri", kind: "tw" },
   { name: "indRightTw", label: "Inden kanan", kind: "tw" },
   { name: "indHangingTw", label: "Inden gantung", kind: "tw", min: 0 },
   { name: "indFirstLineTw", label: "Inden baris pertama", kind: "tw", min: 0 },
-  { name: "outlineLvl", label: "Tingkat outline (0-8)", kind: "int", min: 0, max: 8 },
-  { name: "keepNext", label: "Bersama berikutnya", kind: "bool" },
-  { name: "keepLines", label: "Baris tetap bersama", kind: "bool" },
-  { name: "pageBreakBefore", label: "Pindah halaman sebelum", kind: "bool" },
-  { name: "widowControl", label: "Kendali baris yatim", kind: "bool" },
-  { name: "tabs", label: "Tab stop", kind: "json", hint: '[{"posTw":4536,"val":"right","leader":"dot"}]' },
-  { name: "borders", label: "Garis tepi", kind: "json", hint: '{"bottom":{"val":"single","sz":4,"color":"1F3A5F"}}' },
-  { name: "shading", label: "Arsir", kind: "json", hint: '{"fill":"F2F2F2","val":"clear"}' },
+  { name: "outlineLvl", label: "Tingkat judul di navigasi Word (0 = tingkat 1)", kind: "int", min: 0, max: 8 },
+  { name: "keepNext", label: "Satu halaman dengan paragraf berikutnya", kind: "bool" },
+  { name: "keepLines", label: "Jangan pecah paragraf antarhalaman", kind: "bool" },
+  { name: "pageBreakBefore", label: "Mulai di halaman baru", kind: "bool" },
+  { name: "widowControl", label: "Cegah baris yatim/piatu", kind: "bool" },
+  { name: "tabs", label: "Posisi tab (JSON)", kind: "json", hint: '[{"posTw":4536,"val":"right","leader":"dot"}]' },
+  { name: "borders", label: "Garis tepi (JSON)", kind: "json", hint: '{"bottom":{"val":"single","sz":4,"color":"1F3A5F"}}' },
+  { name: "shading", label: "Arsir (JSON)", kind: "json", hint: '{"fill":"F2F2F2","val":"clear"}' },
 ];
 
 const RUN_FIELDS: readonly Field[] = [
-  { name: "faceRole", label: "Peran wajah", kind: "enum", options: ["serif", "condensed", "mono", "workbookUi", "symbolGlyph"] },
-  { name: "face", label: "Nama wajah (XOR peran)", kind: "text" },
-  { name: "szHalfPt", label: "Ukuran", kind: "halfPt", min: 1 },
+  { name: "faceRole", label: "Peran huruf", kind: "enum", options: ["serif", "condensed", "mono", "workbookUi", "symbolGlyph"] },
+  { name: "face", label: "Nama huruf (isi ini atau peran huruf, bukan keduanya)", kind: "text" },
+  // UI-02 (L33, L34): batas = skema kontrak (szHalfPt 8-144 = 4-72 pt; spacingTw -200..400).
+  { name: "szHalfPt", label: "Ukuran huruf (4-72 pt)", kind: "halfPt", min: 8, max: 144 },
   { name: "color", label: "Warna", kind: "hex" },
-  { name: "spacingTw", label: "Spasi huruf", kind: "tw" },
+  { name: "spacingTw", label: "Jarak antarhuruf", kind: "tw", min: -200, max: 400 },
   { name: "u", label: "Garis bawah", kind: "enum", options: ["single", "none"] },
   { name: "vertAlign", label: "Posisi vertikal", kind: "enum", options: ["superscript", "subscript"] },
   { name: "b", label: "Tebal", kind: "bool" },
   { name: "i", label: "Miring", kind: "bool" },
   { name: "caps", label: "Kapital", kind: "bool" },
+  // UI-02 (L36): medan kontrak `RunProps.smallCaps` kini dapat disunting.
+  { name: "smallCaps", label: "Kapital kecil", kind: "bool" },
 ];
 
 const RUN_PARTS = [
-  { part: "run", label: "Run utama" },
-  { part: "labelRun", label: "Run label" },
-  { part: "numberRun", label: "Run nomor" },
-  { part: "markerRun", label: "Run penanda" },
+  { part: "run", label: RUN_PART_LABELS.run },
+  { part: "labelRun", label: RUN_PART_LABELS.labelRun },
+  { part: "numberRun", label: RUN_PART_LABELS.numberRun },
+  { part: "markerRun", label: RUN_PART_LABELS.markerRun },
 ] as const;
 
 type Obj = Record<string, unknown>;
@@ -119,7 +124,7 @@ export function RoleFormatsEditor(p: RoleFormatsEditorProps) {
         </p>
         {grouped.map(([g, list]) => (
           <div key={g} className="mb-2">
-            <div className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">{g}</div>
+            <div className="px-1 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-3)]">{roleGroupLabel(g)}</div>
             <ul>
               {list.map((r) => (
                 <li key={r}>
@@ -131,11 +136,12 @@ export function RoleFormatsEditor(p: RoleFormatsEditorProps) {
                       setSelected(r);
                     }}
                     aria-current={r === selected ? "true" : undefined}
-                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left font-mono text-[12px] ${
+                    title={r}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-[12px] ${
                       r === selected ? "bg-[var(--surface-1)] text-[var(--text)]" : "text-[var(--text-2)] hover:bg-[var(--surface-1)]"
                     }`}
                   >
-                    <span className="truncate">{r}</span>
+                    <span className="truncate">{roleDisplayLabel(r, p.roleLabels)}</span>
                     {changedRole(r) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-label="diubah" />}
                   </button>
                 </li>
@@ -148,8 +154,8 @@ export function RoleFormatsEditor(p: RoleFormatsEditorProps) {
       <div key={`${selected}:${p.epoch}:${revertEpoch}`}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h3 className="font-mono text-[14px] font-semibold text-[var(--text)]">{selected}</h3>
-            {p.roleLabels[selected] && <p className="text-[12px] text-[var(--text-3)]">{p.roleLabels[selected]}</p>}
+            <h3 className="text-[14px] font-semibold text-[var(--text)]">{roleDisplayLabel(selected, p.roleLabels)}</h3>
+            <p className="font-mono text-[11px] text-[var(--text-3)]">{selected}</p>
           </div>
           <div className="flex items-center gap-2">
             {changedRole(selected) && <Pill tone="warn">diubah</Pill>}
@@ -169,15 +175,15 @@ export function RoleFormatsEditor(p: RoleFormatsEditorProps) {
           </div>
         </div>
         <p className="mb-3 text-[11.5px] text-[var(--text-3)]">
-          Medan kosong diwarisi: format blok eksplisit &gt; roleFormats &gt; turunan katalog &gt; gaya Normal. Satuan tw = 1/20 pt.
+          Kolom kosong mengikuti format bawaan gaya. 1 tw = 1/20 pt.
         </p>
 
-        <FieldSet title="Paragraf (para)" fields={PARA_FIELDS} value={(fmt as Obj).para as Obj | undefined} idPrefix={`${selected}.para`} {...p} onSet={(v) => setPart("para", v)} />
+        <FieldSet title="Paragraf" fields={PARA_FIELDS} value={(fmt as Obj).para as Obj | undefined} idPrefix={`${selected}.para`} {...p} onSet={(v) => setPart("para", v)} />
         {RUN_PARTS.map((rp) => (
-          <FieldSet key={rp.part} title={`${rp.label} (${rp.part})`} fields={RUN_FIELDS} value={(fmt as Obj)[rp.part] as Obj | undefined} idPrefix={`${selected}.${rp.part}`} {...p} onSet={(v) => setPart(rp.part, v)} />
+          <FieldSet key={rp.part} title={rp.label} fields={RUN_FIELDS} value={(fmt as Obj)[rp.part] as Obj | undefined} idPrefix={`${selected}.${rp.part}`} {...p} onSet={(v) => setPart(rp.part, v)} />
         ))}
-        <JsonPart title="Run glyph per tanda provenans (glyphRun)" hint='{"est":{"i":true}}' value={(fmt as Obj).glyphRun} id={`${selected}.glyphRun`} {...p} onSet={(v) => setPart("glyphRun", v)} />
-        <JsonPart title="Sel (cell: borders, marginsTw, shading)" hint='{"marginsTw":{"top":0,"bottom":0,"left":57,"right":57}}' value={(fmt as Obj).cell} id={`${selected}.cell`} {...p} onSet={(v) => setPart("cell", v)} />
+        <JsonPart title="Format simbol tanda klaim (JSON)" hint='{"est":{"i":true}}' value={(fmt as Obj).glyphRun} id={`${selected}.glyphRun`} {...p} onSet={(v) => setPart("glyphRun", v)} />
+        <JsonPart title="Format sel tabel: garis, jarak tepi, arsir (JSON)" hint='{"marginsTw":{"top":0,"bottom":0,"left":57,"right":57}}' value={(fmt as Obj).cell} id={`${selected}.cell`} {...p} onSet={(v) => setPart("cell", v)} />
       </div>
     </div>
   );
@@ -217,7 +223,7 @@ function FieldSet({
           const id = `${idPrefix}.${f.name}`;
           return (
             <div key={f.name} className={f.kind === "json" ? "sm:col-span-2 xl:col-span-3" : ""}>
-              <FieldInput field={f} id={id} value={cur[f.name]} onValue={(v) => setField(f.name, v)} onInvalid={(m) => onInvalid(id, m)} />
+              <FieldInput field={f} id={id} value={cur[f.name]} siblings={cur} onValue={(v) => setField(f.name, v)} onInvalid={(m) => onInvalid(id, m)} />
               {errors[id] && (
                 <p role="alert" className="mt-0.5 text-[11.5px] text-[var(--down)]">
                   {errors[id]}
@@ -235,7 +241,31 @@ function domId(id: string): string {
   return `rf-${id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 }
 
-function FieldInput({ field, id, value, onValue, onInvalid }: { field: Field; id: string; value: unknown; onValue: (v: unknown) => void; onInvalid: (m: string | null) => void }) {
+function rangeMessage(field: Field, which: "min" | "max", n: number, lineRule?: unknown): string {
+  const head = which === "min" ? "Minimum" : "Maksimum";
+  if (field.kind === "halfPt") return `${head} ${(n / 2).toLocaleString("id-ID")} pt`;
+  // UI-04 (L-4): batas jarak baris mengikuti aturan baris (auto = kelipatan baris, bukan pt).
+  if (field.name === "lineTw" && lineRule !== "exact" && lineRule !== "atLeast") return `${head} ${n.toLocaleString("id-ID")} (${formatLineSpacing(n, lineRule)})`;
+  if (field.kind === "tw") return `${head} ${n.toLocaleString("id-ID")} tw (${twToPtLabel(n)})`;
+  return `${head} ${n.toLocaleString("id-ID")}`;
+}
+
+function FieldInput({
+  field,
+  id,
+  value,
+  siblings,
+  onValue,
+  onInvalid,
+}: {
+  field: Field;
+  id: string;
+  value: unknown;
+  /** Medan lain di objek yang sama (jarak baris membaca aturan baris, L26). */
+  siblings?: Obj;
+  onValue: (v: unknown) => void;
+  onInvalid: (m: string | null) => void;
+}) {
   const inputId = domId(id);
   const cls = `${inputCls} !py-1.5 !text-[12.5px]`;
   const [text, setText] = useState(() =>
@@ -244,7 +274,9 @@ function FieldInput({ field, id, value, onValue, onInvalid }: { field: Field; id
   const label = (
     <label htmlFor={inputId} className="mb-0.5 block text-[11.5px] text-[var(--text-3)]">
       {field.label}
-      {field.kind === "tw" && typeof value === "number" ? ` (${(value / 20).toLocaleString("id-ID")} pt)` : ""}
+      {field.kind === "tw" && typeof value === "number"
+        ? ` (${field.name === "lineTw" ? formatLineSpacing(value, siblings?.lineRule) : twToPtLabel(value)})`
+        : ""}
     </label>
   );
 
@@ -269,7 +301,7 @@ function FieldInput({ field, id, value, onValue, onInvalid }: { field: Field; id
           <option value="">(diwarisi)</option>
           {field.options.map((o) => (
             <option key={o} value={o}>
-              {o}
+              {roleEnumLabel(field.name, o)}
             </option>
           ))}
         </select>
@@ -287,8 +319,8 @@ function FieldInput({ field, id, value, onValue, onInvalid }: { field: Field; id
             className={cls}
             value={text}
             step={field.kind === "halfPt" ? 0.5 : 1}
-            min={field.min}
-            max={field.max}
+            min={field.kind === "halfPt" && field.min !== undefined ? field.min / 2 : field.min}
+            max={field.kind === "halfPt" && field.max !== undefined ? field.max / 2 : field.max}
             onChange={(e) => {
               setText(e.target.value);
               const t = e.target.value.trim();
@@ -300,13 +332,15 @@ function FieldInput({ field, id, value, onValue, onInvalid }: { field: Field; id
               const n = Number(t.replace(",", "."));
               const raw = field.kind === "halfPt" ? n * 2 : n;
               if (!Number.isFinite(n) || !Number.isInteger(raw)) return onInvalid(field.kind === "halfPt" ? "Ukuran harus kelipatan 0,5 pt" : "Harus bilangan bulat");
-              if (field.min !== undefined && raw < field.min) return onInvalid(`Minimum ${field.min}`);
-              if (field.max !== undefined && raw > field.max) return onInvalid(`Maksimum ${field.max}`);
+              if (field.min !== undefined && raw < field.min) return onInvalid(rangeMessage(field, "min", field.min, siblings?.lineRule));
+              if (field.max !== undefined && raw > field.max) return onInvalid(rangeMessage(field, "max", field.max, siblings?.lineRule));
               onInvalid(null);
               onValue(raw);
             }}
           />
-          <span className="text-[11.5px] text-[var(--text-3)]">{field.kind === "halfPt" ? "pt" : field.kind === "tw" ? "tw" : ""}</span>
+          <span className="whitespace-nowrap text-[11.5px] text-[var(--text-3)]">
+            {field.kind === "halfPt" ? "pt" : field.kind === "tw" ? (field.name === "lineTw" ? lineSpacingUnit(siblings?.lineRule) : "tw") : ""}
+          </span>
         </div>
       </div>
     );

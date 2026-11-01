@@ -782,6 +782,7 @@ Semua route baru: `export const dynamic = "force-dynamic"`, `requireSession` (ta
 - Nilai `kind` baru `contracts` (AM-07). Parameter lain tidak diterima untuk kind ini (400 `SCHEMA_INVALID` `/query/<nama>`).
 - 200 `{ kind: "contracts", items: ContractKindDefV2[] }`: tepat jenis berstatus `active` (tahap 1: CK-01). Jenis dicadangkan tidak dicantumkan.
 - Galat: 401; 400 `REGISTRY_KIND_UNKNOWN` (kind lain yang tidak dikenal, perilaku lama). Tanpa bucket kuota (tanpa header kuota).
+- Amandemen DOC-R5 (temuan L-5 verifikasi akhir DC-47d; D-423, D-427): (1) setiap `ContractKindDefV2` memuat medan `examples` (`ContractKindExamplesV2`, `L/contract/types/v2/contract.ts:224-241`) dengan tiga anggota: `howTo` (daftar medan yang wajib diganti sebelum mengirim), `record` (kiriman pertama slot `record`, payload `contractRecord` lengkap), dan `chapters` (satu badan `studio.chapter/v2` per `chapterKey` outline wajib, kunci `"1"` sampai `"5"`). Contoh menarget misi contoh `2026-10-31_misi_contoh` dan docKey `laporan-kerja-penulis`, bukan ID dokumen DEV nyata; `refs` tidak dicantumkan dalam contoh (bentuknya dijelaskan di `howTo`). (2) 400 `REGISTRY_KIND_UNKNOWN` (`kind` absen atau tak dikenal) membawa `details` berupa larik isu, satu isu `{ pointer: "/query/kind", keyword, message, received, validKinds, examples }` sesuai 01 §6.2; `validKinds` adalah larik nilai `kind` yang sah (D-427 mengembalikan bentuk larik isu setelah D-426 sempat menyimpang).
 
 ### 9.5 R10 dan R17 (berubah)
 

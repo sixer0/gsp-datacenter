@@ -20,13 +20,14 @@ import { errorMessages } from "@/components/studio/shared/error-messages";
 import { ErrorView } from "@/components/studio/shared/error-view";
 import { issuesOf } from "@/components/studio/shared/http";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
-import { formatDate } from "@/components/studio/shared/labels";
+import { formatDate, templateDescription } from "@/components/studio/shared/labels";
 import { useNotice } from "@/components/studio/shared/notice";
 import { useStudioQuery } from "@/components/studio/shared/use-studio-query";
 import { useViewer } from "@/components/studio/shared/use-viewer";
 import { importProfile, listPresets, listTemplates, type PresetItem, type TemplateListItem } from "./api";
 import { CreateTemplateDialog } from "./create-template-dialog";
 import { creatorLabel, isOwner } from "./model";
+import { ActorName } from "@/components/studio/shared/raw-id";
 
 type Tab = "templat" | "gaya";
 
@@ -173,13 +174,18 @@ function TemplateRow({ t, isAdmin, username }: { t: TemplateListItem; isAdmin: b
         </Link>
         <p className="mt-0.5 text-[12.5px] text-[var(--text-2)]">
           Versi {t.latestVersionNo.toLocaleString("id-ID")} · {formatDate(t.updatedAt)}
-          {t.description ? ` · ${t.description}` : ""}
         </p>
+        {/* UI-02 (UA-M07): deskripsi awam, maks 2 baris; deskripsi asli di tooltip. */}
+        {templateDescription(t.slug, t.description) && (
+          <p className="mt-0.5 line-clamp-2 max-w-[48rem] text-[12.5px] text-[var(--text-2)]" title={t.description ?? undefined}>
+            {templateDescription(t.slug, t.description)}
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {t.isCanonical && <Pill tone="accent">Kanonik</Pill>}
         {isAdmin && t.restricted && <Pill tone="warn">Terbatas</Pill>}
-        {mine ? <Pill>Milik Anda</Pill> : <span className="text-[12px] text-[var(--text-2)]">oleh {creatorLabel(t.createdBy)}</span>}
+        {mine ? <Pill>Milik Anda</Pill> : <span className="text-[12px] text-[var(--text-2)]">oleh <ActorName by={t.createdBy} text={creatorLabel(t.createdBy)} /></span>}
         <span className="inline-flex items-center gap-1 pl-2 text-[12.5px] text-[var(--accent)]" aria-hidden>
           Buka
           <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />

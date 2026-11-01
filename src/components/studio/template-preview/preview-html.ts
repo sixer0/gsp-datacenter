@@ -55,19 +55,62 @@ export function listPreviewUnits(html: string): PreviewUnit[] {
   return out;
 }
 
+/** 1 mm dalam px CSS (96 px per inci). */
+export const PX_PER_MM = 96 / 25.4;
+
+/**
+ * UI-02 (UA-M01): lebar halaman terlebar (mm) dari atribut `data-page-mm="<lebar> <tinggi>"`
+ * unit halaman; null bila tidak ada (HTML lama). Halaman mendatar ikut terhitung.
+ */
+export function maxPageWidthMm(html: string): number | null {
+  let max = 0;
+  const re = /data-page-mm="\s*([0-9]+(?:\.[0-9]+)?)\s+[0-9]+(?:\.[0-9]+)?\s*"/g;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    const w = Number(m[1]);
+    if (Number.isFinite(w) && w > max) max = w;
+  }
+  return max > 0 ? max : null;
+}
+
+/**
+ * Faktor skala agar halaman muat di lebar panel (<= 1; tidak memperbesar). Dibulatkan ke
+ * bawah per 0,01 agar srcdoc tidak berganti pada setiap piksel perubahan ukuran panel.
+ */
+export function fitZoom(panelWidthPx: number, pageWidthMm: number | null): number {
+  if (!pageWidthMm || !Number.isFinite(panelWidthPx) || panelWidthPx <= 0) return 1;
+  const z = panelWidthPx / (pageWidthMm * PX_PER_MM);
+  if (z >= 1) return 1;
+  return Math.max(0.1, Math.floor(z * 100) / 100);
+}
+
+/** Sisipkan aturan skala `html{zoom}` ke dokumen (tanpa skrip; iframe tetap ber-sandbox). */
+function applyZoom(doc: Document, zoom: number): void {
+  if (!(zoom > 0 && zoom < 1)) return;
+  const style = doc.createElement("style");
+  style.setAttribute("data-studio-preview-fit", "");
+  style.textContent = `html{zoom:${zoom}}`;
+  (doc.head ?? doc.documentElement).appendChild(style);
+}
+
 /**
  * srcdoc dengan satu unit saja (unit lain dibuang). `unitKey = null` atau
- * unit tidak ditemukan -> HTML utuh apa adanya.
+ * unit tidak ditemukan -> semua unit. `zoom < 1` (UI-02, UA-M01) menyisipkan skala
+ * agar halaman muat di lebar panel; `zoom = 1` dan tanpa unit -> HTML utuh apa adanya.
  */
-export function previewSrcDoc(html: string, unitKey: string | null): string {
-  if (!unitKey) return html;
+export function previewSrcDoc(html: string, unitKey: string | null, zoom = 1): string {
+  const scaled = zoom > 0 && zoom < 1;
+  if (!unitKey && !scaled) return html;
   const doc = parse(html);
   if (!doc) return html;
-  const units = Array.from(doc.querySelectorAll("section[data-unit]")).filter(
-    (el) => !el.parentElement?.closest("section[data-unit]"),
-  );
-  const keyOf = (el: Element) => el.getAttribute("data-unit-key") ?? (el.getAttribute("data-unit") === "orphan" ? "orphan" : "");
-  if (!units.some((el) => keyOf(el) === unitKey)) return html;
-  for (const el of units) if (keyOf(el) !== unitKey) el.remove();
+  if (unitKey) {
+    const units = Array.from(doc.querySelectorAll("section[data-unit]")).filter(
+      (el) => !el.parentElement?.closest("section[data-unit]"),
+    );
+    const keyOf = (el: Element) => el.getAttribute("data-unit-key") ?? (el.getAttribute("data-unit") === "orphan" ? "orphan" : "");
+    if (units.some((el) => keyOf(el) === unitKey)) {
+      for (const el of units) if (keyOf(el) !== unitKey) el.remove();
+    } else if (!scaled) return html;
+  }
+  applyZoom(doc, zoom);
   return `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
 }

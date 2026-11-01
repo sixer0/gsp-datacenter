@@ -117,7 +117,7 @@ export const PARAMS_RENDER: readonly ParamDef[] = [
     },
   ),
   r(11, "render.section.breakPerUnit", "Satu seksi per unit", "bool", true, { source: "S01 §5.7; KS-06" }),
-  r(12, "render.rail.renderer", "Perender rel bukti", "enum", "framePr", {
+  r(12, "render.rail.renderer", "Perender kolom catatan bukti", "enum", "framePr", {
     enum: ["framePr", "table3col"],
     source: "S01 §5.7; Garis A",
     classNote: "profil Manual 000: table3col (T013 dkk.)",
@@ -165,7 +165,7 @@ export const PARAMS_RENDER: readonly ParamDef[] = [
     { faceRole: "mono", color: "B45309", b: true },
     { source: "S01 §5.7; RS25 (research/07:74)" },
   ),
-  r(22, "render.toc.mode", "Mode daftar isi", "enum", "field", {
+  r(22, "render.toc.mode", "Bentuk daftar isi di Word", "enum", "field", {
     enum: ["field", "static"],
     classNote: "profil Manual 000: static (T010)",
   }),
@@ -173,7 +173,7 @@ export const PARAMS_RENDER: readonly ParamDef[] = [
     enum: ["auto", "explicit"],
     classNote: "profil Manual 000: explicit",
   }),
-  r(24, "render.html.paged", "HTML berhalaman", "bool", true),
+  r(24, "render.html.paged", "Halaman web dibagi per halaman cetak", "bool", true),
   r(25, "render.png.dpi", "Resolusi PNG (dpi)", "int", 300, { class: "K", range: { min: 150, max: 600, step: 1 } }),
   // ── Delta S03-d1 (aditif) ──────────────────────────────────────────────
   r(26, "runningHead.docLabel", "Label dokumen di kepala halaman", "string", "", {
