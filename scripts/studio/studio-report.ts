@@ -1145,16 +1145,34 @@ function interrupted(ctx: Ctx, e: unknown, doc: { id: string; docNumber: string 
   return progress === null ? e : new ReportError(e.message, e.code, e.exitCode, { ...e.info, progress });
 }
 
-async function runSubmit(ctx: Ctx, blocks: ExtractedDraftBlock[], markdown: string): Promise<{ documentId: string; docNumber: string | null; steps: StepResult[] }> {
+/** Satu blok rencana kiriman `submit` (MCP-D4): badan sesudah agentId bawaan dan `--mission`/`--doc-key`. */
+export interface SubmitPlanItem {
+  /** Indeks blok (1-based). */
+  index: number;
+  /** Badan yang dikirim (target dokumen buatan blok sebelumnya belum diterapkan, lihat `sourceBlock`). */
+  value: Record<string, unknown>;
+  /** Indeks blok buat-dokumen sebelumnya yang ditarget blok ini (dikirim ke documentId hasil blok itu), atau null. */
+  sourceBlock: number | null;
+}
+
+/** Rencana kiriman `submit`: satu sumber untuk {@link runSubmit} dan kait `CliIo.beforeSubmit`. */
+export function submitPlanOf(args: Pick<CliArgs, "agentId" | "mission" | "docKey">, blocks: readonly ExtractedDraftBlock[], markdown: string): SubmitPlanItem[] {
   const sources = sequentialCreateSources(extractDraft(markdown));
+  return blocks.map((b, i) => ({
+    index: i + 1,
+    value: withTargetOverrides(dryRunInputOf(b, args.agentId ?? undefined).value, args),
+    sourceBlock: sources.get(i + 1) ?? null,
+  }));
+}
+
+async function runSubmit(ctx: Ctx, blocks: ExtractedDraftBlock[], plan: readonly SubmitPlanItem[]): Promise<{ documentId: string; docNumber: string | null; steps: StepResult[] }> {
   const createdDoc = new Map<number, string>();
   const steps: StepResult[] = [];
   let primary: { id: string; docNumber: string | null } | null = null;
   for (let i = 0; i < blocks.length; i++) {
     const index = i + 1;
-    let value = dryRunInputOf(blocks[i], ctx.args.agentId ?? undefined).value;
-    value = withTargetOverrides(value, ctx.args);
-    const src = sources.get(index);
+    let value = plan[i].value;
+    const src = plan[i].sourceBlock ?? undefined;
     const target = src !== undefined ? createdDoc.get(src) : undefined;
     if (target !== undefined) value = withDocumentTarget(value, target);
     let sent: Awaited<ReturnType<typeof sendBlock>>;
@@ -1725,6 +1743,12 @@ export interface CliIo {
   fetchImpl?: HttpFetch;
   fs?: FsLike;
   now?: () => number;
+  /**
+   * MCP-D4 (D-484, M-2): kait opsional host (adaptor MCP) yang dipanggil `submit` sesudah cek lokal, EXAMPLE_TARGET,
+   * dan basis, tepat sebelum kiriman pertama, dengan rencana kiriman yang SAMA dengan yang dikirim. Melempar = tidak
+   * ada yang dikirim. CLI tidak mengisinya (perilaku CLI tidak berubah).
+   */
+  beforeSubmit?: (plan: readonly SubmitPlanItem[]) => Promise<void>;
 }
 
 /** fs nyata: hanya baca draf/timing, tambah timing, tulis berkas final --out, dan (refresh) --out-md / --write. */
@@ -1797,7 +1821,11 @@ export async function runReport(args: CliArgs, io: CliIo): Promise<ReportResult>
     basisMode = resolvedBasis.basis?.mode ?? null;
     const notices = [...(input.conversion?.notices.map((n) => `${n.code}${n.line !== undefined ? ` baris ${n.line}` : ""}: ${n.message}`) ?? []), ...resolvedBasis.notices];
     let upd: UpdateOutcome | null = null;
-    if (args.command === "submit") sent = await runSubmit(ctx, blocks, input.draft);
+    if (args.command === "submit") {
+      const plan = submitPlanOf(args, blocks, input.draft);
+      if (io.beforeSubmit) await io.beforeSubmit(plan);
+      sent = await runSubmit(ctx, blocks, plan);
+    }
     else {
       upd = await runUpdate(ctx, args.documentId as string, blocks, resolvedBasis.basis as BasisInfo, input.conversion);
       sent = upd;

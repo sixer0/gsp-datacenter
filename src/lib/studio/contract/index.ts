@@ -41,6 +41,7 @@ export * from "./schema/v2/slot.schema";
 export * from "./schema/v2/template.schema";
 export * from "./schema/v2/skeleton.schema";
 export * from "./schema/v2/forbidden";
+export * from "./schema/v2/figure-text";
 export type { StudioCaller } from "./auth";
 
 import { chartSchema } from "./schema/chart.schema";

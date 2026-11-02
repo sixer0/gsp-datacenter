@@ -120,6 +120,7 @@ export {
   polylineD,
   shapeSvg,
   svgText,
+  svgTextLines,
 } from "./svg";
 export { diagramColourValues, svgColourValues } from "./colour";
 export {

@@ -5,7 +5,8 @@
  * file_verify -> draft_check -> galat BASIS_MISSING). MCP-04: update tanpa basis memakai basis yang diingat
  * sesi, correlationIds di setiap hasil sukses, penanda <data-tak-tepercaya> di hasil pencarian, dan (bila
  * STUDIO_MCP_FILE_ROOTS diisi) refresh outPath berkas baru + OUT_EXISTS tanpa overwrite. Mencetak ringkasan
- * + cid; rahasia tidak pernah dicetak (dipindai di semua keluaran dan stderr server).
+ * + cid; rahasia tidak pernah dicetak (dipindai di semua keluaran dan stderr server). MCP-D1: dijalankan dengan
+ * STUDIO_MCP_TOOLSETS=reports,query (12 alat laporan + cari yang sama seperti sebelum D1).
  *
  *   INTERNAL_API_SECRET=... npx tsx <repo>/scripts/studio/mcp/smoke.ts [--base-url http://127.0.0.1:9021] \
  *     [--mission 2026-11-01_mcp01] [--agent-id cod-mcp-01] [--json]
@@ -51,7 +52,7 @@ async function main(): Promise<number> {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [require.resolve("tsx/cli"), path.join(__dirname, "server.ts")],
-    env: { ...(process.env as Record<string, string>), STUDIO_BASE_URL: baseUrl, INTERNAL_API_SECRET: secret, STUDIO_AGENT_ID: agentId },
+    env: { ...(process.env as Record<string, string>), STUDIO_BASE_URL: baseUrl, INTERNAL_API_SECRET: secret, STUDIO_AGENT_ID: agentId, STUDIO_MCP_TOOLSETS: "reports,query" },
     stderr: "pipe",
   });
   transport.stderr?.on("data", (d: Buffer) => serverStderr.push(d.toString("utf8")));

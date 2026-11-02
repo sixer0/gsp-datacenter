@@ -29,6 +29,7 @@ import {
   beginChart,
   drawYAxis,
   endChart,
+  groupAxisPlan,
   groupLabel,
   hintBool,
   pathFrom,
@@ -72,9 +73,10 @@ export function renderViolin(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
   const labelPt = pt(ctx, ctx.type.label);
 
   const top = (datum && ctx.unit ? ptToMm(ty) + 1.4 : 0) + ptToMm(pt(ctx, ctx.type.tick)) * 0.5 + 0.8;
-  const base = ctx.bottom - ptToMm(labelPt) - 2.2;
   const x0 = tickWidth(ctx, tickLabels(dom)) + 1.8;
   const x1 = W - 0.8;
+  const lp = groupAxisPlan(ctx, groups.map((g) => g.name), x0, x1);
+  const base = ctx.bottom - ptToMm(labelPt) - 2.2 - (lp?.extraBandMm ?? 0);
   const sy = linearScale(dom.min, dom.max, base, top);
   const slot = (x1 - x0) / groups.length;
   const half = Math.min(slot * 0.35, 12);
@@ -107,7 +109,7 @@ export function renderViolin(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
       const colour = isAcc ? pal.paper : gi === medianAccentGroup ? pal.role.accent : pal.ink900;
       doc.line(cx - tickHalf, sy(s.median), cx + tickHalf, sy(s.median), colour, MEDIAN_MM, { mark: mark("segment"), attrs: ' data-stat="median"' });
     }
-    groupLabel(ctx, cx, base, name);
+    groupLabel(ctx, cx, base, name, lp, gi);
   });
 
   doc.open('data-axis="x"');

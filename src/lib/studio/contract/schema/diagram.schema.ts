@@ -6,11 +6,13 @@
  */
 import { DIAGRAM_EDGE_KINDS, DIAGRAM_FAMILIES, DIAGRAM_SHAPES, PROVENANCE_MARKS } from "../enums";
 import { JSON_SCHEMA_DIALECT, STUDIO_SCHEMA_URL_BASE } from "./common.schema";
+import { FIGURE_BOUNDS as B } from "./figure-bounds";
 
 export const DIAGRAM_SCHEMA_ID = `${STUDIO_SCHEMA_URL_BASE}/studio.diagram/v1.json`;
 
-const str = { type: "string", minLength: 1, maxLength: 300 } as const;
-const strList = { type: "array", items: { type: "string", maxLength: 1000 } } as const;
+const str = { type: "string", minLength: 1, maxLength: B.diagramText.label } as const;
+// SEC-FIX2 (D-506): setiap larik berbatas (`FIGURE_BOUNDS`, uji secfix2-schema-walk); biaya mesin super-linear.
+const strList = (max: number) => ({ type: "array", maxItems: max, items: { type: "string", maxLength: B.diagramText.item } }) as const;
 
 export const diagramSchema = {
   $schema: JSON_SCHEMA_DIALECT,
@@ -27,17 +29,18 @@ export const diagramSchema = {
     width_mm: { type: "number", exclusiveMinimum: 0 },
     apparatus: { enum: ["page", "figure"] },
     labels_verified: { type: "boolean" },
-    sources: { type: "array", minItems: 1, items: { type: "string", minLength: 1, maxLength: 1000 } },
-    source: { type: "string", maxLength: 1000 },
+    sources: { type: "array", minItems: 1, maxItems: B.diagramSources, items: { type: "string", minLength: 1, maxLength: B.diagramText.source } },
+    source: { type: "string", maxLength: B.diagramText.source },
     nodes: {
       type: "array",
       minItems: 1,
+      maxItems: B.diagramNodes,
       items: {
         type: "object",
         properties: {
           id: { type: "string", minLength: 1, maxLength: 64 },
           label: str,
-          sub: { type: "string", maxLength: 300 },
+          sub: { type: "string", maxLength: B.diagramText.label },
           shape: { enum: [...DIAGRAM_SHAPES] },
           mark: { enum: [...PROVENANCE_MARKS] },
           tag: { type: "string", maxLength: 64 },
@@ -47,7 +50,7 @@ export const diagramSchema = {
             type: "object",
             properties: {
               tier: { type: "integer", minimum: 0 },
-              lane: { type: ["integer", "string"] },
+              lane: { type: ["integer", "string"], maxLength: 64 },
               col: { type: "integer", minimum: 0 },
               row: { type: "integer", minimum: 0 },
               accent: { type: "boolean" },
@@ -63,13 +66,14 @@ export const diagramSchema = {
     },
     edges: {
       type: "array",
+      maxItems: B.diagramEdges,
       items: {
         type: "object",
         properties: {
           from: { type: "string", minLength: 1, maxLength: 64 },
           to: { type: "string", minLength: 1, maxLength: 64 },
           kind: { enum: [...DIAGRAM_EDGE_KINDS] },
-          label: { type: "string", maxLength: 300 },
+          label: { type: "string", maxLength: B.diagramText.label },
         },
         required: ["from", "to", "kind", "label"],
         additionalProperties: false,
@@ -77,19 +81,20 @@ export const diagramSchema = {
     },
     zones: {
       type: "array",
+      maxItems: B.diagramZones,
       items: {
         type: "object",
         properties: {
           id: { type: "string", minLength: 1, maxLength: 64 },
           label: str,
-          members: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 } },
+          members: { type: "array", maxItems: B.zoneMembers, items: { type: "string", minLength: 1, maxLength: 64 } },
         },
         required: ["id", "label", "members"],
         additionalProperties: false,
       },
     },
-    legend: strList,
-    notes: strList,
+    legend: strList(B.diagramLegend),
+    notes: strList(B.diagramNotes),
     per_row: { type: "integer", minimum: 1, maximum: 20 },
     // Delta S03-d2 (D-89): opt-in multi-rel layout-c; aditif.
     sld: {

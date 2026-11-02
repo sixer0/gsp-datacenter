@@ -48,7 +48,7 @@ export function renderStrip(ctx: S2Ctx): void {
   const total = groups.reduce((s, g) => s + g.values.length, 0);
   if (total > 1000) report(ctx, "S-06.points", `${total} titik; strip/jitter untuk sampel kecil sampai sedang (Tabel 8.5: hindari ribuan titik)`);
 
-  const f = columnFrame(ctx, groups, groups.length, (dom, top, base) => linearScale(dom.min, dom.max, base, top));
+  const f = columnFrame(ctx, groups, groups.length, (dom, top, base) => linearScale(dom.min, dom.max, base, top), groups.map((g) => g.name));
   const spread = f.step * (gal ? 0.2 : 0.14);
   const r = gal ? Math.min(0.55, f.step * 0.06) : DATUM_R_MM;
   ran(ctx, "S-06.jitterDeterministic");
@@ -73,6 +73,6 @@ export function renderStrip(ctx: S2Ctx): void {
       });
     }
     doc.close();
-    columnLabel(ctx, f, gx, g.name);
+    columnLabel(ctx, f, gx, g.name, gi);
   });
 }

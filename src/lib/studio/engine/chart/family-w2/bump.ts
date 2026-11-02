@@ -23,6 +23,7 @@ import { linearScale } from "../core/scale";
 import { num, textWidthMm } from "../core/svg";
 import { accentHint, assertAccentCount, closeFrame, finiteOrNull, mid, openFrame, requireShape } from "./common";
 import { categoryLabels } from "./time";
+import { categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 
 const CODE = "W-06";
 
@@ -111,11 +112,13 @@ export function renderBump(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolv
   const rankW = textWidthMm(String(maxRank), TICK, gallery ? "struct" : "data");
   const nameW = gallery ? 0 : Math.max(...data.series.map((s) => textWidthMm(s.name, LBL)));
   const top = 2.6;
-  const base = f.bottom - (gallery ? 5.0 : 5.4);
   const axisX = rankW + 1.6;
   const lastHalf = textWidthMm(labels[n - 1], TICK) / 2;
   const x0 = axisX + (gallery ? 3.0 : nameW + 3.0);
   const x1 = W - (gallery ? Math.max(1.4, lastHalf) : nameW + 2.4);
+  // FIG-02a P1-4: label periode bertingkat (hanya saat fit, bila tidak muat di jarak periode).
+  const lp = categoryAxisPlan(labels, (x1 - x0) / Math.max(1, n - 1), { pt: TICK }, { maxRotateBandMm: Math.max(10, f.bottom * 0.4) });
+  const base = f.bottom - (gallery ? 5.0 : 5.4) - (lp?.extraBandMm ?? 0);
   const sx = (j: number): number => x0 + (j * (x1 - x0)) / (n - 1);
   const inverted = kindBool({ spec, tpl, code: CODE }, "rankAxisInverted", true);
   const sy = inverted ? linearScale(1, Math.max(2, maxRank), top + 1.2, base - 2.4) : linearScale(1, Math.max(2, maxRank), base - 2.4, top + 1.2);
@@ -135,7 +138,9 @@ export function renderBump(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolv
   doc.close();
   doc.open('data-axis="x"');
   doc.line(axisX, base, W - 0.5, base, pal.role.textAxis, 0.25);
-  labels.forEach((s, j) => doc.text(xs[j], base + 3.4, s, { sizePt: TICK, fill: pal.ink400, anchor: "middle" }));
+  labels.forEach((s, j) =>
+    lp ? drawCategoryLabel(doc, lp, j, xs[j], base + 3.4, { sizePt: TICK, fill: pal.ink400, anchor: "middle" }) : doc.text(xs[j], base + 3.4, s, { sizePt: TICK, fill: pal.ink400, anchor: "middle" }),
+  );
   doc.close();
 
   // Konteks dulu, aksen terakhir (di atas).

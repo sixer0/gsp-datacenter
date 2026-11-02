@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 describe('tools/list, prompts, resources', () => {
-  it('12 alat bernama studio_*, skema object ketat, anotasi, deskripsi; prompt + 3 resource', async () => {
+  it('22 alat bernama studio_* (semua toolset bawaan; FIG-03b +2), skema object ketat, anotasi, deskripsi; 2 prompt + 4 resource', async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([
@@ -31,26 +31,39 @@ describe('tools/list, prompts, resources', () => {
       'studio_render',
       'studio_file_verify',
       'studio_draft_check',
+      'studio_templates_list',
+      'studio_template_get',
+      'studio_document_create',
+      'studio_chapter_import_markdown',
+      'studio_chapter_submit',
+      'studio_slot_fill',
+      'studio_document_structure',
+      'studio_document_status',
+      'studio_figure_preview',
+      'studio_figure_revise',
     ]);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe('object');
       expect((t.inputSchema as any).additionalProperties).toBe(false);
       expect(t.description!.length).toBeGreaterThan(40);
       expect(typeof t.annotations?.readOnlyHint).toBe('boolean');
+      // MCP-D1: title hanya di tingkat atas (tidak diulang di annotations).
+      expect(typeof t.title).toBe('string');
+      expect((t.annotations as any).title).toBeUndefined();
       // Tanpa oneOf/anyOf di akar (beberapa penyedia LLM menolaknya).
       expect(JSON.stringify(t.inputSchema)).not.toMatch(/"(oneOf|anyOf|allOf)"/);
     }
     const ro = tools.filter((t) => t.annotations?.readOnlyHint).map((t) => t.name);
-    expect(ro).toEqual(['studio_registry', 'studio_report_template', 'studio_report_check', 'studio_contracts_query', 'studio_search', 'studio_document_get', 'studio_draft_check']);
+    expect(ro).toEqual(['studio_registry', 'studio_report_template', 'studio_report_check', 'studio_contracts_query', 'studio_search', 'studio_document_get', 'studio_draft_check', 'studio_templates_list', 'studio_template_get', 'studio_document_status']);
     expect(tools.find((t) => t.name === 'studio_report_update')!.inputSchema.required).toEqual(['documentId']);
     const { prompts } = await client.listPrompts();
-    expect(prompts.map((p) => p.name)).toEqual(['studio_laporan_kerja']);
+    expect(prompts.map((p) => p.name)).toEqual(['studio_dokumen_klien', 'studio_laporan_kerja']);
     const p = await client.getPrompt({ name: 'studio_laporan_kerja', arguments: { mission: '2026-11-01_mcp01', docKey: 'lapkerja-mcp01-a' } });
     const pt = (p.messages[0].content as any).text as string;
     expect(pt).toContain('studio_report_check');
     expect(pt).toContain('docKey: lapkerja-mcp01-a');
     const { resources } = await client.listResources();
-    expect(resources.map((r) => r.uri)).toEqual(['studio://resep/laporan-kerja', 'studio://templat/laporan-kerja', 'studio://panduan/17-0']);
+    expect(resources.map((r) => r.uri)).toEqual(['studio://resep/dokumen-klien', 'studio://resep/laporan-kerja', 'studio://templat/laporan-kerja', 'studio://panduan/17-0']);
     const guide = await client.readResource({ uri: 'studio://panduan/17-0' });
     expect((guide.contents[0] as any).text).toMatch(/^### 17\.0 Resep satu halaman/);
     await expect(client.readResource({ uri: 'studio://tidak-ada' })).rejects.toThrow(/tidak dikenal/);
@@ -200,7 +213,7 @@ describe('alat laporan kerja (logika studio-report dipakai ulang)', () => {
 });
 
 describe('alat baca langsung (R03, R21, R22, R05/R20, R17, R10)', () => {
-  it('registry contracts: contoh disaring bawaan, templat disertakan', async () => {
+  it('registry contracts: contoh disaring bawaan, templat hanya bila includeTemplate (MCP-D1)', async () => {
     const m = studioMock({
       'GET /api/studio/registry': (c) => ({ status: 200, body: { kind: new URL(c.url).searchParams.get('kind'), count: 1, items: [{ kind: 'agentWorkReport', templateSlug: 'lapkerja', statuses: [{ code: 'draft' }], verdicts: [{ code: 'PASS' }], itemStatuses: [{ code: 'done' }], outline: [{ chapterKey: '1', title: 'Ringkasan', required: true }], examples: { big: 1 } }], meta: { kinds: ['agentWorkReport'] } } }),
     });
@@ -208,8 +221,11 @@ describe('alat baca langsung (R03, R21, R22, R05/R20, R17, R10)', () => {
     const r = await call('studio_registry', {});
     expect(m.calls[0].url).toBe(`${BASE}/api/studio/registry?kind=contracts`);
     expect(r.data.items[0].examples).toBeUndefined();
-    expect(r.data.template).toContain('## Ringkasan');
+    expect(r.data.template).toBeUndefined();
+    expect(r.text).toContain('studio_report_template');
     expect(r.text).toContain('agentWorkReport');
+    const t = await call('studio_registry', { includeTemplate: true });
+    expect(t.data.template).toContain('## Ringkasan');
     const e = await call('studio_registry', { includeExamples: true, includeTemplate: false });
     expect(e.data.items[0].examples).toEqual({ big: 1 });
     expect(e.data.template).toBeUndefined();
@@ -398,6 +414,6 @@ describe('galat server, rahasia, pagar jaringan', () => {
     expect(c).toMatchObject({ baseUrl: 'http://127.0.0.1:9021', secret: '', defaultAgentId: null, fileRoots: [ROOT], fileWriteEnabled: false });
     expect(() => loadConfig({ STUDIO_BASE_URL: 'ftp://x' }, ROOT)).toThrow(/http/);
     expect(() => loadConfig({ STUDIO_MCP_FILE_ROOTS: 'relatif' }, ROOT)).toThrow(/absolut/);
-    expect(TOOLS).toHaveLength(12);
+    expect(TOOLS).toHaveLength(22);
   });
 });

@@ -19,7 +19,7 @@
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { MM_PER_PT, SvgDoc, num } from "../core/svg";
 import { kindAxisXY, kindBool } from "../core/read";
 import { drawAxes, layoutXy } from "./axes";
@@ -190,7 +190,7 @@ export function renderHexbin(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
     });
   }
   if (showScale) drawScale(doc, W - rightBand + 2.0, L.frame.y0, L.frame.y1, ladder, bounds, pal, scaleTitle);
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return finishH1({ svg: doc.toString(), widthMm: W, heightMm: H }, prep);
 }

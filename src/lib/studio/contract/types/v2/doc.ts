@@ -7,7 +7,8 @@
  * dengan issue `checkId: "DISPLAY_FIELD"`. Skema JSON padanan:
  * ../../schema/v2/common.schema.ts dan ../../schema/v2/doc.schema.ts.
  */
-import type { ChartCode, DiagramFamily, ParagraphRoleV2, ProvenanceMark, SymbolDialect, TableBlockType } from "../../enums";
+import type { ChartCode, ChartIntentOrientation, ChartIntentSort, DiagramFamily, ParagraphRoleV2, ProvenanceMark, SymbolDialect, TableBlockType } from "../../enums";
+import type { ChartLabelShort } from "../chart";
 import type { DiagramEdge, DiagramNode, DiagramZone } from "../diagram";
 import type { DocMeta, RegisterEntry, StudioMissionRef } from "../doc";
 import type {
@@ -195,6 +196,19 @@ export interface ChartV2 extends BlockBaseV2 {
   dec?: 0 | 1 | 2 | 3;
   limit?: { value: number; label?: string };
   note?: string;
+  /**
+   * FIG-03a (D-482 butir 2) — maksud analitis opsional; absen = perilaku sekarang. Arah baca
+   * kategori (P-01/P-02/W-02 dapat ditukar; `vertical` juga mematikan AUTO_ORIENT).
+   */
+  orientation?: ChartIntentOrientation;
+  /** FIG-03a — urutan kategori (`none` = urutan agen). */
+  sort?: ChartIntentSort;
+  /** FIG-03a — 3..30: N kategori terbesar dipertahankan, sisanya digabung "Lainnya (k)" (jumlah). */
+  topN?: number;
+  /** FIG-03a — label kategori gabungan (hanya bersama `topN`; bawaan "Lainnya"). */
+  otherLabel?: string;
+  /** FIG-03a — label sumbu singkat; `label` wajib sama persis dengan kategori yang ada. */
+  labelShort?: ChartLabelShort[];
   caption: CaptionV2;
   source: SourceV2;
   keyRow?: InlineV2;

@@ -38,6 +38,7 @@ import { loadSpec, validateSpec } from "@/lib/studio/engine/diagram/core";
 import { CHART_BY_CODE } from "@/lib/studio/registry/charts";
 import { decodeImage, decodeImageBlob, pxGuard, readImageAsset, storeImageAsset, type DecodedImage } from "@/lib/studio/services/images";
 import { validateSchema } from "@/lib/studio/services/ingest";
+import { assertFigureCapacity } from "@/lib/studio/services/render/figure-limits";
 import { sha256Hex, stableStringify } from "@/lib/studio/services/ingest/util";
 import { gateHtmlArtifact } from "@/lib/studio/services/render/artifact";
 import { resolveTemplate } from "@/lib/studio/services/templates";
@@ -118,6 +119,8 @@ function checkChartCode(code: unknown, pointer: string): void {
 }
 
 function checkChart(spec: StudioChartV1): void {
+  // SEC-FIX2 (D-507): batas gabungan figur (sel, total teks, ukuran) yang tidak dinyatakan skema, saat dibuat.
+  assertFigureCapacity("chart", spec);
   if (spec.kind === "composite") {
     (spec.composite?.panels ?? []).forEach((p, i) => {
       checkChartCode(p.code, `/composite/panels/${i}/code`);
@@ -132,7 +135,10 @@ function checkChart(spec: StudioChartV1): void {
 
 function checkDiagram(spec: Record<string, unknown>): Record<string, unknown> {
   // Mermaid -> DiagramDefect DATUM-31 (422); JSON/objek rusak -> StudioEngineError sesuai kode.
+  // SEC-FIX2 (D-507): batas kapasitas sebelum muat dan sesudahnya (spec Mermaid baru berbentuk simpul/tepi sesudah muat).
+  assertFigureCapacity("diagram", spec);
   const loaded = loadSpec(spec);
+  assertFigureCapacity("diagram", loaded);
   const fails = validateSpec(loaded, { release: false }).filter((i) => i.status === "FAIL");
   if (fails.length > 0) {
     throw new StudioEngineError(

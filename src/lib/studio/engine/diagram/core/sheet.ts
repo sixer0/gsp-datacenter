@@ -16,7 +16,7 @@ import type { DiagramBox, DiagramNode, DiagramSheet, LayoutResult, StudioDiagram
 import { DiagramDefect } from "./defect";
 import { pyFixed, pyNum } from "./pyfmt";
 import { nodeSize as latticeNodeSize, sheetHeight } from "./geometry";
-import { LATTICE_X, LATTICE_Y, snap, snapFloor } from "./tokens";
+import { LATTICE_X, LATTICE_Y, snap, snapCeil, snapFloor } from "./tokens";
 
 export interface SheetNode extends DiagramBox {
   id: string;
@@ -51,6 +51,8 @@ export class Sheet implements DiagramSheet {
   top = LATTICE_Y * 2;
   /** Cadangan kaki apparatus (mm), diisi build/estimate. */
   foot = 0;
+  /** FIG-02b2: tepi bawah rute konektor (hanya diisi saat fit bila rute menembus kaki). */
+  routeBottom?: number;
   /** Atribut opsional tata letak (padanan `getattr(sheet, ...)` Python). */
   msgY?: number;
   msgStep?: number;
@@ -90,7 +92,11 @@ export class Sheet implements DiagramSheet {
 
   /** Tinggi lembar (Python `Sheet.height`): kunci kisi + 2 kisi + cadangan kaki. */
   height(): number {
-    return sheetHeight({ y: LATTICE_Y, top: this.top }, this.nodes.values(), this.lanes, this.msgEnd, this.foot);
+    const h = sheetHeight({ y: LATTICE_Y, top: this.top }, this.nodes.values(), this.lanes, this.msgEnd, this.foot);
+    if (this.routeBottom === undefined) return h;
+    // FIG-02b2: rute di bawah simpul terbawah -> kaki turun agar baris kaki tidak ditembus rute.
+    const floor = snapCeil(this.routeBottom, LATTICE_Y) + LATTICE_Y;
+    return Math.max(h, sheetHeight({ y: LATTICE_Y, top: this.top }, [{ y: floor, h: 0 }], [], undefined, this.foot));
   }
 
   /** Pasang/ganti simpul (padanan `sheet.nodes[id] = {...}`; posisi sisip lama dipertahankan). */

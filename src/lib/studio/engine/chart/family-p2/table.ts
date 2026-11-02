@@ -24,6 +24,8 @@ import { defect, figureLabel } from "../core/guards";
 import { kindKey } from "../core/palette";
 import { textWidthMm } from "../core/svg";
 import { GRID_MM, beginP2, finishP2, hint, kindBool, luminance, mid, reportIssue, textOn, tokenHex } from "./common";
+import { fitActive } from "../core/fit";
+import { ellipsize, lineHeightMm, measure, wrapEllipsize } from "../core/textfit";
 
 const CODE = "P-15" as const;
 
@@ -181,8 +183,17 @@ export function renderTable(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   const colTextW = (j: number): number =>
     Math.max(textWidthMm(t.head[j], FS), ...t.body.map((r) => textWidthMm(show(r[j]), FS, j === 0 ? "struct" : "data")));
   // Lebar kolom: label = isi + talang; data galeri sama lebar, datum sebanding isi (PC auto).
-  const labelW = colTextW(0) + (style === "gallery" ? 1.6 : 2.4);
   const tableW = W - (style === "gallery" ? 0.4 : 1.0);
+  // FIG-02a P1-5: saat fit, kolom label dijepit 40 % lebar tabel; label dibungkus/dipotong.
+  const labelPad = style === "gallery" ? 1.6 : 2.4;
+  const labelW0 = colTextW(0) + labelPad;
+  const labelW = fitActive() ? Math.min(labelW0, tableW * 0.4) : labelW0;
+  const labelLh = lineHeightMm({ pt: FS });
+  const labelLines = (s0: string): { lines: string[]; title?: string } => {
+    if (!fitActive() || measure(s0, FS) <= labelW - labelPad + 1e-9) return { lines: [s0] };
+    const r = wrapEllipsize(s0, labelW - labelPad, rowH >= 2 * labelLh ? 2 : 1, { pt: FS });
+    return { lines: r.lines, title: r.truncated ? s0 : undefined };
+  };
   const x0 = style === "gallery" ? 0.2 : (W - tableW) / 2;
   const dataW = tableW - labelW;
   const natural = Array.from({ length: nData }, (_, j) => colTextW(j + 1) + 2.0);
@@ -205,7 +216,11 @@ export function renderTable(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   t.head.slice(1).forEach((h, j) => {
     const cx = xs[j] + widths[j] / 2;
     if (style === "datum") doc.rect(xs[j], top, widths[j], headH, pal.paper, { stroke: pal.ink200, strokeWidthMm: GRID_MM });
-    doc.text(cx, style === "gallery" ? hy - 1.2 : mid(top + headH / 2, FS), h, { sizePt: FS, fill: pal.ink400, anchor: "middle", bold: style === "datum" });
+    const hb = { sizePt: FS, fill: pal.ink400, anchor: "middle" as const, bold: style === "datum" };
+    const hyy = style === "gallery" ? hy - 1.2 : mid(top + headH / 2, FS);
+    const he = fitActive() ? ellipsize(h, widths[j] - 0.6, { pt: FS, bold: style === "datum" }) : { text: h, truncated: false };
+    if (he.truncated) doc.textLines(cx, hyy, [he.text], hb, 0, h);
+    else doc.text(cx, hyy, h, hb);
   });
   doc.close();
 
@@ -216,11 +231,20 @@ export function renderTable(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
     const series = String(row[0]);
     doc.open(`data-table-row="${i}"`);
     if (style === "datum") doc.rect(x0, y, labelW, rowH, pal.paper, { stroke: pal.ink200, strokeWidthMm: GRID_MM });
-    doc.text(style === "gallery" ? x0 + labelW - 1.2 : x0 + 1.2, mid(yc, FS), series, {
-      sizePt: FS,
-      fill: style === "gallery" ? pal.ink400 : pal.ink700,
-      anchor: style === "gallery" ? "end" : "start",
-    });
+    const ll = labelLines(series);
+    if (ll.lines.length > 1 || ll.title !== undefined) {
+      doc.textLines(style === "gallery" ? x0 + labelW - 1.2 : x0 + 1.2, mid(yc, FS) - ((ll.lines.length - 1) * labelLh) / 2, ll.lines, {
+        sizePt: FS,
+        fill: style === "gallery" ? pal.ink400 : pal.ink700,
+        anchor: style === "gallery" ? "end" : "start",
+      }, labelLh, ll.title);
+    } else {
+      doc.text(style === "gallery" ? x0 + labelW - 1.2 : x0 + 1.2, mid(yc, FS), series, {
+        sizePt: FS,
+        fill: style === "gallery" ? pal.ink400 : pal.ink700,
+        anchor: style === "gallery" ? "end" : "start",
+      });
+    }
     row.slice(1).forEach((c, j) => {
       const k = matchRule(c, j);
       const rh = k >= 0 ? ruleHex[k] : undefined;

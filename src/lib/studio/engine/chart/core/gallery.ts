@@ -17,7 +17,8 @@
  */
 import type { ChartCanvas, LintIssue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt, withUnit } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "./apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "./apparatus";
+import { drawGutterLabel, gutterPlan } from "./labelfit";
 import type { CorePrep } from "./prepare";
 import { axisDomain, decimalsFor, linearScale, niceDomain } from "./scale";
 import { SvgDoc, textWidthMm, midBaseline } from "./svg";
@@ -40,14 +41,20 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   doc.paper(pal.paper);
 
   const series = unit || "nilai";
-  const footBand = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const footBand = figureFootMm(spec) + (spec.note ? 5 : 0);
   const vals = pts.map((p) => fmt(p.value, dec));
 
   if (prep.family === "bar") {
     const top = 0.8;
     const bottom = H - footBand - 0.8;
     const labelW = Math.max(...pts.map((p) => textWidthMm(p.label, LBL_PT)));
-    const x0 = Math.min(Math.max(labelW + 1.6, 6), W * 0.42);
+    const x00 = Math.min(Math.max(labelW + 1.6, 6), W * 0.42);
+    const gp = gutterPlan(
+      pts.map((p) => p.label),
+      { pt: LBL_PT },
+      { currentMm: x00, capMm: W * 0.42, padMm: 1.6, pitchMm: (bottom - top) / pts.length },
+    );
+    const x0 = gp ? Math.max(x00, gp.gutterMm) : x00;
     const valW = Math.max(...vals.map((v) => textWidthMm(v, VAL_PT, "data")));
     const xr = prep.valueLabel === "barEnd" ? W - valW - 1.4 : W - 0.5;
     const maxV = Math.max(...pts.map((p) => p.value)) || 1;
@@ -57,7 +64,8 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     pts.forEach((p, i) => {
       const yc = top + step * (i + 0.5);
       const x1 = sx(p.value);
-      doc.text(x0 - 1.2, mid(yc, LBL_PT), p.label, { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
+      if (gp) drawGutterLabel(doc, gp, i, x0 - 1.2, mid(yc, LBL_PT), { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
+      else doc.text(x0 - 1.2, mid(yc, LBL_PT), p.label, { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
       doc.rect(x0, yc - bh / 2, x1 - x0, bh, p.accent ? pal.role.accent : pal.role.contextBackground, {
         mark: { mark: "bar", series, index: i },
       });
@@ -102,7 +110,13 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     const top = 4.4;
     const base = H - footBand - 4.6;
     const labelW = Math.max(...pts.map((p) => textWidthMm(p.label, LBL_PT)));
-    const x0 = Math.min(Math.max(labelW + 1.6, 6), W * 0.4);
+    const x00 = Math.min(Math.max(labelW + 1.6, 6), W * 0.4);
+    const gp = gutterPlan(
+      pts.map((p) => p.label),
+      { pt: LBL_PT },
+      { currentMm: x00, capMm: W * 0.4, padMm: 1.6, pitchMm: (base - top) / pts.length },
+    );
+    const x0 = gp ? Math.max(x00, gp.gutterMm) : x00;
     // Talang kanan: label nilai batang yang melewati batas duduk di luar ujung batang.
     const overW = Math.max(0, ...pts.map((p, i) => (p.value > limit ? textWidthMm(vals[i], VAL_PT, "data") + 1.4 : 0)));
     const xr = W - Math.max(1.0, overW, textWidthMm("000", TICK_PT) / 2);
@@ -127,7 +141,8 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
       const x1 = sx(p.value);
       const over = p.value > limit;
       const fill = over ? prep.overColour : p.accent ? pal.role.accent : pal.role.contextMain;
-      doc.text(x0 - 1.2, mid(yc, LBL_PT), p.label, { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
+      if (gp) drawGutterLabel(doc, gp, i, x0 - 1.2, mid(yc, LBL_PT), { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
+      else doc.text(x0 - 1.2, mid(yc, LBL_PT), p.label, { sizePt: LBL_PT, fill: pal.ink400, anchor: "end" });
       doc.rect(x0, yc - bh / 2, x1 - x0, bh, fill, { mark: { mark: "bar", series, index: i } });
       const fits = x1 - x0 >= textWidthMm(vals[i], VAL_PT, "data") + 2.0;
       const inside = !over && fits;
@@ -164,7 +179,7 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     }
   }
 
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
 
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: { checksRun: [...new Set(issues.map((i) => i.checkId))], issues } };

@@ -5,7 +5,9 @@
  * vertikal terpusat.
  */
 import type { DiagramBox, DiagramSheet, LayoutResult, StudioDiagramV1 } from "../../../contract";
-import { baselineStepMm, latticeOf, nodeSize, pyFloorDiv, pyInt, pyTruthy, sheetHeight, snap } from "./geometry";
+import { diagramFitActive, diagramFitAllows, diagramFitNote } from "../fit/state";
+import { grownHeight, planNodeText } from "../fit/text";
+import { baselineStepMm, latticeOf, nodeSize, pyFloorDiv, pyInt, pyStr, pyTruthy, sheetHeight, snap } from "./geometry";
 
 export function layoutFlow(s: StudioDiagramV1, sheet: DiagramSheet): LayoutResult {
   const lat = latticeOf(sheet);
@@ -33,6 +35,18 @@ export function layoutFlow(s: StudioDiagramV1, sheet: DiagramSheet): LayoutResul
       for (const n of group) {
         let [, h] = nodeSize(n, lat, group);
         if (n.shape === "diamond") h = snap(h * 1.25, lat.y);
+        if (diagramFitActive()) {
+          // FIG-02b P1-10: lebar baris sudah maksimum; bungkus label <= 3 baris, tinggi tumbuh.
+          const plan = planNodeText(n, w, h);
+          if (diagramFitAllows("grow")) h = grownHeight(h, plan, lat.y);
+          if (plan.overflow) {
+            diagramFitNote(
+              "NODE_LABEL_LINES",
+              `label simpul '${pyStr(n.id)}' butuh lebih dari 3 baris pada lebar ${w.toFixed(1)} mm (${m} simpul per baris)`,
+              "persingkat label simpul (maks ~40 karakter); detail ke `sub`",
+            );
+          }
+        }
         hs.push(h);
       }
       let hmax = -Infinity;

@@ -41,6 +41,8 @@ import { layoutFlow } from "../../diagram/layout-a";
 import { defect, figureGrid } from "../core/guards";
 import { kindKey } from "../core/palette";
 import { escAttr, num, ptToMm, textWidthMm } from "../core/svg";
+import { fitActive } from "../core/fit";
+import { wrap } from "../core/textfit";
 import { type GCtx, TYPE_PT, accentHint, assertAccentCount, beginChart, endChart, hintMiss, kindBool, kindInt, kindStr, ran, report, tokenHex } from "./common";
 
 /** Bentuk diagram yang termasuk simbol ISO 5807. */
@@ -208,7 +210,7 @@ function textRoom(shape: DiagramShape, b: Box): { w: number; h: number } {
 }
 
 /** Label satu atau dua baris pada ukuran terbesar yang muat (>= lantai). */
-function fitLines(ctx: GCtx, label: string, room: { w: number; h: number }, basePt: number): { lines: string[]; size: number; fits: boolean } {
+export function fitLines(ctx: Pick<GCtx, "minFontPt">, label: string, room: { w: number; h: number }, basePt: number): { lines: string[]; size: number; fits: boolean } {
   const words = label.trim().split(/\s+/);
   const splits: string[][] = [[label.trim()]];
   for (let k = 1; k < words.length; k++) splits.push([words.slice(0, k).join(" "), words.slice(k).join(" ")]);
@@ -219,6 +221,18 @@ function fitLines(ctx: GCtx, label: string, room: { w: number; h: number }, base
     for (const ls of splits) {
       if (widest(ls, size) <= room.w && height(ls.length, size) <= room.h) return { lines: ls, size, fits: true };
     }
+  }
+  if (fitActive()) {
+    // FIG-02b2 G-04: saat fit grafik aktif, bungkus 3..6 baris (konsisten dengan simpul diagram).
+    const tall = (n: number, size: number) => ptToMm(size) * (1 + 1.2 * (n - 1));
+    for (let size = start; size >= ctx.minFontPt - 1e-9; size = Math.round((size - 0.2) * 10) / 10) {
+      for (let n = 3; n <= 6; n++) {
+        const r = wrap(label.trim(), room.w, n, { pt: size });
+        if (r.fits && tall(r.lines.length, size) <= room.h) return { lines: r.lines, size, fits: true };
+      }
+    }
+    const r = wrap(label.trim(), room.w, 6, { pt: ctx.minFontPt });
+    if (r.lines.join(" ") === words.join(" ")) return { lines: r.lines, size: ctx.minFontPt, fits: false };
   }
   const best = splits.reduce((a, b) => (widest(b, ctx.minFontPt) < widest(a, ctx.minFontPt) ? b : a));
   return { lines: best, size: ctx.minFontPt, fits: false };

@@ -113,7 +113,8 @@ export function renderBeeswarm(ctx: S2Ctx): void {
   if (!perGroup) report(ctx, "S-07.columnPerGroup", "columnPerGroup=false: semua grup dalam satu kawanan; grup hanya dibedakan aksen");
   const columns = perGroup ? groups.length : 1;
 
-  const f = columnFrame(ctx, groups, columns, (dom, top, base) => linearScale(dom.min, dom.max, base, top));
+  const colNames = perGroup ? groups.map((g) => g.name) : [groups.map((g) => g.name).join(" / ")];
+  const f = columnFrame(ctx, groups, columns, (dom, top, base) => linearScale(dom.min, dom.max, base, top), colNames);
   const half = f.step * 0.45;
   let r = gal ? 0.55 : 1.4 * (25.4 / 72);
 
@@ -151,7 +152,7 @@ export function renderBeeswarm(ctx: S2Ctx): void {
       });
     }
     doc.close();
-    columnLabel(ctx, f, gx, perGroup ? groups[ci].name : groups.map((g) => g.name).join(" / "));
+    columnLabel(ctx, f, gx, colNames[ci], ci);
   });
   if (medianMarker && !perGroup) report(ctx, "S-07.medianMarker", "medianMarker tidak digambar pada satu kawanan gabungan");
 }

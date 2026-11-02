@@ -45,6 +45,8 @@ import {
   prepareH2,
   requireGraph,
 } from "./shared";
+import { fitActive } from "../core/fit";
+import { placePointLabels } from "../core/labelfit";
 
 const NODE_SIZE = ["degree", "uniform"] as const;
 const LABELS = ["all", "accent", "none"] as const;
@@ -253,6 +255,27 @@ export function renderNetwork(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     else if (isCore(nd.group)) doc.circle(cx, cy, radius(i), pal.ink900, { mark });
     else doc.circle(cx, cy, radius(i), pal.ink100, { mark, stroke: pal.ink400, strokeWidthMm: NODE_RIM_MM });
   });
+  // FIG-02a P1-8: saat fit, label simpul ditempatkan tanpa tabrakan (8 posisi + penunjuk).
+  if (fitActive()) {
+    const idx = g.nodes.map((_, i) => i).filter((i) => showLabel(i));
+    const dots = g.nodes.map((_, i) => {
+      const [cx, cy] = at(i);
+      const r = radius(i);
+      return [cx - r, cy - r, cx + r, cy + r] as [number, number, number, number];
+    });
+    const placed = placePointLabels(
+      idx.map((i) => ({ x: at(i)[0], y: at(i)[1], r: radius(i), text: g.nodes[i].label })),
+      { pt: look.labelPt },
+      [0.3, 0.3, W - 0.3, H - prep.footMm],
+      dots,
+    );
+    placed.forEach((pl, k) => {
+      if (!pl) return;
+      if (pl.leader) doc.line(pl.leader.x1, pl.leader.y1, pl.leader.x2, pl.leader.y2, pal.ink400, 0.18, { attrs: ' data-leader="point"' });
+      doc.text(pl.x, pl.y, g.nodes[idx[k]].label, { sizePt: look.labelPt, fill: pal.ink700, anchor: pl.anchor });
+    });
+    return closeDoc(doc, spec, prep, issues);
+  }
   g.nodes.forEach((nd, i) => {
     if (!showLabel(i)) return;
     const [cx, cy] = at(i);

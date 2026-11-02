@@ -11,6 +11,9 @@
  * Opsi `dataMarks: false` menghasilkan keluaran Python murni.
  */
 import type { DiagramEdgeKind, FaceRole } from "../../../contract";
+import { tspanLines } from "../../chart/core/textfit";
+import { diagramFitActive } from "../fit/state";
+import { nodeTextLayout, type TextBlockLayout } from "../fit/text";
 import { type PyNumber, pyLen, pyNum, pyStr, pyStrNum } from "./pyfmt";
 import type { SheetNode } from "./sheet";
 import { nodeStrokeToken } from "./sheet";
@@ -105,6 +108,18 @@ export function svgText(x: PyNumber, y: PyNumber, text: unknown, opts: SvgTextOp
     `<text x="${pyNum(x, 2)}" y="${pyNum(y, 2)}" font-family="${escAttr(face)}" font-size="${pyNum(size, 3)}" ` +
     `font-weight="${w}" fill="${col}" text-anchor="${opts.anchor ?? "middle"}"${ls}>${escText(txt)}</text>`
   );
+}
+
+/**
+ * Teks berbaris (FIG-02b): SATU `<text>` dengan `<tspan x dy>` per baris (multiset teks tetap
+ * satu entri per label, D-482/D-491). Satu baris = keluaran `svgText` biasa.
+ */
+export function svgTextLines(b: TextBlockLayout, opts: SvgTextOptions = {}): string {
+  if (b.lines.length <= 1) return svgText(b.x, b.y, b.lines[0] ?? "", opts);
+  const shell = svgText(b.x, b.y, "", opts);
+  const x = Number(pyNum(b.x, 2));
+  const lines = opts.upper || role(opts.role ?? "caption").upper ? b.lines.map((l) => l.toUpperCase()) : b.lines;
+  return `${shell.slice(0, -"</text>".length)}${tspanLines(lines, x, Number(b.lineMm.toFixed(3)))}</text>`;
 }
 
 function markAttrs(kind: "node" | "link", opts: SvgMarkOptions, series?: string): string {
@@ -212,8 +227,16 @@ export function nodeSvg(nd: SheetNode, opts: SvgMarkOptions = {}): string[] {
   const cx = nd.x + nd.w / 2.0;
   const cy = nd.y + nd.h / 2.0;
   const capMm = pt2mm(role("caption").size);
-  out.push(svgText(cx, cy, n.label, { role: "caption", colourToken: "ink900" }));
-  if (n.sub) out.push(svgText(cx, cy + capMm, n.sub, { role: "source_line" }));
+  // FIG-02b: hanya saat fit dan hanya bila label tidak muat satu baris (atau rel bus).
+  const fit = diagramFitActive() ? nodeTextLayout(nd) : null;
+  if (fit) {
+    out.push(svgTextLines(fit.label, { role: "caption", colourToken: "ink900" }));
+    if (fit.sub) out.push(svgTextLines(fit.sub, { role: "source_line" }));
+    else if (n.sub) out.push(svgText(cx, cy + capMm, n.sub, { role: "source_line" }));
+  } else {
+    out.push(svgText(cx, cy, n.label, { role: "caption", colourToken: "ink900" }));
+    if (n.sub) out.push(svgText(cx, cy + capMm, n.sub, { role: "source_line" }));
+  }
   if (n.mark) out.push(markGlyphSvg(nd));
   if (n.tag) {
     out.push(svgText(nd.x + pt2mm(1.5), nd.y + capMm, n.tag, { role: "table_header", colourToken: "ink400", anchor: "start" }));
@@ -316,13 +339,14 @@ export function hopSvg(hx: number, hy: number, kind: DiagramEdgeKind): string {
 }
 
 /** Pita kertas pemutus garis di belakang label tepi (`_label_knockout`; my = garis dasar). */
-export function labelKnockoutSvg(mx: number, my: number, text: unknown, sheetW: number): string {
+export function labelKnockoutSvg(mx: number, my: number, text: unknown, sheetW: number, kwMm?: number): string {
   const r = role("evidence_rail");
   const size = pt2mm(r.size);
   const tr = r.track_em;
   // Python memakai pt2mm(size) atas size yang sudah mm (dipertahankan untuk paritas).
   const lw = estTextMm(text, "evidence_rail") + (tr ? pt2mm(size) * tr * pyLen(pyStr(text)) : 0.0);
-  const kw = lw + 1.6;
+  // FIG-02b: saat fit, lebar pita = lebar mono terukur 0,6 em + 1,6 (`fit/labels.ts knockWidthMm`).
+  const kw = kwMm ?? lw + 1.6;
   const kh = size * 1.7;
   const kx = Math.min(Math.max(mx - kw / 2.0, 0.0), Math.max(0.0, sheetW - kw));
   const ky = my - size * 1.15;
@@ -330,9 +354,9 @@ export function labelKnockoutSvg(mx: number, my: number, text: unknown, sheetW: 
 }
 
 /** Label konektor: pita knockout lalu teks evidence_rail berwarna jenis. */
-export function edgeLabelSvg(mx: number, my: number, label: unknown, kind: DiagramEdgeKind, sheetW: number): string[] {
+export function edgeLabelSvg(mx: number, my: number, label: unknown, kind: DiagramEdgeKind, sheetW: number, kwMm?: number): string[] {
   return [
-    labelKnockoutSvg(mx, my, label, sheetW),
+    labelKnockoutSvg(mx, my, label, sheetW, kwMm),
     svgText(mx, my, label, { role: "evidence_rail", colourToken: EDGE_KINDS[kind].colour, anchor: "middle" }),
   ];
 }

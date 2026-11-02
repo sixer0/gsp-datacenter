@@ -25,8 +25,9 @@
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt, withUnit } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
+import { capacityAdvice } from "../core/intent";
 import { chartPalette, paramBool } from "../core/palette";
 import { kindStr } from "../core/read";
 import { chartFloors } from "../core/prepare";
@@ -54,7 +55,11 @@ export function renderPie(code: PieCode, spec: StudioChartV1, canvas: ChartCanva
   const maxKey = k1Key(code, "maxSlices");
   const maxSlices = paramInt(spec, tpl, maxKey, 5);
   if (pts.length > maxSlices) {
-    throw defect(maxKey, `${fid} — ${pts.length} bagian > ${maxSlices}; pakai stacked bar (K-01) atau bar (P-01)`, { code, slices: pts.length });
+    // FIG-03a: penolakan tetap (tanpa agregasi diam-diam, D-482 butir 1); saran menyebut `topN`.
+    throw defect(maxKey, `${fid} — ${pts.length} bagian > ${maxSlices}; ${capacityAdvice(code, maxSlices - 1, "")}, atau pakai stacked bar (K-01) / bar (P-01)`, {
+      code,
+      slices: pts.length,
+    });
   }
   rep.pass(maxKey);
   const values = pts.map((p) => p.value);
@@ -166,7 +171,7 @@ export function renderPie(code: PieCode, spec: StudioChartV1, canvas: ChartCanva
     doc.close();
   }
 
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: rep.toJSON() };
 }

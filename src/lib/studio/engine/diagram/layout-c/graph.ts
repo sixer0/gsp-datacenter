@@ -25,6 +25,8 @@ import {
   snapCeil,
   snapFloor,
 } from "./geometry";
+import { diagramFitCapacity } from "../fit/state";
+import { contiguousCols, layoutGraphCapacity } from "./graphcap";
 
 /** Padanan `sheet.rowpack` Python (hanya diisi bila ada tumpuan basal). */
 export interface GraphRowpack {
@@ -283,6 +285,13 @@ export const GRAPH_ROW_GAP_BASELINES = 3;
 
 export function layoutGraphDetail(s: StudioDiagramV1, sheet: DiagramSheet): GraphDetail {
   const L = latticeOf(sheet);
+  if (diagramFitCapacity()) {
+    // FIG-02b2 P1-14: render pertama ditolak DATUM-37; kolom bersambung -> pitch dipadatkan.
+    const cs = [...new Set(s.nodes.map(colOfNode))].sort((a, b) => a - b);
+    if (cs.length > 1 && contiguousCols(cs)) {
+      return { result: layoutGraphCapacity(s, L, GRAPH_NODE_PAD_UNITS, GRAPH_ROW_GAP_BASELINES), adaptive: true };
+    }
+  }
   const ests: Ests = new Map();
   const cols: number[] = [];
   for (const n of s.nodes) {

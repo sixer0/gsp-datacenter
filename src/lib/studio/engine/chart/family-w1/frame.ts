@@ -16,7 +16,7 @@
  */
 import type { ChartCanvas, StudioChartV1 } from "../../../contract";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import type { ChartPalette } from "../core/palette";
 import { type Scale, axisDomain, decimalsFor, linearScale, niceDomain, niceStep } from "../core/scale";
@@ -139,7 +139,7 @@ export function layoutFrame(i: FrameInput): Frame {
   const probe = buildXAxis(i.categories, 100, m.tickPt, "struct");
   const hasYears = probe.ticks.some((t) => t.year !== undefined);
 
-  const footBand = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? NOTE_BAND_MM : 0);
+  const footBand = figureFootMm(spec) + (spec.note ? NOTE_BAND_MM : 0);
   // Label tick: garis dasar y1 + tickLen + 0,95 em + jarak; sisakan turunan huruf (~0,3 em) + 0,8 mm.
   const xBand = m.tickLenMm + tickH * 1.3 + (style === "gallery" ? 0.5 : 0.9) + 0.8 + (hasYears ? tickH * 1.2 : 0);
   const y0 = (style === "gallery" ? 2.2 : 2.4) + (style === "gallery" && unit ? tickH + 1.4 : 0) + i.topExtraMm;
@@ -249,7 +249,7 @@ export function drawAxes(f: Frame, unit: string): void {
 
 /** Catatan dan aparatus "figure" di dasar kanvas. */
 export function drawFoot(f: Frame, spec: StudioChartV1): void {
-  if (spec.note) noteLine(f.doc, spec.note, f.W, f.H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, f.pal);
+  if (spec.note) noteLine(f.doc, spec.note, f.W, f.H - figureFootMm(spec) - 1.4, f.pal);
   if (spec.apparatus === "figure") figureApparatus(f.doc, spec, f.pal, f.H);
 }
 

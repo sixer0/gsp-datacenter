@@ -15,6 +15,7 @@
  * Garis dasar nol selalu (CH-01); nilai negatif ditolak (pakai K-03 / P-10).
  */
 import { keyRow } from "../core/apparatus";
+import { categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 import { defect } from "../core/guards";
 import { type SvgDoc, textWidthMm } from "../core/svg";
 import {
@@ -97,9 +98,10 @@ export function renderGroupedColumn(ctx: P1Ctx): void {
   if (style === "gallery") {
     const T = TYPE_PT.gallery;
     const left = 0.5;
-    const base = ctx.bottom - 4.6;
-    const labelBand = 1.2 + 2.6 * nS;
     const step = (W - 2 * left) / nC;
+    const lp = categoryAxisPlan(data.categories, step, { pt: pt(ctx, T.label) }, { maxRotateBandMm: Math.max(10, ctx.bottom * 0.4) });
+    const base = ctx.bottom - 4.6 - (lp?.extraBandMm ?? 0);
+    const labelBand = 1.2 + 2.6 * nS;
     const groupW = Math.min(step * 0.78, 9 * nS);
     const bw = groupW / nS;
     const sy = linearScale(0, maxV, base, labelBand);
@@ -113,7 +115,8 @@ export function renderGroupedColumn(ctx: P1Ctx): void {
         doc.rect(gx + bw * si, y1, bw, base - y1, fillOf(si, ci), { mark: { mark: "column", series: s.name, index: ci }, attrs: accentSeries.has(si) ? SERIES_ACCENT_ATTR : "" });
         if (ci === 0) tops[si] = y1;
       });
-      doc.text(left + step * (ci + 0.5), base + 3.4, c, { sizePt: pt(ctx, T.label), fill: pal.ink400, anchor: "middle" });
+      if (lp) drawCategoryLabel(doc, lp, ci, left + step * (ci + 0.5), base + 3.4, { sizePt: pt(ctx, T.label), fill: pal.ink400, anchor: "middle" });
+      else doc.text(left + step * (ci + 0.5), base + 3.4, c, { sizePt: pt(ctx, T.label), fill: pal.ink400, anchor: "middle" });
     });
     // Label seri langsung di atas kelompok pertama (CH-04); ditumpuk bila bertabrakan.
     if (nS > 1 && direct) directLabels(doc, data.series.map((s) => s.name), left + step * 0.5 - groupW / 2, bw, tops, base, pt(ctx, T.key), pal.ink700);
@@ -127,10 +130,11 @@ export function renderGroupedColumn(ctx: P1Ctx): void {
   // Gaya datum (resep v04_grouped_column).
   const T = TYPE_PT.datum;
   const top = 6.4;
-  const base = ctx.bottom - 5.2;
   const dom = valueDomain(values.length ? values : [0], true);
   const x0 = 0.5 + tickWidth(dom, T.tick, "data") + 1.6;
   const x1 = W - 0.5;
+  const lpd = categoryAxisPlan(data.categories, (x1 - x0) / nC, { pt: pt(ctx, 6.2) }, { maxRotateBandMm: Math.max(10, ctx.bottom * 0.4) });
+  const base = ctx.bottom - 5.2 - (lpd?.extraBandMm ?? 0);
   const sy = linearScale(dom.min, dom.max, base, top);
   gridY(ctx, dom, sy, x0, x1, pal.ink200);
   const step = (x1 - x0) / nC;
@@ -145,7 +149,8 @@ export function renderGroupedColumn(ctx: P1Ctx): void {
       doc.rect(gx + bw * si, sy(v), bw, sy(0) - sy(v), fillOf(si, ci), { mark: { mark: "column", series: s.name, index: ci }, attrs: accentSeries.has(si) ? SERIES_ACCENT_ATTR : "" });
       if (ci === 0) datumTops[si] = sy(v);
     });
-    doc.text(x0 + step * (ci + 0.5), base + 3.4, c, { sizePt: pt(ctx, 6.2), fill: pal.ink700, anchor: "middle" });
+    if (lpd) drawCategoryLabel(doc, lpd, ci, x0 + step * (ci + 0.5), base + 3.4, { sizePt: pt(ctx, 6.2), fill: pal.ink700, anchor: "middle" });
+    else doc.text(x0 + step * (ci + 0.5), base + 3.4, c, { sizePt: pt(ctx, 6.2), fill: pal.ink700, anchor: "middle" });
   });
   axisY(ctx, dom, sy, x0, top, base, { colour: pal.ink400, widthMm: SPINE_MM, sizePt: T.tick, face: "data" });
   doc.open('data-axis="x"');

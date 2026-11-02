@@ -22,6 +22,8 @@ import { figureLabel } from "../core/guards";
 import { kindKey } from "../core/palette";
 import { decimalsFor, linearScale, niceDomain } from "../core/scale";
 import { escAttr, num, textWidthMm } from "../core/svg";
+import { drawGutterLabel, gutterPlan } from "../core/labelfit";
+import { fitActive, fitNote } from "../core/fit";
 import {
   accentHint,
   asRange,
@@ -39,6 +41,8 @@ import {
 } from "./common";
 
 const CODE = "P-14" as const;
+const dec0 = (spec: StudioChartV1): number => spec.dec ?? 0;
+
 const HEAD_LEN_MM = 1.5;
 const HEAD_HALF_MM = 0.65;
 
@@ -65,8 +69,15 @@ export function renderArrow(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   const vals = rows.flatMap((r) => [r.a, r.b]).filter((v): v is number => v !== null);
   if (vals.length === 0) throw new StudioEngineError("SCHEMA_INVALID", `${fid} — P-14 tanpa pasangan nilai`, { code: CODE });
   // Domain = parameter templat `chart.kind.P-14.axis` (alias `axis` dipindah resolver; IP-59/FIX-A).
-  const range = asRange(spec, kindParam(spec, tpl, CODE, "axis") ?? hint(spec, "axis"), "params.axis");
-  const dom = niceDomain(range ?? vals, { zero: false });
+  const range0 = asRange(spec, kindParam(spec, tpl, CODE, "axis") ?? hint(spec, "axis"), "params.axis");
+  // FIG-02c (hanya saat fit): nilai di luar `axis` membuat panah dan labelnya keluar kanvas;
+  // domain diperlebar agar memuat data (REPORT AXIS_WIDENED), tidak pernah memotong data.
+  const outside = range0 !== undefined && range0 !== null && vals.some((v) => v < range0[0] || v > range0[1]);
+  const range = outside && fitActive() ? null : range0;
+  if (outside && fitActive() && range0) {
+    fitNote("AXIS_WIDENED", `${fid} — nilai di luar params.axis [${fmt(range0[0], dec0(spec))}, ${fmt(range0[1], dec0(spec))}]; domain diperlebar agar memuat semua nilai (sesuaikan atau hapus axis)`);
+  }
+  const dom = niceDomain(range ? range : outside && range0 ? [...range0, ...vals] : vals, { zero: false });
   const lo = range ? range[0] : dom.min;
   const hi = range ? range[1] : dom.max;
   const ticks = dom.ticks.filter((t) => t >= lo - 1e-9 && t <= hi + 1e-9);
@@ -77,12 +88,19 @@ export function renderArrow(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   const VAL = ctx.pt(6.0);
   const labelW = Math.max(...rows.map((r) => textWidthMm(r.label, LBL)));
   const valPad = style === "datum" ? Math.max(...vals.map((v) => textWidthMm(fmt(v, dec), VAL, "data"))) + 1.2 : 0;
-  const x0 = Math.min(Math.max(labelW + 1.8, 6), W * 0.4) + valPad;
-  const x1 = W - Math.max(1.0, textWidthMm(fmt(hi, tdec), 6.5) / 2 + 0.3) - valPad;
-  const sx = linearScale(lo, hi, x0, x1);
   const top = style === "gallery" ? 0.8 : 4.6;
   const base = H - ctx.footBand - 5.4;
   const step = (base - 1.0 - top) / rows.length;
+  const gutter0 = Math.min(Math.max(labelW + 1.8, 6), W * 0.4);
+  // FIG-02c: talang label baris terukur + bungkus/elipsis (hanya saat fit, bila label tidak muat).
+  const gp = gutterPlan(
+    rows.map((r) => r.label),
+    { pt: LBL },
+    { currentMm: gutter0, capMm: W * 0.4, padMm: 1.6, pitchMm: step },
+  );
+  const x0 = (gp ? Math.max(gp.gutterMm, 6) : gutter0) + valPad;
+  const x1 = W - Math.max(1.0, textWidthMm(fmt(hi, tdec), 6.5) / 2 + 0.3) - valPad;
+  const sx = linearScale(lo, hi, x0, x1);
 
   if (style === "datum") {
     gridLines(ctx, true, ticks.map(sx), top, base);
@@ -92,7 +110,9 @@ export function renderArrow(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   const width = style === "gallery" ? 0.45 : 0.5;
   rows.forEach((r, i) => {
     const yc = top + step * (i + 0.5);
-    doc.text(x0 - 1.2 - valPad, mid(yc, LBL), r.label, { sizePt: LBL, fill: pal.ink400, anchor: "end" });
+    if (gp) drawGutterLabel(doc, gp, i, x0 - 1.2 - valPad, mid(yc, LBL), { sizePt: LBL, fill: pal.ink400, anchor: "end" });
+    else doc.text(x0 - 1.2 - valPad, mid(yc, LBL), r.label, { sizePt: LBL, fill: pal.ink400, anchor: "end" });
+
     if (r.a === null || r.b === null) return;
     const color = accent[i] ? pal.role.accent : style === "gallery" ? pal.ink700 : pal.ink900;
     const xa = sx(r.a);

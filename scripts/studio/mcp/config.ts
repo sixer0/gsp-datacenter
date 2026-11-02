@@ -15,18 +15,25 @@
  *                          diizinkan di akar ini (bawaan: cwd proses server). MENULIS berkas (refresh
  *                          `write`/`outPath`, unduhan `downloadDir`) HANYA bila env ini diisi eksplisit;
  *                          tanpa env -> FILE_WRITE_DISABLED (M-1). Path UNC/perangkat ditolak (M-2).
+ * - `STUDIO_MCP_TOOLSETS`  MCP-D1 (D-475): daftar toolset dipisah koma (`reports`, `documents`, `query`, atau
+ *                          `all`); bawaan semua. Hanya alat toolset itu yang muncul di tools/list (beban token
+ *                          per giliran lebih kecil). Nama tak dikenal -> CONFIG_INVALID.
  */
 import path from "node:path";
 import { normalizeBaseUrl } from "../_http-client";
 
 export const DEFAULT_STUDIO_BASE_URL = "http://127.0.0.1:9021";
 export const MCP_SERVER_NAME = "gsp-studio";
-export const MCP_SERVER_VERSION = "1.1.1";
+export const MCP_SERVER_VERSION = "1.3.0";
 
 /** Batas badan laporan/draf: sama dengan C54 `DRAFT_LIMITS.bodyBytes` (4 MiB). */
 export const MAX_INPUT_BYTES = 4_194_304;
 /** Batas satu pesan JSON-RPC stdio (bita); pesan lebih besar menutup transport (SDK). */
 export const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
+
+/** MCP-D1: kelompok alat. reports = laporan kerja; documents = dokumen klien; query = cari/baca. */
+export const TOOLSETS = ["reports", "documents", "query"] as const;
+export type Toolset = (typeof TOOLSETS)[number];
 
 export type SecretIssue = "empty" | "unresolved-reference";
 
@@ -46,6 +53,8 @@ export interface StudioMcpConfig {
   fileRoots: string[];
   /** M-1: tulis berkas hanya bila `STUDIO_MCP_FILE_ROOTS` diisi eksplisit (tanpa bawaan cwd). */
   fileWriteEnabled: boolean;
+  /** MCP-D1: toolset aktif (urutan TOOLSETS); bawaan semua. */
+  toolsets: Toolset[];
 }
 
 export class ConfigError extends Error {
@@ -92,6 +101,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>, cw
   if (bad !== undefined) throw new ConfigError(`STUDIO_MCP_FILE_ROOTS hanya menerima path absolut (diberikan "${bad}")`);
   const unc = roots.find(isUncLike);
   if (unc !== undefined) throw new ConfigError(`STUDIO_MCP_FILE_ROOTS tidak menerima path UNC/perangkat (diberikan "${unc}"); pakai folder lokal`);
+  const toolsets = parseToolsets(env.STUDIO_MCP_TOOLSETS);
   const { secret, issue } = normalizeSecret(env.INTERNAL_API_SECRET);
   return {
     baseUrl,
@@ -102,7 +112,17 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>, cw
     lockAgentId,
     fileRoots: roots.map((r) => path.resolve(r)),
     fileWriteEnabled: explicit,
+    toolsets,
   };
+}
+
+/** `STUDIO_MCP_TOOLSETS`: kosong/`all` = semua; selain nama TOOLSETS -> ConfigError. */
+export function parseToolsets(raw: string | undefined): Toolset[] {
+  const names = (raw ?? "").split(",").map((n) => n.trim().toLowerCase()).filter((n) => n !== "");
+  if (names.length === 0 || names.includes("all")) return [...TOOLSETS];
+  const bad = names.filter((n) => !(TOOLSETS as readonly string[]).includes(n));
+  if (bad.length > 0) throw new ConfigError(`STUDIO_MCP_TOOLSETS memuat nama tak dikenal: ${bad.join(", ")}; pilihan: ${TOOLSETS.join(", ")}, all`);
+  return TOOLSETS.filter((t) => names.includes(t));
 }
 
 /** Ringkasan konfigurasi yang AMAN dicetak (tanpa rahasia; hanya apakah terisi). */
@@ -115,5 +135,6 @@ export function describeConfig(c: StudioMcpConfig): Record<string, unknown> {
     lockAgentId: c.lockAgentId,
     fileRoots: c.fileRoots,
     fileWrite: c.fileWriteEnabled ? "enabled" : "disabled (STUDIO_MCP_FILE_ROOTS tidak diisi)",
+    toolsets: c.toolsets,
   };
 }

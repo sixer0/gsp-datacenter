@@ -1127,3 +1127,40 @@ MCP-06 (D-469; teks hasil netral-MCP, C4 sekali, smoke konflik) scripts/studio/m
 DOC-R4 (D-470; MCP jalur utama di panduan) docs/STUDIO-AGENT-GUIDE.md (§1.1 + awal §17/§17.0 saja) , docs/API-REFERENCE.md (catatan §12 saja)
 DC-47d (D-471; verifikasi akhir) docs/2026-10-22_doc_artifact_studio/verification/04_final_verification.md (BARU; review-only)
 DOC-R5 (D-472; L-2 L-3 L-4 L-5) docs/API-REFERENCE.md (§12 catatan MCP + R05) , docs/STUDIO-MCP.md (rujukan keputusan) , docs/2026-10-22_doc_artifact_studio/masterplan/05_document_contract_specs.md (§9.4 examples) , docs/2026-10-22_doc_artifact_studio/status_tasks.md (baris R2/R3/MCP/UI)
+R4-P (D-475; protokol r4 + brief) docs/2026-10-22_doc_artifact_studio/research/17_efficiency_protocol_r4.md (BARU) , docs/2026-10-22_doc_artifact_studio/hermes_trial/09_r4_doc_trial_brief.md (BARU) , docs/2026-10-22_doc_artifact_studio/hermes_trial/09_r4_report_trial_brief.md (BARU)
+MCP-D1 (D-475; alat dokumen MCP + pengecil token) scripts/studio/mcp/** , tests/unit/studio/mcp/** , docs/STUDIO-MCP.md , scripts/studio/_http-client.ts + src/lib/studio/services/import/** (HANYA ekspor/pemakaian ulang tanpa ubah perilaku)
+FACTS4 (D-476) C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/contract_ab4/** (BARU) , C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/controller_ab4/answers/** (BARU) , docs/2026-10-22_doc_artifact_studio/hermes_trial/09_r4_facts_manifest.md (BARU)
+HARNESS4 (D-476) C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/harness_ab4/** (BARU; di luar repo) , docs/2026-10-22_doc_artifact_studio/hermes_trial/09_r4_harness.md (BARU)
+FIG-01 (D-477; audit tata letak gambar, baca-saja kode) docs/2026-10-22_doc_artifact_studio/research/18_figure_layout_audit.md (BARU) ; Temp/fig_audit/ (skrip + SVG/PNG + hasil)
+MCP-D2 (D-478; review + security alat dokumen MCP) docs/2026-10-22_doc_artifact_studio/gateway_check/18_review_security_mcp_docs.md (BARU; review-only)
+MCP-D3 (D-480; F-1 F-2 F-3 + Low) scripts/studio/mcp/** , tests/unit/studio/mcp/** , docs/STUDIO-MCP.md
+| FIG-02a | src/lib/studio/engine/chart/** (termasuk core/textfit.ts baru, core/guards.ts), tests/unit/studio/figures/**, research/19_fig02a_report.md | 2026-11-02 | aktif |
+| MCP-D4 | scripts/studio/mcp/**, scripts/studio/studio-report.ts, scripts/studio/draft-check.ts, tests/unit/studio/mcp/**, docs/STUDIO-MCP.md | 2026-11-02 | aktif (D-484) |
+| FIG-02a | selesai (D-485) | 2026-11-02 | lepas |
+| FIG-02b | src/lib/studio/engine/diagram/**, src/lib/studio/engine/chart/family-g/**, tests/unit/studio/figures/fig02b-*.test.ts, research/20_fig02b_report.md, harness fig_audit/fig02b/ | 2026-11-02 | aktif |
+| FIG-02c | src/lib/studio/engine/chart/** KECUALI family-g/**, tests/unit/studio/figures/fig02c-*.test.ts, research/21_fig02c_report.md, harness fig_audit/fig02c/ | 2026-11-02 | aktif |
+| HARNESS4b | C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/harness_ab4/**, hermes_trial/09_r4_harness.md | 2026-11-02 | aktif (pengganti HARNESS4 yang macet 2x) |
+| R4-ALIGN | research/17_efficiency_protocol_r4.md, hermes_trial/09_r4_doc_trial_brief.md, hermes_trial/09_r4_report_trial_brief.md | 2026-11-02 | aktif |
+| R4-ALIGN | selesai oleh controller (D-490) | 2026-11-02 | lepas |
+| HARNESS4b | macet tanpa progres | 2026-11-02 | lepas |
+| HARNESS4c | C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/harness_ab4/** (ab4_mcp.py baru, edit kecil ab4.py), hermes_trial/09_r4_harness.md | 2026-11-02 | aktif |
+| FIG-02c | selesai (D-491) | 2026-11-02 | lepas |
+| HARNESS4c | macet; diselesaikan controller (D-494) | 2026-11-02 | lepas |
+| FIG-02b | dihentikan controller (D-495) | 2026-11-02 | lepas |
+| FIG-02b1 | src/lib/studio/engine/diagram/**, chart/family-g/** (opsional), tests/unit/studio/figures/fig02b-*.test.ts, research/20_fig02b_report.md | 2026-11-02 | aktif |
+| FIG-03a | src/lib/studio/contract/** , src/lib/studio/engine/chart/** KECUALI family-g/**, tests/unit/studio/figures/fig03a-*.test.ts, tests/unit/studio/contract/** (baru), docs/STUDIO-AGENT-GUIDE.md (bagian chart), research/22_fig03a_report.md | 2026-11-02 | aktif |
+| FIG-03b | scripts/studio/mcp/**, tests/unit/studio/mcp/**, docs/STUDIO-MCP.md, src/app/api/studio/** (hanya bila rute baru wajib), research/23_fig03b_report.md | 2026-11-02 | aktif |
+| FIG-03a | selesai (D-496); controller menambah services/compose/blocks.ts (2 baris) + tests/unit/studio/figures/fig03a-compose-intent.test.ts | 2026-11-02 | lepas |
+| FIG-02b1 | selesai (D-497) | 2026-11-02 | lepas |
+| FIG-02b2 | src/lib/studio/engine/diagram/**, src/lib/studio/engine/chart/family-g/**, chart/core/apparatus.ts (hanya caption P2-15), tests/unit/studio/figures/fig02b2-*.test.ts, research/24_fig02b2_report.md | 2026-11-02 | aktif |
+| FIG-03b | selesai (D-498) | 2026-11-02 | lepas |
+| FIG-02b2, review kode ronde 4, review keamanan figur | dihentikan karena USER pause (D-499) | 2026-11-02 | jeda |
+| FIG-02b2 | selesai (D-503) | 2026-11-02 | lepas |
+| SEC-FIX | src/app/api/studio/documents/[id]/figures/**, scripts/studio/mcp/**, src/lib/studio/contract/schema/v2/common.schema.ts (maxItems saja), tests/unit/studio/{mcp,api}/**, docs/STUDIO-MCP.md, docs/API-REFERENCE.md, delegation_progress/coder_execution_secfix.md | 2026-11-02 | aktif |
+| ENG-FIX | src/lib/studio/engine/** , tests/unit/studio/figures/** , research/25_engfix_report.md | 2026-11-02 | aktif |
+| ENG-FIX | selesai (D-504) | 2026-11-02 | lepas |
+| SEC-FIX | selesai (D-505); controller menambah services/render/figure-limits.ts, services/render/figures.ts, tests/unit/studio/figures/secfix-render-capacity.test.ts, STUDIO-AGENT-GUIDE.md §4.1.1 | 2026-11-02 | lepas |
+| SEC-FIX2 | src/lib/studio/contract/schema/** (maxItems), src/lib/studio/services/render/{figure-limits,artifact,figures}.ts, src/app/api/studio/documents/[id]/figures/**, tests/unit/studio/{contract,figures,api}/secfix2-*, docs/STUDIO-AGENT-GUIDE.md (batas), delegation_progress/coder_execution_secfix2.md | 2026-11-02 | aktif |
+| SEC-FIX2 | selesai (D-507); controller menambah artifacts/_lib/prepare.ts + tests/unit/studio/api/secfix2-artifact-create.test.ts | 2026-11-02 | lepas |
+| SEC-FIX3 | src/lib/studio/services/render/figure-limits.ts, src/lib/studio/contract/** (validasi kiriman blok figur), src/lib/studio/services/ingest/** (bila validasi kiriman di sana), tests/unit/studio/**/secfix3-*.test.ts, scripts/studio/scan-figure-limits.ts (baru, baca-saja), delegation_progress/coder_execution_secfix3.md | 2026-11-03 | aktif |
+| SEC-FIX3 | selesai (D-509) | 2026-11-03 | lepas |

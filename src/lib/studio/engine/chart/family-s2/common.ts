@@ -30,8 +30,9 @@
  */
 import type { ChartCanvas, LintIssue, ParamValue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
+import { type CategoryAxisPlan, categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 import { type ChartPalette, chartPalette, chartParam } from "../core/palette";
 import { chartFloors } from "../core/prepare";
 import { type NiceDomain, type Scale, decimalsFor, niceDomain } from "../core/scale";
@@ -89,7 +90,7 @@ export function beginS2(code: S2Code, spec: StudioChartV1, canvas: ChartCanvas, 
   const pal = chartPalette(spec, tpl);
   if ((spec.apparatus ?? "page") === "page") apparatusMarker(doc, spec);
   doc.paper(pal.paper);
-  const foot = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const foot = figureFootMm(spec) + (spec.note ? 5 : 0);
   return {
     code,
     spec,
@@ -112,7 +113,7 @@ export function beginS2(code: S2Code, spec: StudioChartV1, canvas: ChartCanvas, 
 
 export function endS2(ctx: S2Ctx): SvgResult {
   const { spec, doc, pal, W, H } = ctx;
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: { checksRun: ctx.checks, issues: ctx.issues } };
 }
@@ -333,9 +334,17 @@ export interface ColumnFrame {
   sy: Scale;
   dom: NiceDomain;
   centre(i: number): number;
+  /** Rencana label kolom bertingkat (FIG-02a P1-4); null = jalur satu baris lama. */
+  labelPlan: CategoryAxisPlan | null;
 }
 
-export function columnFrame(ctx: S2Ctx, groups: readonly Group[], columns: number, sy0: (dom: NiceDomain, top: number, base: number) => Scale): ColumnFrame {
+export function columnFrame(
+  ctx: S2Ctx,
+  groups: readonly Group[],
+  columns: number,
+  sy0: (dom: NiceDomain, top: number, base: number) => Scale,
+  labels: readonly string[] = [],
+): ColumnFrame {
   const { pal, doc, style } = ctx;
   const dom = valueDomain(
     groups.flatMap((g) => g.values),
@@ -345,9 +354,12 @@ export function columnFrame(ctx: S2Ctx, groups: readonly Group[], columns: numbe
   const T = gal ? TYPE_PT.gallery : TYPE_PT.datum;
   const face = gal ? "struct" : "data";
   const top = gal ? 1.2 : 6.0;
-  const base = ctx.bottom - (gal ? 4.4 : 5.2);
   const x0 = 0.5 + tickWidth(dom, T.tick, face) + 1.6;
   const x1 = ctx.W - 0.5;
+  const labelPlan = labels.length
+    ? categoryAxisPlan(labels, (x1 - x0) / columns, { pt: pt(ctx, gal ? TYPE_PT.gallery.label : TYPE_PT.datum.label) }, { maxRotateBandMm: Math.max(10, ctx.bottom * 0.4) })
+    : null;
+  const base = ctx.bottom - (gal ? 4.4 : 5.2) - (labelPlan?.extraBandMm ?? 0);
   const sy = sy0(dom, top, base);
   const step = (x1 - x0) / columns;
   if (!gal) gridY(ctx, dom, sy, x0, x1, pal.ink200, PC_GRID_MM);
@@ -358,15 +370,17 @@ export function columnFrame(ctx: S2Ctx, groups: readonly Group[], columns: numbe
   if (!gal && ctx.unit) {
     doc.text(x0, top - ptToMm(TYPE_PT.datum.axisTitle) - 0.4, ctx.unit, { sizePt: pt(ctx, TYPE_PT.datum.axisTitle), fill: pal.ink700 });
   }
-  return { x0, x1, top, base, step, sy, dom, centre: (i) => x0 + step * (i + 0.5) };
+  return { x0, x1, top, base, step, sy, dom, centre: (i) => x0 + step * (i + 0.5), labelPlan };
 }
 
 /** Label kolom grup di bawah garis dasar (gallery: tick kecil + ink400; datum: ink700). */
-export function columnLabel(ctx: S2Ctx, f: ColumnFrame, x: number, label: string): void {
+export function columnLabel(ctx: S2Ctx, f: ColumnFrame, x: number, label: string, i = 0): void {
   const gal = ctx.style === "gallery";
   const size = pt(ctx, gal ? TYPE_PT.gallery.label : TYPE_PT.datum.label);
   if (gal) ctx.doc.line(x, f.base, x, f.base + 0.8, ctx.pal.role.textAxis, HAIR_MM);
-  ctx.doc.text(x, f.base + (gal ? 0.9 : 1.2) + ptToMm(size), label, { sizePt: size, fill: gal ? ctx.pal.ink400 : ctx.pal.ink700, anchor: "middle" });
+  const o = { sizePt: size, fill: gal ? ctx.pal.ink400 : ctx.pal.ink700, anchor: "middle" as const };
+  if (f.labelPlan) drawCategoryLabel(ctx.doc, f.labelPlan, i, x, f.base + (gal ? 0.9 : 1.2) + ptToMm(size), o);
+  else ctx.doc.text(x, f.base + (gal ? 0.9 : 1.2) + ptToMm(size), label, o);
 }
 
 export { linearScale } from "../core/scale";

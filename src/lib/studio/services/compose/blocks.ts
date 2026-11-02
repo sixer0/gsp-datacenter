@@ -63,6 +63,7 @@ import type {
 } from "../../contract";
 import { TABLE_BLOCK_TYPES } from "../../contract";
 import { chartSpecFromDraft, type StudioChartDraft } from "../../engine/chart/core/custom";
+import { chartIntentOf } from "../../engine/chart/core/intent";
 import type { DiagramPageKeySignal } from "../../engine/diagram/core/sheet";
 import { PARAMS_BY_KEY } from "../../params";
 import { composeFail } from "./errors";
@@ -444,6 +445,9 @@ function chart(b: ChartV2, pid: string, ctx: BlockCtx): ChartBlock {
       const sp = specParams(d.params, ctx.params, b.code);
       if (sp) s.params = sp;
     }
+    // FIG-03a (D-482 butir 2): medan maksud analitis blok v2 diteruskan ke mesin; absen = undefined, spec tidak berubah.
+    const intent = chartIntentOf(b);
+    if (intent) s.intent = intent;
     spec = chartSpecFromDraft(s, b.form);
   }
   const out: ChartBlock = withId({ type: "chart" as const, caption: caption(b.caption, ctx), source: figureSource(b.source, ctx), widthMm, spec }, pid);

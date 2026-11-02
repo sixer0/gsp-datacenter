@@ -30,6 +30,7 @@ import {
   beginChart,
   drawYAxis,
   endChart,
+  groupAxisPlan,
   groupLabel,
   invalidParam,
   kindBool,
@@ -66,9 +67,10 @@ export function renderBox(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolve
   const labelPt = pt(ctx, ctx.type.label);
 
   const top = (datum && ctx.unit ? ptToMm(ty) + 1.4 : 0) + ptToMm(pt(ctx, ctx.type.tick)) * 0.5 + 0.8;
-  const base = ctx.bottom - ptToMm(labelPt) - 2.2;
   const x0 = tickWidth(ctx, tickLabels(dom)) + 1.8;
   const x1 = W - 0.8;
+  const lp = groupAxisPlan(ctx, groups.map((g) => g.name), x0, x1);
+  const base = ctx.bottom - ptToMm(labelPt) - 2.2 - (lp?.extraBandMm ?? 0);
   const sy = linearScale(dom.min, dom.max, base, top);
   const slot = (x1 - x0) / groups.length;
   const bw = Math.min(slot * 0.5, 14);
@@ -107,7 +109,7 @@ export function renderBox(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolve
     if (showOutliers) {
       for (const v of s.outliers) doc.circle(cx, sy(v), 0.45, datum ? pal.ink400 : pal.ink700, { mark: mark("point"), attrs: ' data-stat="outlier"' });
     }
-    groupLabel(ctx, cx, base, name);
+    groupLabel(ctx, cx, base, name, lp, gi);
   });
 
   doc.open('data-axis="x"');

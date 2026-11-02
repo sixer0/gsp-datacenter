@@ -16,6 +16,7 @@ import {
   xorRequired,
 } from "./common.schema";
 import { DIAGRAM_SCHEMA_ID } from "./diagram.schema";
+import { FIGURE_BOUNDS as B } from "./figure-bounds";
 
 export const DOC_SCHEMA_ID = `${STUDIO_SCHEMA_URL_BASE}/studio.doc/v1.json`;
 
@@ -46,6 +47,25 @@ const FIGURE_COMMON = {
   paragraphFormat: paraFormat,
 } as const;
 const FIGURE_REQUIRED = ["caption", "source", "widthMm"] as const;
+
+/**
+ * SEC-FIX2 (D-506): blok chart/diagram v1 = `BLOCK_COMMON` + `FIGURE_COMMON` dengan larik teks berbatas. `$ref` +
+ * saudara (2020-12) mempersempit `runs`/`tabs`/`provenance` HANYA pada blok figur; definisi bersama tidak berubah.
+ */
+const figPara = { ...paraFormat, type: "object", properties: { tabs: { type: "array", maxItems: B.figureTabs } } } as const;
+const figInline = { ...inline, type: "object", properties: { runs: { type: "array", maxItems: B.figureRuns } } } as const;
+const FIGURE_BOUNDED = {
+  format: figPara,
+  paragraphFormat: figPara,
+  fieldFormats: { ...commonRef("FieldFormats"), type: "object", additionalProperties: figPara },
+  keyRow: figInline,
+  caption: { ...commonRef("Caption"), type: "object", properties: { inline: figInline, format: figPara } },
+  source: {
+    ...commonRef("SourceLine"),
+    type: "object",
+    properties: { inline: figInline, format: figPara, provenance: { type: "array", maxItems: PROVENANCE_MARKS.length } },
+  },
+} as const;
 
 const PARAGRAPH_ROLES = [
   "body",
@@ -576,6 +596,7 @@ export const docSchema = {
         type: { const: "chart" },
         ...BLOCK_COMMON,
         ...FIGURE_COMMON,
+        ...FIGURE_BOUNDED,
         spec: { oneOf: [{ $ref: CHART_SCHEMA_ID }, artifactRef] },
       },
       required: ["type", "spec", ...FIGURE_REQUIRED],
@@ -587,6 +608,7 @@ export const docSchema = {
         type: { const: "diagram" },
         ...BLOCK_COMMON,
         ...FIGURE_COMMON,
+        ...FIGURE_BOUNDED,
         spec: { oneOf: [{ $ref: DIAGRAM_SCHEMA_ID }, artifactRef] },
       },
       required: ["type", "spec", ...FIGURE_REQUIRED],

@@ -25,6 +25,7 @@ import { buildDiagramSvg } from "../../engine/diagram/build";
 import { prepareFigureStore, type FigureSvgSheet, type PreparedFigureStore } from "../../engine/docx/figures";
 import { symbolSheetSvg, type SymbolSheetOptions } from "../../engine/symbols";
 import { db } from "./db";
+import { assertFigureCapacity, figureBytesIssues } from "./figure-limits";
 import type { RenderJobHandle } from "./job";
 import { pureChartSvg } from "./pure/chart";
 
@@ -191,12 +192,16 @@ export async function buildFigures(i: {
     try {
       if (block.type === "chart") {
         const spec = await i.reader.chart(c.spec);
+        // SEC-FIX / SEC-FIX2 (D-505, D-506): batas yang sama dengan rute pratinjau (spec + byte blok) SEBELUM render, agar
+        // figur tersimpan sebelum batas ada (atau rujukan artefak) tidak membekukan proses HQ. Gagal -> galat figur di job.
+        assertFigureCapacity("chart", spec, figureBytesIssues(block.content, "/content"));
         const r = chartSvg(spec, i.tpl);
         svgs.push(r);
         return { svg: r.svg, widthMm: r.widthMm, heightMm: r.heightMm };
       }
       if (block.type === "diagram") {
         const spec = diagramSpecForBlock(await i.reader.diagram(c.spec), c);
+        assertFigureCapacity("diagram", spec, figureBytesIssues(block.content, "/content"));
         // D-245/D-252: grid turunan kertas (lebar sah, blok teks, kisi X) dari templat efektif.
         const r = buildDiagramSvg(spec, { release: false, grid: figureGrid(i.tpl.params) });
         svgs.push(r);

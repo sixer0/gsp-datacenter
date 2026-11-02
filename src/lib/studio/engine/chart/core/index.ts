@@ -12,6 +12,7 @@
  */
 export { chartCanvas, finalizeChart, panelCanvas, PLOT_MARGIN_MM } from "./canvas";
 export { estimateHeightMm, renderChart, DEFAULT_HEIGHT_RATIO } from "./render";
+export { applyChartIntent, attachFullLabels, chartIntentOf, CHART_INTENT_FIELDS, intentSupport, orientationTarget, type AppliedIntent } from "./intent";
 export {
   COMPOSITE_DEFAULT_GAP_MM,
   EMPTY_CHART_TEMPLATE,

@@ -23,7 +23,10 @@ import { defect, figureLabel } from "../core/guards";
 import { paramBool } from "../core/palette";
 import { type NiceDomain, decimalsFor, linearScale, niceDomain } from "../core/scale";
 import { escAttr, num, ptToMm, textWidthMm } from "../core/svg";
-import { accentHint, assertAccentCount, axisStroke, beginP2, finishP2, hint, kindBool, requireSeries, xAxis, yAxis } from "./common";
+import { accentHint, assertAccentCount, axisStroke, beginP2, finishP2, hint, kindBool, requireSeries, tickFont, xAxis, yAxis } from "./common";
+import { fitActive, fitNote } from "../core/fit";
+import { ellipsize, measure } from "../core/textfit";
+
 
 const CODE = "P-12" as const;
 const MAX_PANELS = 6;
@@ -109,7 +112,37 @@ export function renderSmallMultiples(spec: StudioChartV1, canvas: ChartCanvas, t
     } else {
       doc.text(cx + cellW / 2, cy + ptToMm(TITLE), s.name, { sizePt: TITLE, fill: pal.ink900, anchor: "middle" });
       yAxis(ctx, { at: px0, from: py0, to: py1, scale: sy, ticks: dom.ticks, label: (v) => fmt(v, tdec), sizePt: TICK });
-      xAxis(ctx, { at: py1, from: px0, to: px1, scale: sx, ticks: xTicks, label: (i) => sd.categories[i], sizePt: TICK });
+      if (fitActive()) {
+        // FIG-02a/02c (fit): tick kategori dipotong ke jarak antartick terukur dengan huruf tick
+        // sebenarnya (mono datum); bila jarak terlalu sempit untuk ~3 huruf + elipsis, tick
+        // dijarangkan; label dijaga di dalam sel panel; teks lengkap di <title>.
+        const font = { pt: TICK, face: tickFont(ctx).face };
+        const minW = measure("Abc…", TICK, font.face);
+        const span = (px1 - px0 - 1.6) / Math.max(1, m - 1);
+        let every = tickEvery;
+        while (every < m - 1 && span * every - 0.8 < minW) every++;
+        const fitTicks = sd.categories.map((_, i) => i).filter((i) => i % every === 0);
+        const room = m === 1 ? cellW - 0.8 : span * every - 0.8;
+        const cut = sd.categories.map((c) => ellipsize(c, Math.max(room, minW), font));
+        if (every > tickEvery) fitNote("AXIS_TICK_THIN", `tick kategori panel ditampilkan tiap ${every} (label panjang; teks lengkap di <title>)`);
+        const labelAt = (i: number): number => {
+          const w = measure(cut[i].text, TICK, font.face);
+          return Math.min(Math.max(sx(i), cx + w / 2 + 0.3), cx + cellW - w / 2 - 0.3);
+        };
+        xAxis(ctx, {
+          at: py1,
+          from: px0,
+          to: px1,
+          scale: sx,
+          ticks: fitTicks,
+          label: (i) => cut[i].text,
+          labelTitle: (i) => (cut[i].truncated ? sd.categories[i] : undefined),
+          labelAt,
+          sizePt: TICK,
+        });
+      } else {
+        xAxis(ctx, { at: py1, from: px0, to: px1, scale: sx, ticks: xTicks, label: (i) => sd.categories[i], sizePt: TICK });
+      }
     }
     // Garis data (null memutus segmen).
     let d = "";

@@ -23,8 +23,9 @@
 import type { ChartCanvas, LintIssue, ParamValue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
+import { type CategoryAxisPlan, categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 import { type ChartPalette, chartPalette } from "../core/palette";
 import { chartFloors } from "../core/prepare";
 import { type NiceDomain, type Scale, decimalsFor, niceDomain } from "../core/scale";
@@ -96,7 +97,7 @@ export function beginChart(code: S1Code, spec: StudioChartV1, canvas: ChartCanva
   const pal = chartPalette(spec, tpl);
   if ((spec.apparatus ?? "page") === "page") apparatusMarker(doc, spec);
   doc.paper(pal.paper);
-  const foot = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const foot = figureFootMm(spec) + (spec.note ? 5 : 0);
   return {
     code,
     spec,
@@ -120,7 +121,7 @@ export function beginChart(code: S1Code, spec: StudioChartV1, canvas: ChartCanva
 
 export function endChart(ctx: S1Ctx): SvgResult {
   const { spec, doc, pal, W, H } = ctx;
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: { checksRun: ctx.checks, issues: ctx.issues } };
 }
@@ -259,10 +260,20 @@ export function xTickBand(ctx: S1Ctx): number {
   return ptToMm(pt(ctx, ctx.type.tick)) + 2.0;
 }
 
-/** Label kategori (nama grup) di bawah sumbu x, terpusat di `cx`. */
-export function groupLabel(ctx: S1Ctx, cx: number, y: number, name: string): void {
+/**
+ * Rencana label grup sumbu x bertingkat (FIG-02a P1-4): `null` di luar fit atau bila semua
+ * nama muat di slotnya (jalur satu baris lama). `extraBandMm` dikurangkan dari garis dasar plot.
+ */
+export function groupAxisPlan(ctx: S1Ctx, names: readonly string[], x0: number, x1: number): CategoryAxisPlan | null {
+  return categoryAxisPlan(names, (x1 - x0) / Math.max(1, names.length), { pt: pt(ctx, ctx.type.label) }, { maxRotateBandMm: Math.max(10, ctx.bottom * 0.4) });
+}
+
+/** Label kategori (nama grup) di bawah sumbu x, terpusat di `cx`; `plan` = rencana fit (opsional). */
+export function groupLabel(ctx: S1Ctx, cx: number, y: number, name: string, plan: CategoryAxisPlan | null = null, i = 0): void {
   const size = pt(ctx, ctx.type.label);
-  ctx.doc.text(cx, y + ptToMm(size) + 1.2, name, { sizePt: size, fill: ctx.style === "datum" ? ctx.pal.ink700 : ctx.pal.ink400, anchor: "middle" });
+  const o = { sizePt: size, fill: ctx.style === "datum" ? ctx.pal.ink700 : ctx.pal.ink400, anchor: "middle" as const };
+  if (plan) drawCategoryLabel(ctx.doc, plan, i, cx, y + ptToMm(size) + 1.2, o);
+  else ctx.doc.text(cx, y + ptToMm(size) + 1.2, name, o);
 }
 
 /** Path poligon/garis dari titik (koordinat mm, deterministik lewat `num`). */

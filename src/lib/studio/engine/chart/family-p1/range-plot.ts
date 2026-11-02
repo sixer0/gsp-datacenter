@@ -35,6 +35,7 @@ import {
   tickWidth,
   valueDomain,
 } from "./common";
+import { type ValueLabelIn, categoryAxisPlan, drawCategoryLabel, placeValueLabels } from "../core/labelfit";
 
 export function renderRangePlot(ctx: P1Ctx): void {
   const { pal, doc, W, style } = ctx;
@@ -80,14 +81,50 @@ export function renderRangePlot(ctx: P1Ctx): void {
   // Gaya datum (resep v09_range, vertikal).
   const T = TYPE_PT.datum;
   const top = 6.0;
-  const base = ctx.bottom - 5.2;
   const x0 = 0.5 + tickWidth(dom, T.tick, "data") + 1.6;
   const x1 = W - 0.5;
+  // FIG-02a P1-4: label grup bertingkat (hanya saat fit, bila tidak muat di slot).
+  const lp = categoryAxisPlan(groups.map((g) => g.name), (x1 - x0) / groups.length, { pt: pt(ctx, T.label) }, { maxRotateBandMm: Math.max(10, ctx.bottom * 0.4) });
+  const base = ctx.bottom - 5.2 - (lp?.extraBandMm ?? 0);
   const sy = linearScale(dom.min, dom.max, base, top);
   gridY(ctx, dom, sy, x0, x1, pal.ink200);
   const step = (x1 - x0) / groups.length;
   const rPt = 1.2 * (25.4 / 72);
   const sq = 6 * (25.4 / 72);
+  // FIG-02c: label rentang bertetangga tanpa tumpuk (hanya saat fit; null = jalur lama).
+  const valuePt = pt(ctx, T.value);
+  const vPlan = (() => {
+    const lift = ptToMm(valuePt) * 1.25;
+    const obstacles: Array<[number, number, number, number]> = [];
+    const items: ValueLabelIn[] = groups.map((g, gi) => {
+      const gx = x0 + step * (gi + 0.5);
+      obstacles.push([gx - 0.2, sy(g.hi), gx + 0.2, sy(g.lo)], [gx - sq / 2, sy(g.mean) - sq / 2, gx + sq / 2, sy(g.mean) + sq / 2]);
+      for (const v of g.values) obstacles.push([gx - rPt, sy(v) - rPt, gx + rPt, sy(v) + rPt]);
+      const s = withUnit(`${fmt(g.lo, ctx.dec)}-${fmt(g.hi, ctx.dec)}`, ctx.unit);
+      const right = gx + sq / 2 + 1.0 + textWidthMm(s, valuePt, "data") <= W - 0.3;
+      const yb = sy(g.hi) - 0.8;
+      const R = { x: gx + sq / 2 + 1.0, anchor: "start" as const };
+      const L = { x: gx - sq / 2 - 1.0, anchor: "end" as const };
+      const [a, b] = right ? [R, L] : [L, R];
+      return {
+        text: s,
+        cands: [
+          { ...a, y: yb },
+          { ...b, y: yb },
+          { x: gx, y: sy(g.hi) - rPt - 0.7, anchor: "middle" as const },
+          { ...a, y: yb - lift },
+          { ...b, y: yb - lift },
+          { x: gx, y: sy(g.hi) - rPt - 0.7 - lift, anchor: "middle" as const },
+        ],
+      };
+    });
+    if (ctx.unit) {
+      const ub = top - ptToMm(T.title) - 0.4;
+      obstacles.push([x0 - 0.2, ub - ptToMm(pt(ctx, T.title)) * 0.9, x0 + textWidthMm(ctx.unit, pt(ctx, T.title)) + 0.2, ub + ptToMm(pt(ctx, T.title)) * 0.15]);
+    }
+
+    return placeValueLabels(items, { pt: valuePt, face: "data" }, [x0 + 0.2, 0.3, W - 0.3, base - 0.2], obstacles, "label rentang");
+  })();
   groups.forEach((g, gi) => {
     const gx = x0 + step * (gi + 0.5);
     doc.line(gx, sy(g.lo), gx, sy(g.hi), pal.ink400, Math.max(GRID_MM, 0.8 * (25.4 / 72)), { mark: { mark: "interval", series: g.name, index: gi } });
@@ -96,16 +133,23 @@ export function renderRangePlot(ctx: P1Ctx): void {
       mark: { mark: "point", series: `${g.name} rerata`, index: gi },
     });
     const s = withUnit(`${fmt(g.lo, ctx.dec)}-${fmt(g.hi, ctx.dec)}`, ctx.unit);
-    // Label rentang di kanan penanda; dipindah ke kiri bila melewati tepi kanvas.
-    const right = gx + sq / 2 + 1.0 + textWidthMm(s, pt(ctx, T.value), "data") <= W - 0.3;
-    doc.text(right ? gx + sq / 2 + 1.0 : gx - sq / 2 - 1.0, sy(g.hi) - 0.8, s, {
-      face: "data",
-      sizePt: pt(ctx, T.value),
-      fill: pal.ink700,
-      anchor: right ? "start" : "end",
-      attrs: ' data-label="value"',
-    });
-    doc.text(gx, base + 3.6, g.name, { sizePt: pt(ctx, T.label), fill: pal.ink700, anchor: "middle" });
+    if (vPlan) {
+      const at = vPlan[gi];
+      if (at) doc.text(at.x, at.y, s, { face: "data", sizePt: valuePt, fill: pal.ink700, anchor: at.anchor, attrs: ' data-label="value"' });
+    } else {
+      // Label rentang di kanan penanda; dipindah ke kiri bila melewati tepi kanvas.
+      const right = gx + sq / 2 + 1.0 + textWidthMm(s, pt(ctx, T.value), "data") <= W - 0.3;
+      doc.text(right ? gx + sq / 2 + 1.0 : gx - sq / 2 - 1.0, sy(g.hi) - 0.8, s, {
+        face: "data",
+        sizePt: pt(ctx, T.value),
+        fill: pal.ink700,
+        anchor: right ? "start" : "end",
+        attrs: ' data-label="value"',
+      });
+    }
+
+    if (lp) drawCategoryLabel(doc, lp, gi, gx, base + 3.6, { sizePt: pt(ctx, T.label), fill: pal.ink700, anchor: "middle" });
+    else doc.text(gx, base + 3.6, g.name, { sizePt: pt(ctx, T.label), fill: pal.ink700, anchor: "middle" });
   });
   axisY(ctx, dom, sy, x0, top, base, { colour: pal.ink400, widthMm: SPINE_MM, sizePt: T.tick, face: "data" });
   doc.open('data-axis="x"');

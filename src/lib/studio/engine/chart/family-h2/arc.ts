@@ -16,6 +16,7 @@
 import type { ChartCanvas, LintIssue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { num, ptToMm, textWidthMm } from "../core/svg";
 import { accentLinkIndex, assertAccentCount, closeDoc, degrees, h2Enum, linkWidthFor, matchNode, openDoc, prepareH2, requireGraph } from "./shared";
+import { categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 
 const ORDER = ["data", "degree"] as const;
 const LABELS = ["all", "none"] as const;
@@ -53,9 +54,11 @@ export function renderArc(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolve
   const half = (i: number): number => (labels === "all" ? textWidthMm(g.nodes[i].label, look.labelPt) / 2 : 0);
   const x0 = Math.max(r, half(seq[0])) + 1.0;
   const x1 = W - Math.max(r, half(seq[n - 1])) - 1.0;
-  const base = H - prep.footMm - (labels === "all" ? lh + 2.0 : r + 1.0);
-  const top = 1.2;
   const step = n > 1 ? (x1 - x0) / (n - 1) : 0;
+  // FIG-02a P1-4: label simpul tidak muat di jarak simpul -> bungkus/rotasi (hanya saat fit).
+  const lp = labels === "all" && n > 1 ? categoryAxisPlan(seq.map((v) => g.nodes[v].label), step, { pt: look.labelPt }, { maxRotateBandMm: Math.max(10, (H - prep.footMm) * 0.4) }) : null;
+  const base = H - prep.footMm - (labels === "all" ? lh + 2.0 : r + 1.0) - (lp?.extraBandMm ?? 0);
+  const top = 1.2;
   const xOf = (i: number): number => (n > 1 ? x0 + slot[i] * step : W / 2);
 
   const spans = g.links.map((l) => Math.abs(xOf(l.to) - xOf(l.from)) / 2);
@@ -80,7 +83,8 @@ export function renderArc(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolve
   }
   g.nodes.forEach((nd, i) => {
     doc.circle(xOf(i), base, r, accNodes.has(i) ? pal.role.accent : pal.ink900, { mark: { mark: "node", series: nd.group ?? "simpul", index: i } });
-    if (labels === "all") doc.text(xOf(i), base + r + 0.9 + lh * 0.75, nd.label, { sizePt: look.labelPt, fill: pal.ink700, anchor: "middle" });
+    if (labels === "all" && lp) drawCategoryLabel(doc, lp, slot[i], xOf(i), base + r + 0.9 + lh * 0.75, { sizePt: look.labelPt, fill: pal.ink700, anchor: "middle" });
+    else if (labels === "all") doc.text(xOf(i), base + r + 0.9 + lh * 0.75, nd.label, { sizePt: look.labelPt, fill: pal.ink700, anchor: "middle" });
   });
   if (flat < 1) issues.push({ checkId: "H-08-FLATTEN", status: "REPORT", detail: `busur dipipihkan ry/rx = ${flat.toFixed(2)} agar muat tinggi plot` });
   return closeDoc(doc, spec, prep, issues);

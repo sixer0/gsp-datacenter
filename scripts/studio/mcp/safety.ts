@@ -26,7 +26,18 @@ export class McpToolError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly extra: { httpStatus?: number; correlationId?: string; details?: unknown; step?: string; pointer?: string; progress?: unknown } = {},
+    readonly extra: {
+      httpStatus?: number;
+      correlationId?: string;
+      details?: unknown;
+      step?: string;
+      pointer?: string;
+      progress?: unknown;
+      /** MCP-D3 F-1: `message` adalah teks galat asal server (dipindah ke blok data tak tepercaya). */
+      serverMessage?: boolean;
+      /** MCP-D3 F-1: `details` memuat isi asal server walau galat dibuat MCP (mis. pemilik dokumen, isu importer). */
+      untrusted?: boolean;
+    } = {},
   ) {
     super(message);
   }
@@ -148,10 +159,11 @@ const PROTECTED_BASENAMES: ReadonlySet<string> = new Set(["claude.md", "claude.l
 const PROTECTED_DIRS: ReadonlySet<string> = new Set([".claude", ".github", ".cursor", ".hermes", ".codex", ".gemini", ".vscode", ".git"]);
 const PROTECTED_SUFFIX_RE = /\.(agent|instructions|prompt|chatmode)\.md$/i;
 
-function assertNotProtected(resolved: string): void {
+function assertNotProtected(resolved: string, isDir = false): void {
   const base = path.basename(resolved).toLowerCase();
   const dirs = path.dirname(resolved).split(/[\\/]+/).map((s) => s.toLowerCase());
-  if (PROTECTED_BASENAMES.has(base) || PROTECTED_SUFFIX_RE.test(base) || dirs.some((d) => PROTECTED_DIRS.has(d))) {
+  // SEC-FIX L-2: tujuan folder (`write-dir`) yang ITU SENDIRI bernama folder instruksi (`<akar>/.claude`) juga ditolak.
+  if (PROTECTED_BASENAMES.has(base) || PROTECTED_SUFFIX_RE.test(base) || dirs.some((d) => PROTECTED_DIRS.has(d)) || (isDir && PROTECTED_DIRS.has(base))) {
     throw new McpToolError("PATH_PROTECTED", `${resolved} adalah berkas/folder instruksi agen; server MCP tidak pernah menulisnya. Pakai folder kerja khusus di dalam STUDIO_MCP_FILE_ROOTS`);
   }
 }
@@ -170,7 +182,7 @@ export function resolveAllowedPath(raw: string, roots: readonly string[], purpos
   const resolved = checkPathLexical(raw);
   const outside = () => new McpToolError("PATH_OUTSIDE_ROOTS", `path ${resolved} di luar akar yang diizinkan (STUDIO_MCP_FILE_ROOTS: ${roots.join(path.delimiter)})`);
   if (!roots.some((r) => isInside(resolved, path.resolve(r)))) throw outside();
-  if (purpose !== "read-report") assertNotProtected(resolved);
+  if (purpose !== "read-report") assertNotProtected(resolved, purpose === "write-dir");
   const ext = path.extname(resolved).toLowerCase();
   if (purpose === "read-report" && !REPORT_EXT.has(ext)) throw new McpToolError("PATH_INVALID", `hanya berkas .md, .markdown, atau .txt yang dapat dibaca (diberikan "${path.basename(resolved)}")`);
   if (purpose === "write-report" && ext !== ".md" && ext !== ".markdown") throw new McpToolError("PATH_INVALID", `tujuan tulis laporan harus berekstensi .md (diberikan "${path.basename(resolved)}")`);
@@ -178,7 +190,7 @@ export function resolveAllowedPath(raw: string, roots: readonly string[], purpos
   const real = realpathDeep(resolved, nfs);
   const realRoots = roots.map((r) => (nfs.exists(r) ? nfs.realpath(r) : r));
   if (!realRoots.some((r) => isInside(real, r))) throw outside();
-  if (purpose !== "read-report") assertNotProtected(real);
+  if (purpose !== "read-report") assertNotProtected(real, purpose === "write-dir");
   if (purpose === "read-report") {
     if (!nfs.exists(resolved)) throw new McpToolError("FILE_UNREADABLE", `berkas ${resolved} tidak ada`);
     const st = nfs.stat(resolved);
@@ -201,6 +213,28 @@ export function assertFileWriteEnabled(enabled: boolean, what: string): void {
       "FILE_WRITE_DISABLED",
       `${what} menulis berkas, tetapi STUDIO_MCP_FILE_ROOTS tidak diisi pada proses server MCP (tanpa bawaan cwd). Isi env itu dengan folder kerja khusus yang kosong, atau baca hasil dari medan markdown/structuredContent`,
     );
+  }
+}
+
+/**
+ * SEC-FIX L-2: folder unduhan dari argumen alat (`downloadDir`), divalidasi SEBELUM jaringan dan sebelum folder
+ * dibuat: di dalam akar, bukan UNC/ADS/perangkat, dan bukan folder instruksi (`.claude`, `.git`, ...), baik
+ * sebagai induk maupun sebagai nama folder itu sendiri. Satu pembantu untuk semua alat yang mengunduh.
+ */
+export function resolveDownloadDir(raw: string, roots: readonly string[], nfs: NodeFs): string {
+  return resolveAllowedPath(raw, roots, "write-dir", nfs);
+}
+
+/**
+ * SEC-FIX L-2: validasi ULANG folder unduhan tepat sebelum `mkdirp` (jeda jaringan di antaranya membuka jendela
+ * penukaran junction), lalu buat foldernya. Gagal buat -> OUT_UNWRITABLE.
+ */
+export function prepareDownloadDir(dir: string, roots: readonly string[], nfs: NodeFs): void {
+  resolveDownloadDir(dir, roots, nfs);
+  try {
+    nfs.mkdirp(dir);
+  } catch (e) {
+    throw new McpToolError("OUT_UNWRITABLE", `tidak dapat membuat folder ${dir}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

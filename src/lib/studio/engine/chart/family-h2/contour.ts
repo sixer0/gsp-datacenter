@@ -44,6 +44,11 @@ import { defect } from "../core/guards";
 import { maxNLocatorTicks } from "../core/numeric";
 import { type SvgDoc, num, ptToMm, textWidthMm } from "../core/svg";
 import { type H2Prep, assertAccentCount, closeDoc, finite, h2Enum, openDoc, prepareH2, schemaError } from "./shared";
+import { fitActive, fitNote } from "../core/fit";
+import { ellipsize, measure } from "../core/textfit";
+
+/** FIG-02c: posisi label sepanjang busur (pecahan panjang) yang dicoba saat fit, tengah dulu. */
+const FIT_LABEL_FRACS = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85] as const;
 
 const ROW_ORDER = ["atas ke bawah", "bawah ke atas", "topDown", "bottomUp"] as const;
 const MAX_LEVELS = 12;
@@ -303,7 +308,12 @@ const INLINE_MIN_GAPS = 3;
  * celah: garis utuh, label tetap di titik tengah busurnya dengan `fallback` true (pemanggil
  * memberi halo dan melaporkan). `at` hanya `undefined` bila tidak ada polyline sama sekali.
  */
-function inlineLabel(lines: Polyline[], gapMm: number): { pieces: Array<{ pts: Pt[]; closed: boolean }>; at?: Pt; fallback?: { lengthMm: number } } {
+function inlineLabel(
+  lines: Polyline[],
+  gapMm: number,
+  frac = 0.5,
+  pick?: number,
+): { pieces: Array<{ pts: Pt[]; closed: boolean }>; at?: Pt; fallback?: { lengthMm: number } } {
   let best = -1;
   let bestLen = 0;
   lines.forEach((pl, i) => {
@@ -313,11 +323,17 @@ function inlineLabel(lines: Polyline[], gapMm: number): { pieces: Array<{ pts: P
       bestLen = len;
     }
   });
+  // FIG-02c: `pick` = polyline lain yang dipilih pemanggil (saat fit); bawaan = terpanjang.
+  if (pick !== undefined && pick >= 0 && pick < lines.length) {
+    best = pick;
+    bestLen = lengthOf(lines[pick]);
+  }
   const pieces: Array<{ pts: Pt[]; closed: boolean }> = lines.map((pl) => ({ pts: [...pl.pts], closed: pl.closed }));
   if (best < 0) return { pieces };
   const pl = lines[best];
   const ps = pl.closed ? [...pl.pts, pl.pts[0]] : [...pl.pts];
-  const mid = bestLen / 2;
+  // FIG-02c: `frac` (bawaan 0,5 = tengah busur, perilaku lama) dijepit agar celah tetap di busur.
+  const mid = frac === 0.5 ? bestLen / 2 : Math.min(Math.max(bestLen * frac, gapMm / 2), bestLen - gapMm / 2);
   const at = slice(ps, mid, mid)[0] ?? ps[0];
   if (bestLen < gapMm * INLINE_MIN_GAPS) return { pieces, at, fallback: { lengthMm: bestLen } };
   const half = gapMm / 2;
@@ -356,7 +372,10 @@ export function renderContour(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   };
   const rowTicks = pick(R);
   const colTicks = pick(C);
-  const tickW = datum ? Math.max(...rowTicks.map((r) => textWidthMm(g.rows[r], look.tickPt, "data"))) : 0;
+  const fit = fitActive();
+  // FIG-02c: saat fit, talang label baris dijepit 30 % lebar (label dipotong, teks lengkap di <title>).
+  const rowCapMm = fit ? W * 0.3 : Infinity;
+  const tickW = datum ? Math.min(rowCapMm, Math.max(...rowTicks.map((r) => textWidthMm(g.rows[r], look.tickPt, "data")))) : 0;
   const unitBand = datum && prep.unit ? ptToMm(look.tickPt) + 1.4 : 0;
   const x0 = datum ? tickW + 2.0 : 1.2;
   const x1 = W - 1.2;
@@ -374,13 +393,46 @@ export function renderContour(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
 
   const labels: Array<{ at: Pt; text: string; k: number; halo: boolean }> = [];
   const shortLevels: string[] = [];
+  // FIG-02c (hanya saat fit): label tingkat tidak saling tumpuk — posisi sepanjang busur dicoba
+  // dari tengah ke luar; kotak label yang sudah dipasang menjadi rintangan.
+  const placedBoxes: Array<[number, number, number, number]> = [];
+  let movedLabels = 0;
+  const capMm = ptToMm(look.tickPt);
+  const boxAt = (at: Pt, w: number): [number, number, number, number] => {
+    const y = at[1] + capMm * 0.35;
+    return [at[0] - w / 2 - 0.3, y - capMm * 0.9 - 0.2, at[0] + w / 2 + 0.3, y + capMm * 0.15 + 0.2];
+  };
+  const hitBox = (a: readonly number[], b: readonly number[]): boolean => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  const inPlot = (b: readonly number[]): boolean => b[0] >= x0 && b[2] <= x1 && b[1] >= y0 - capMm && b[3] <= y1;
   marched.forEach((m, k) => {
     const lines = chain(m.segs, m.pts);
     if (!lines.length) return;
     const text = fmt(levels[k], prep.dec);
     const textW = textWidthMm(text, look.tickPt, "data");
     const gap = textW + 1.6;
-    const res: ReturnType<typeof inlineLabel> = datum ? inlineLabel(lines, gap) : { pieces: lines.map((l) => ({ pts: [...l.pts], closed: l.closed })) };
+    let res: ReturnType<typeof inlineLabel> = datum ? inlineLabel(lines, gap) : { pieces: lines.map((l) => ({ pts: [...l.pts], closed: l.closed })) };
+    if (datum && fit && res.at && !res.fallback) {
+      const wFit = measure(text, look.tickPt, "data");
+      const b0 = boxAt(res.at, wFit);
+      if (placedBoxes.some((q) => hitBox(q, b0)) || !inPlot(b0)) {
+        // Polyline terpanjang dulu (semua pecahan), lalu polyline lain yang cukup panjang.
+        const order = lines.map((pl, i) => ({ i, len: lengthOf(pl) })).filter((o) => o.len >= gap * INLINE_MIN_GAPS).sort((a, b) => b.len - a.len || a.i - b.i);
+        search: for (const o of order) {
+          for (const f of FIT_LABEL_FRACS) {
+            const alt = inlineLabel(lines, gap, f, o.i);
+            if (!alt.at || alt.fallback) continue;
+            const b = boxAt(alt.at, wFit);
+            if (inPlot(b) && !placedBoxes.some((q) => hitBox(q, b))) {
+              res = alt;
+              movedLabels++;
+              break search;
+            }
+          }
+        }
+      }
+
+      if (res.at) placedBoxes.push(boxAt(res.at, wFit));
+    }
     const accent = k === acc;
     doc.path(pathOf(res.pieces), "none", {
       stroke: accent ? pal.role.accent : datum ? pal.ink700 : pal.role.contextMain,
@@ -408,17 +460,21 @@ export function renderContour(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
       detail: `garis kontur terlalu pendek untuk label sela pada tingkat ${shortLevels.join(", ")}; label cadangan di titik tengah garis dengan halo kertas, garis tidak diputus`,
     });
   }
+  if (movedLabels) fitNote("CONTOUR_LABEL_MOVED", `${movedLabels} label tingkat kontur digeser sepanjang garisnya agar tidak bertumpuk`);
+  if (fit && datum && labels.some((l) => !l.halo)) fitNote("LABEL_HALO", "label tingkat kontur diberi halo kertas (terbaca di atas batas pita isian)");
   for (const l of labels) {
+    // FIG-02c: saat fit semua label tingkat berhalo kertas (label sela duduk di batas pita isian).
+    const halo = l.halo || (fit && datum);
     doc.text(l.at[0], l.at[1] + ptToMm(look.tickPt) * 0.35, l.text, {
       face: "data",
       sizePt: look.tickPt,
       fill: l.k === acc ? pal.role.accent : pal.ink900,
       anchor: "middle",
-      attrs: l.halo ? ` data-label="value" stroke="#${pal.paper}" stroke-width="0.6" paint-order="stroke"` : ' data-label="value"',
+      attrs: halo ? ` data-label="value" stroke="#${pal.paper}" stroke-width="0.6" paint-order="stroke"` : ' data-label="value"',
     });
   }
 
-  drawAxes(doc, prep, g, { x0, x1, y0, y1 }, P, rowTicks, colTicks);
+  drawAxes(doc, prep, g, { x0, x1, y0, y1 }, P, rowTicks, colTicks, fit ? rowCapMm : undefined);
   return closeDoc(doc, spec, prep, issues);
 }
 
@@ -430,13 +486,32 @@ function drawAxes(
   P: (r: number, c: number) => Pt,
   rowTicks: readonly number[],
   colTicks: readonly number[],
+  fitRowCapMm?: number,
 ): void {
   const { pal, look } = prep;
   const datum = prep.style === "datum";
   const ink = datum ? pal.ink900 : pal.role.textAxis;
   doc.open('data-axis="x"');
   doc.line(box.x0, box.y1, box.x1, box.y1, ink, look.axisMm);
-  if (datum) {
+  if (datum && fitRowCapMm !== undefined) {
+    // FIG-02c (fit): label tick kolom dipotong ke jarak antartick; tick ujung dijaga di
+    // dalam kanvas; teks lengkap di <title>.
+    const xs = colTicks.map((c) => P(0, c)[0]);
+    const font = { pt: look.tickPt, face: "data" as const };
+    const lh = ptToMm(look.tickPt) * 1.2;
+    colTicks.forEach((c, i) => {
+      // Sel label = antara titik tengah ke tick tetangga (ujung: tepi kanvas); label dipotong ke
+      // sel dan dijepit di dalamnya, sehingga tick ujung tidak menimpa tetangganya.
+      const lo = i > 0 ? (xs[i - 1] + xs[i]) / 2 : 0.3;
+      const hi = i + 1 < xs.length ? (xs[i] + xs[i + 1]) / 2 : doc.widthMm - 0.3;
+      const e = ellipsize(g.cols[c], Math.max(1, hi - lo - 0.8), font);
+
+      const w = measure(e.text, look.tickPt, "data");
+      const x = Math.min(Math.max(xs[i], lo + w / 2 + 0.4), hi - w / 2 - 0.4);
+
+      doc.textLines(x, box.y1 + ptToMm(look.tickPt) + 1.2, [e.text], { face: "data", sizePt: look.tickPt, fill: pal.ink400, anchor: "middle" }, lh, e.truncated ? g.cols[c] : undefined);
+    });
+  } else if (datum) {
     for (const c of colTicks) {
       // Label tepi kanan yang melewati kanvas ditambatkan ke ujungnya.
       const x = P(0, c)[0];
@@ -447,9 +522,17 @@ function drawAxes(
   doc.close();
   doc.open('data-axis="y"');
   doc.line(box.x0, box.y0, box.x0, box.y1, ink, look.axisMm);
-  if (datum) {
+  if (datum && fitRowCapMm !== undefined) {
+    const font = { pt: look.tickPt, face: "data" as const };
+    const lh = ptToMm(look.tickPt) * 1.2;
+    for (const r of rowTicks) {
+      const e = ellipsize(g.rows[r], fitRowCapMm, font);
+      doc.textLines(box.x0 - 1.2, P(r, 0)[1] + ptToMm(look.tickPt) * 0.35, [e.text], { face: "data", sizePt: look.tickPt, fill: pal.ink400, anchor: "end" }, lh, e.truncated ? g.rows[r] : undefined);
+    }
+  } else if (datum) {
     for (const r of rowTicks) doc.text(box.x0 - 1.2, P(r, 0)[1] + ptToMm(look.tickPt) * 0.35, g.rows[r], { face: "data", sizePt: look.tickPt, fill: pal.ink400, anchor: "end" });
   }
+
   doc.close();
   if (datum && prep.unit) doc.text(box.x0, 1.6 + ptToMm(look.tickPt) * 0.8, prep.unit, { face: "data", sizePt: look.tickPt, fill: pal.ink400 });
 }

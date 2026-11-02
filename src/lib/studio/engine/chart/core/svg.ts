@@ -15,6 +15,8 @@
  */
 import { StudioEngineError } from "../../../contract/errors";
 import type { ChartDataMark } from "../../../contract";
+import { fitActive } from "./fit";
+import { fitWithinSpan, lineHeightMm, titleSvg, tspanLines } from "./textfit";
 
 /** 1 pt = 25,4/72 mm. */
 export const MM_PER_PT = 25.4 / 72;
@@ -208,8 +210,33 @@ export class SvgDoc {
     return this;
   }
 
-  /** Teks nyata; ukuran dalam pt fisik (ditulis sebagai mm satuan pengguna). */
+  /**
+   * Teks nyata; ukuran dalam pt fisik (ditulis sebagai mm satuan pengguna).
+   *
+   * FIG-02a (P1-5/P1-6): hanya saat fit aktif (render ulang setelah lint geometri menemukan
+   * cacat), teks horizontal yang keluar tepi kiri/kanan kanvas dijaga di dalam: label tengah
+   * digeser, label rata kiri/kanan dibungkus ke ruang sampai tepi (maks 2 baris, lalu elipsis
+   * dengan teks lengkap di `<title>`). Di luar fit perilaku tidak berubah.
+   */
   text(x: number, y: number, s: string, o: TextOpts): this {
+    if (fitActive() && !(o.attrs ?? "").includes("transform")) {
+      const pt = this.fontPt(o.sizePt);
+      const font = { pt, face: o.face ?? "struct", bold: o.bold, trackMm: o.trackMm, caps: o.caps } as const;
+      // ENG-FIX #1: "keluar" diukur terhadap tepi kanvas nyata [0, W]; margin 0,4 mm hanya untuk
+      // menempatkan ulang teks yang memang keluar. Toleransi lint 0,3 mm sengaja TIDAK dipakai:
+      // Chromium mengukur angka tabel P-15 sampai 0,38 mm di luar tepi bila teks dibiarkan.
+      const edge = { lo: 0, hi: this.widthMm };
+      const f = fitWithinSpan(o.caps ? s.toUpperCase() : s, x, o.anchor ?? "start", 0.4, this.widthMm - 0.4, font, 2, edge);
+      if (f) {
+        const lh = lineHeightMm({ pt });
+        const size = ptToMm(pt);
+        // Blok berpusat pada garis dasar lama, lalu dijaga di dalam tinggi kanvas.
+        let y0 = y - ((f.lines.length - 1) * lh) / 2;
+        y0 = Math.max(y0, 0.3 + 0.87 * size);
+        y0 = Math.min(y0, this.heightMm - 0.3 - 0.12 * size - (f.lines.length - 1) * lh);
+        return this.textLines(f.x, y0, f.lines, { ...o, anchor: f.anchor, caps: false }, lh, f.title);
+      }
+    }
     const face = o.face === "data" ? FACE_DATA : FACE_STRUCT;
     const anchor = o.anchor ?? "start";
     const w = o.bold ? ' font-weight="600"' : "";
@@ -218,6 +245,22 @@ export class SvgDoc {
     this.parts.push(
       `<text${markAttr(o.mark)} x="${num(x)}" y="${num(y)}" font-family="${face}" font-size="${num(ptToMm(this.fontPt(o.sizePt)), 5)}" fill="${hexColor(o.fill)}" text-anchor="${anchor}"${w}${t}${o.attrs ?? ""}>${body}</text>`,
     );
+    return this;
+  }
+
+  /**
+   * Teks multi-baris (FIG-02a): SATU `<text>` dengan `<tspan x dy>` per baris; `y` = garis
+   * dasar baris pertama, `lineMm` = jarak antarbaris. Satu baris -> identik dengan `text()`.
+   * `title` (teks lengkap label yang dipotong) membungkus elemen dalam `<g data-fit="ellipsis">`.
+   */
+  textLines(x: number, y: number, lines: readonly string[], o: TextOpts, lineMm: number, title?: string): this {
+    const face = o.face === "data" ? FACE_DATA : FACE_STRUCT;
+    const anchor = o.anchor ?? "start";
+    const w = o.bold ? ' font-weight="600"' : "";
+    const t = o.trackMm ? ` letter-spacing="${num(o.trackMm)}"` : "";
+    const body = tspanLines(o.caps ? lines.map((l) => l.toUpperCase()) : lines, x, lineMm);
+    const el = `<text${markAttr(o.mark)} x="${num(x)}" y="${num(y)}" font-family="${face}" font-size="${num(ptToMm(this.fontPt(o.sizePt)), 5)}" fill="${hexColor(o.fill)}" text-anchor="${anchor}"${w}${t}${o.attrs ?? ""}>${body}</text>`;
+    this.parts.push(title !== undefined ? `<g data-fit="ellipsis">${titleSvg(title)}${el}</g>` : el);
     return this;
   }
 

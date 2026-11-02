@@ -18,7 +18,7 @@
 import type { ChartCode, LintIssue, ParamValue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { PARAMS_BY_KEY } from "../../../params";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { type ChartPalette, chartPalette, kindKey } from "../core/palette";
 import { accentOf } from "../core/params";
@@ -102,7 +102,7 @@ export function prepareH2(spec: StudioChartV1, tpl: ResolvedTemplate, code: H2Co
     maxAccent: floors.maxAccent,
     minFontPt: floors.minFontPt,
     accentRefs: accentRefsOf(spec, extraAccentKeys),
-    footMm: (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0),
+    footMm: figureFootMm(spec) + (spec.note ? 5 : 0),
   };
 }
 
@@ -152,7 +152,7 @@ export function openDoc(spec: StudioChartV1, prep: H2Prep, widthMm: number, heig
 export function closeDoc(doc: SvgDoc, spec: StudioChartV1, prep: H2Prep, issues: LintIssue[]): SvgResult {
   const W = doc.widthMm;
   const H = doc.heightMm;
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, prep.pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, prep.pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, prep.pal, H);
   const all = [...issues];
   const checksRun = [...new Set(all.map((i) => i.checkId))];

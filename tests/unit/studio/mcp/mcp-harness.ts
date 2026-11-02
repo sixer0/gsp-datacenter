@@ -109,6 +109,8 @@ export function studioMock(extra: Extra = {}) {
     const h = extra[key]?.(c);
     if (h === undefined) {
       if (key === 'POST /api/studio/validate') return reply({ status: 200, body: { valid: true, issues: [] } });
+      // MCP-D4 M-2: pra-cek studio_report_submit (GET R04 ?mission=&docKey=): bawaan = laporan belum ada.
+      if (key === 'GET /api/studio/documents') return reply({ status: 200, body: { documents: [], nextCursor: null } });
       if (key === `GET /api/studio/documents/${DOC}`) {
         return reply({
           status: 200,

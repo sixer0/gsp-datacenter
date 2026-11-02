@@ -19,6 +19,9 @@ import {
   CHART_CODES,
   CHART_CUSTOM_MARKS,
   CHART_CUSTOM_ORIENTATIONS,
+  CHART_INTENT_LIMITS,
+  CHART_INTENT_ORIENTATIONS,
+  CHART_INTENT_SORTS,
   CONTRACT_EVIDENCE_KINDS,
   CONTRACT_ITEM_STATUSES,
   CONTRACT_REF_RELS,
@@ -43,6 +46,7 @@ import {
 } from "../../env";
 import { atMostOne, JSON_SCHEMA_DIALECT, STUDIO_SCHEMA_URL_BASE, xorRequired } from "../common.schema";
 import { diagramSchema } from "../diagram.schema";
+import { FIGURE_BOUNDS as B } from "../figure-bounds";
 import { DOC_SCHEMA_ID, docSchema } from "../doc.schema";
 
 export const COMMON_V2_SCHEMA_ID = `${STUDIO_SCHEMA_URL_BASE}/common/v2.json`;
@@ -78,8 +82,15 @@ const INLINE_XOR = xorRequired("text", "runs");
 /** Medan bersama setiap blok v2: `type` + `id?` (pid). */
 const BLOCK_ID = { id: pid } as const;
 
+/**
+ * SEC-FIX2 (D-506): `$ref` + saudara (2020-12) mempersempit `runs` HANYA pada figur; `InlineV2`/`CaptionV2`/`SourceV2`
+ * bersama paragraf/tabel tidak berubah, dan nama `$defs` untuk klasifikasi galat (forbidden.ts) tetap.
+ */
+const figureText = (def: "InlineV2" | "CaptionV2" | "SourceV2") =>
+  ({ ...ref(def), type: "object", properties: { runs: { type: "array", maxItems: B.figureRuns } } }) as const;
+
 /** Medan figur v2 (tanpa ukuran/format): caption, source, keyRow. */
-const FIGURE_V2 = { caption: ref("CaptionV2"), source: ref("SourceV2"), keyRow: inline } as const;
+const FIGURE_V2 = { caption: figureText("CaptionV2"), source: figureText("SourceV2"), keyRow: figureText("InlineV2") } as const;
 
 function obj(properties: Record<string, unknown>, required: readonly string[] = [], extra: Record<string, unknown> = {}) {
   return { type: "object", properties, required: [...required], additionalProperties: false, ...extra } as const;
@@ -185,6 +196,7 @@ const DIAGRAM_SPEC_V2 = obj(
     classification: DIAGRAM_V1_PROPS.classification,
     labels_verified: DIAGRAM_V1_PROPS.labels_verified,
     sources: DIAGRAM_V1_PROPS.sources,
+    // SEC-FIX M-1 / SEC-FIX2 (D-501, D-506): semua larik berbatas di skema v1 (`FIGURE_BOUNDS`), dipakai ulang di sini.
     nodes: DIAGRAM_V1_PROPS.nodes,
     edges: DIAGRAM_V1_PROPS.edges,
     zones: DIAGRAM_V1_PROPS.zones,
@@ -204,26 +216,42 @@ const highlight = {
   items: { anyOf: [{ type: "string", minLength: 1, maxLength: 200 }, { type: "integer", minimum: 0 }] },
 } as const;
 
-/** T2-24: shape ChartData v1 tanpa `accent` (VF-12). */
+/**
+ * FIG-03a (D-482 butir 2; E58, E59, C61): medan maksud analitis blok chart. Kecocokan
+ * `labelShort[].label` dengan kategori data diperiksa mesin (SCHEMA_INVALID ber-pointer).
+ */
+const CHART_INTENT_V2 = {
+  orientation: { enum: [...CHART_INTENT_ORIENTATIONS] },
+  sort: { enum: [...CHART_INTENT_SORTS] },
+  topN: { type: "integer", minimum: CHART_INTENT_LIMITS.topNMin, maximum: CHART_INTENT_LIMITS.topNMax },
+  otherLabel: { type: "string", minLength: 1, maxLength: CHART_INTENT_LIMITS.otherLabelMax },
+  labelShort: { type: "array", minItems: 1, maxItems: CHART_INTENT_LIMITS.labelShortItemsMax, items: ref("ChartLabelShortV2") },
+} as const;
+
+/**
+ * T2-24: shape ChartData v1 tanpa `accent` (VF-12). SEC-FIX M-1 (D-501): `maxItems` = `FIGURE_LIMITS` route pratinjau
+ * (`documents/[id]/figures/preview/_lib/limits.ts`, dikunci uji secfix-chart-maxitems): kapasitas mesin terukur.
+ */
 const CHART_DATA_V2 = {
   type: "object",
-  properties: { shape: { type: "string" } },
+  properties: { shape: { type: "string", maxLength: 32 } },
   required: ["shape"],
   discriminator: { propertyName: "shape" },
   oneOf: [
     shapeVariant(
       "categorical",
-      { points: { type: "array", minItems: 1, items: obj({ label: str, value: num, sub: { type: "string", maxLength: 200 }, target: num }, ["label", "value"]) } },
+      { points: { type: "array", minItems: 1, maxItems: 200, items: obj({ label: str, value: num, sub: { type: "string", maxLength: 200 }, target: num }, ["label", "value"]) } },
       ["points"],
     ),
     shapeVariant(
       "series",
       {
-        categories: { type: "array", minItems: 1, items: str },
+        categories: { type: "array", minItems: 1, maxItems: 200, items: str },
         series: {
           type: "array",
           minItems: 1,
-          items: obj({ name: str, values: { type: "array", items: { type: ["number", "null"] } } }, ["name", "values"]),
+          maxItems: 24,
+          items: obj({ name: str, values: { type: "array", maxItems: 200, items: { type: ["number", "null"] } } }, ["name", "values"]),
         },
       },
       ["categories", "series"],
@@ -234,6 +262,7 @@ const CHART_DATA_V2 = {
         points: {
           type: "array",
           minItems: 1,
+          maxItems: 2000,
           items: obj({ x: num, y: num, size: num, label: { type: "string", maxLength: 200 }, group: str }, ["x", "y"]),
         },
         divider: obj({ x: num, y: num }, [], { minProperties: 1 }),
@@ -243,9 +272,9 @@ const CHART_DATA_V2 = {
     shapeVariant(
       "matrix",
       {
-        rows: { type: "array", minItems: 1, items: str },
-        cols: { type: "array", minItems: 1, items: str },
-        values: { type: "array", items: { type: "array", items: num } },
+        rows: { type: "array", minItems: 1, maxItems: 200, items: str },
+        cols: { type: "array", minItems: 1, maxItems: 200, items: str },
+        values: { type: "array", maxItems: 200, items: { type: "array", maxItems: 200, items: num } },
       },
       ["rows", "cols", "values"],
     ),
@@ -255,8 +284,9 @@ const CHART_DATA_V2 = {
         items: {
           type: "array",
           minItems: 1,
+          maxItems: 200,
           items: obj(
-            { label: str, start: { type: ["number", "string"] }, end: { type: ["number", "string"] }, group: str, milestone: bool },
+            { label: str, start: { type: ["number", "string"], maxLength: 200 }, end: { type: ["number", "string"], maxLength: 200 }, group: str, milestone: bool },
             ["label", "start", "end"],
           ),
         },
@@ -266,15 +296,15 @@ const CHART_DATA_V2 = {
     shapeVariant(
       "graph",
       {
-        nodes: { type: "array", minItems: 1, items: obj({ id: str, label: str, value: num, group: str }, ["id", "label"]) },
-        links: { type: "array", items: obj({ from: str, to: str, value: num }, ["from", "to"]) },
+        nodes: { type: "array", minItems: 1, maxItems: 200, items: obj({ id: str, label: str, value: num, group: str }, ["id", "label"]) },
+        links: { type: "array", maxItems: 400, items: obj({ from: str, to: str, value: num }, ["from", "to"]) },
       },
       ["nodes", "links"],
     ),
     shapeVariant(
       "distribution",
       {
-        groups: { type: "array", minItems: 1, items: obj({ name: str, values: { type: "array", items: num } }, ["name", "values"]) },
+        groups: { type: "array", minItems: 1, maxItems: 50, items: obj({ name: str, values: { type: "array", maxItems: 5000, items: num } }, ["name", "values"]) },
         binEdges: { type: "array", minItems: 2, maxItems: 201, items: num },
         sectors: { type: "integer", minimum: 4, maximum: 72 },
       },
@@ -286,23 +316,24 @@ const CHART_DATA_V2 = {
         tiles: {
           type: "array",
           minItems: 1,
+          maxItems: 200,
           items: obj({ code: str, row: { type: "integer" }, col: { type: "integer" }, value: num, label: str }, ["code", "row", "col"]),
         },
-        flows: { type: "array", items: obj({ from: str, to: str, value: num }, ["from", "to", "value"]) },
-        dots: { type: "array", items: obj({ tile: str, dx: num, dy: num, label: str }, ["tile"]) },
+        flows: { type: "array", maxItems: 400, items: obj({ from: str, to: str, value: num }, ["from", "to", "value"]) },
+        dots: { type: "array", maxItems: 1000, items: obj({ tile: str, dx: num, dy: num, label: str }, ["tile"]) },
       },
       ["tiles"],
     ),
     shapeVariant(
       "ohlc",
-      { points: { type: "array", minItems: 1, items: obj({ t: str, o: num, h: num, l: num, c: num }, ["t", "o", "h", "l", "c"]) } },
+      { points: { type: "array", minItems: 1, maxItems: 200, items: obj({ t: str, o: num, h: num, l: num, c: num }, ["t", "o", "h", "l", "c"]) } },
       ["points"],
     ),
     shapeVariant(
       "sets",
       {
-        sets: { type: "array", minItems: 1, items: obj({ name: str, size: num }, ["name", "size"]) },
-        overlaps: { type: "array", items: obj({ sets: { type: "array", minItems: 2, items: str }, size: num }, ["sets", "size"]) },
+        sets: { type: "array", minItems: 1, maxItems: 16, items: obj({ name: str, size: num }, ["name", "size"]) },
+        overlaps: { type: "array", maxItems: 256, items: obj({ sets: { type: "array", minItems: 2, maxItems: B.sets, items: str }, size: num }, ["sets", "size"]) },
       },
       ["sets", "overlaps"],
     ),
@@ -354,7 +385,7 @@ export const commonV2Schema = {
       type: "object",
       properties: {
         ...INLINE_V2_PROPERTIES,
-        provenance: { type: "array", minItems: 1, uniqueItems: true, items: { enum: [...PROVENANCE_MARKS] } },
+        provenance: { type: "array", minItems: 1, maxItems: PROVENANCE_MARKS.length, uniqueItems: true, items: { enum: [...PROVENANCE_MARKS] } },
       },
       additionalProperties: false,
       ...INLINE_XOR,
@@ -510,10 +541,14 @@ export const commonV2Schema = {
         dec,
         limit: obj({ value: num, label: { type: "string", maxLength: 200 } }, ["value"]),
         note: { type: "string", maxLength: 2000 },
+        // FIG-03a (D-482 butir 2): maksud analitis opsional (konten, bukan tampilan).
+        ...CHART_INTENT_V2,
         ...FIGURE_V2,
       },
       ["type", "code", "caption", "source"],
       {
+        // FIG-03a: `otherLabel` hanya bermakna bersama `topN`.
+        dependentRequired: { otherLabel: ["topN"] },
         oneOf: [
           { properties: { data: true }, required: ["data"] },
           { properties: { panels: true }, required: ["panels"] },
@@ -531,6 +566,10 @@ export const commonV2Schema = {
           },
         ],
       },
+    ),
+    ChartLabelShortV2: obj(
+      { label: str, short: { type: "string", minLength: 1, maxLength: CHART_INTENT_LIMITS.labelShortMax } },
+      ["label", "short"],
     ),
     ChartCustomFormV2: obj(
       {

@@ -22,7 +22,7 @@
  */
 import type { ChartRenderer } from "../../../contract";
 import { fmt } from "../../bind";
-import { keyRow } from "../core/apparatus";
+import { keyRow, keyRowExtraMm } from "../core/apparatus";
 import { defect } from "../core/guards";
 import { ptToMm, textWidthMm } from "../core/svg";
 import {
@@ -179,8 +179,9 @@ export const renderTreemap: ChartRenderer = (spec, canvas, tpl) => {
   const { x0, x1, y1 } = ctx;
   let { y0 } = ctx;
   if (!labelsInside) {
-    keyRow(doc, x0, y0 + 3.0, groupNames.map((n, g) => ({ label: n, color: groupColour[g] })), pal, T.label);
-    y0 += KEY_BAND_MM;
+    const keyItems = groupNames.map((n, g) => ({ label: n, color: groupColour[g] }));
+    keyRow(doc, x0, y0 + 3.0, keyItems, pal, T.label);
+    y0 += KEY_BAND_MM + keyRowExtraMm(x0, keyItems.map((k) => k.label), T.label);
   }
   const area: Box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   const groupTotals = members.map((m) => sum(m.map((i) => pts[i].value)));

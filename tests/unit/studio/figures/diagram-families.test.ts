@@ -34,6 +34,12 @@ const BUILDABLE = [
 ];
 
 /** Spec graph kecil yang menghasilkan tepat satu lompatan (a->b horizontal memotong c->d vertikal). */
+// ENG-FIX (D-503 butir 1): persilangan yang TIDAK dapat dihapus pengurutan simpul maupun
+// rute ulang. Graf K3,3 (tiga simpul per baris, kesembilan tepi antarbaris) tidak planar,
+// jadi gambar apa pun memuat >= 1 persilangan. Varian dua simpul per baris (K2,2) yang
+// diusulkan D-503 ternyata planar: 16 varian kolom/baris/urutan diukur di harness ENG-FIX dan
+// semuanya dirute tanpa persilangan (jalur samping), sehingga tidak bisa menguji busur.
+const HOP_IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
 const HOP_SPEC = {
   family: 'graph',
   id: '9.9',
@@ -42,16 +48,8 @@ const HOP_SPEC = {
   width_mm: 166,
   labels_verified: true,
   sources: ['Uji unit S73'],
-  nodes: [
-    { id: 'a', label: 'A', class: { col: 0, row: 0 } },
-    { id: 'b', label: 'B', class: { col: 2, row: 0 } },
-    { id: 'c', label: 'C', class: { col: 1, row: 0 } },
-    { id: 'd', label: 'D', class: { col: 0, row: 1 } },
-  ],
-  edges: [
-    { from: 'a', to: 'b', kind: 'data', label: 'satu' },
-    { from: 'c', to: 'd', kind: 'control', label: 'dua' },
-  ],
+  nodes: HOP_IDS.map((id, i) => ({ id, label: id.toUpperCase(), class: { col: i % 3, row: Math.floor(i / 3) } })),
+  edges: ['a', 'b', 'c'].flatMap((s) => ['d', 'e', 'f'].map((t) => ({ from: s, to: t, kind: 'data', label: `${s}${t}` }))),
 };
 
 describe('keluarga diagram: cakupan fixture', () => {
@@ -139,11 +137,13 @@ describe('lompatan persilangan (add_crossing_hops, r 0,9 mm)', () => {
     expect(addCrossingHops([])).toEqual([]);
   });
 
-  it('build graph bersilang: nHops = 1 dan busur r 0,9 mm tergambar', () => {
+  it('build graph bersilang tak terhindarkan (K3,3): nHops >= 1 dan satu busur r 0,9 mm per lompatan', () => {
     expect(LIMITS.hop_radius_mm).toBe(0.9);
     const r = buildDiagramSvg(asDiagram(HOP_SPEC), { release: true });
-    expect(r.report.nHops).toBe(1);
-    expect(countMatches(r.svg, / A 0\.9 0\.9 0 0 1 /g)).toBe(1);
+    expect(r.report.nHops).toBeGreaterThanOrEqual(1);
+    expect(countMatches(r.svg, / A 0\.9 0\.9 0 0 1 /g)).toBe(r.report.nHops);
+    // deterministik: rakitan kedua sama persis
+    expect(buildDiagramSvg(asDiagram(HOP_SPEC), { release: true }).svg).toBe(r.svg);
   });
 });
 

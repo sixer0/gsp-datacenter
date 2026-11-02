@@ -18,7 +18,7 @@
  */
 import type { ChartCanvas, LintIssue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { type ChartPalette, chartPalette } from "../core/palette";
 import { chartFloors } from "../core/prepare";
@@ -71,12 +71,12 @@ export function openFrame(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolve
   const doc = new SvgDoc(W, H, `data-chart="${code}" data-style="${gallery ? "gallery" : "datum"}"`, floors.minFontPt);
   if ((spec.apparatus ?? "page") === "page") apparatusMarker(doc, spec);
   doc.paper(pal.paper);
-  const foot = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const foot = figureFootMm(spec) + (spec.note ? 5 : 0);
   return { code, doc, pal, gallery, W, H, bottom: H - foot, maxAccent: floors.maxAccent, issues: [] };
 }
 
 export function closeFrame(f: Frame, spec: StudioChartV1): SvgResult {
-  if (spec.note) noteLine(f.doc, spec.note, f.W, f.H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, f.pal);
+  if (spec.note) noteLine(f.doc, spec.note, f.W, f.H - figureFootMm(spec) - 1.4, f.pal);
   if (spec.apparatus === "figure") figureApparatus(f.doc, spec, f.pal, f.H);
   const checksRun = [...new Set(f.issues.map((i) => i.checkId))];
   return { svg: f.doc.toString(), widthMm: f.W, heightMm: f.H, report: { checksRun, issues: f.issues } };

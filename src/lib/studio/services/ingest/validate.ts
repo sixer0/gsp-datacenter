@@ -18,6 +18,7 @@ import {
   STUDIO_SCHEMA_LOAD_ORDER,
   TABLE_BLOCK_TYPES,
   classifySchemaV2Errors,
+  figureTextErrorsV2,
   type SchemaV2RootId,
   type StudioSchemaId,
   type ValidationIssue,
@@ -48,6 +49,28 @@ export function studioAjv(): Ajv2020 {
 
 const refValidators = new Map<string, ValidateFunction>();
 
+/** Rujukan skema v2 yang dapat memuat blok figur (dokumen, kiriman bab/slot, fragmen `common/v2`). */
+const FIGURE_V2_REF = /\/(studio\.(doc|chapter|slot)\/v2|common\/v2)\.json(#|$)/;
+
+/**
+ * SEC-FIX3 N-5 (D-508): validator v2 + batas teks figur render (`figureTextErrorsV2`) SESUDAH ajv, sehingga setiap
+ * pemanggil validator bersama (R04, R08, R12/R13, R16/R06/R14, importer) menolak caption/sumber figur yang akan
+ * dilewati render, lewat pola yang sama (`v(data) ? [] : classifySchemaV2Errors(..., v.errors)`). Galat semu
+ * ditambahkan juga bila ajv gagal, agar agen melihat semua perbaikan dalam satu respons.
+ */
+function withFigureText(v: ValidateFunction): ValidateFunction {
+  const wrapped = ((data: unknown) => {
+    const ok = v(data);
+    const extra = figureTextErrorsV2(data) as ErrorObject[];
+    const base = ok ? [] : (v.errors ?? []);
+    wrapped.errors = base.length + extra.length > 0 ? [...base, ...extra] : null;
+    return ok && extra.length === 0;
+  }) as ValidateFunction;
+  // Medan validator ajv lain (schema, schemaEnv, evaluated, source) diteruskan apa adanya.
+  for (const k of Object.keys(v) as Array<keyof ValidateFunction>) if (k !== "errors") (wrapped as unknown as Record<string, unknown>)[k] = v[k];
+  return wrapped;
+}
+
 /**
  * Validator ter-cache untuk rujukan skema penuh (`<base>/<id>.json` atau
  * `<id skema>#/$defs/<Nama>`) di instans bersama. Skema tidak terdaftar atau gagal
@@ -63,8 +86,9 @@ export function studioValidator(ref: string): ValidateFunction {
     throw new Error(`studio schema ${ref} failed to compile: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!v) throw new Error(`studio schema ${ref} is not registered in ajv`);
-  refValidators.set(ref, v);
-  return v;
+  const out = FIGURE_V2_REF.test(ref) ? withFigureText(v) : v;
+  refValidators.set(ref, out);
+  return out;
 }
 
 function getAjv(): Ajv2020 {
@@ -90,8 +114,9 @@ function getValidator(id: StudioSchemaId): ValidateFunction {
     throw new StudioEngineError("SCHEMA_INVALID", `Skema ${id} gagal dikompilasi: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!v) throw new StudioEngineError("SCHEMA_INVALID", `Skema ${id} tidak terdaftar di ajv`);
-  validators.set(id, v);
-  return v;
+  const out = FIGURE_V2_REF.test(schemaUrl(id)) ? withFigureText(v) : v;
+  validators.set(id, out);
+  return out;
 }
 
 function describe(e: ErrorObject): string {

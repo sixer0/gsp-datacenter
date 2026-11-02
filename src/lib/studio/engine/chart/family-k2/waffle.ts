@@ -18,7 +18,7 @@
  */
 import type { ChartRenderer } from "../../../contract";
 import { fmt, withUnit } from "../../bind";
-import { keyRow } from "../core/apparatus";
+import { keyRow, keyRowExtraMm } from "../core/apparatus";
 import { defect } from "../core/guards";
 import { kindStr } from "../core/read";
 import { escAttr, textWidthMm } from "../core/svg";
@@ -70,8 +70,9 @@ export const renderWaffle: ChartRenderer = (spec, canvas, tpl) => {
     sideW = textWidthMm(sideLabel, T.big, "data") + 3.0;
   }
   if (ctx.style !== "gallery") {
-    keyRow(doc, x0, y0 + 3.0, pts.map((p, i) => ({ label: `${p.label} ${withUnit(fmt(p.value, dec), unit)}`, color: colours[i] })), pal, T.label);
-    y0 += KEY_BAND_MM;
+    const keyItems = pts.map((p, i) => ({ label: `${p.label} ${withUnit(fmt(p.value, dec), unit)}`, color: colours[i] }));
+    keyRow(doc, x0, y0 + 3.0, keyItems, pal, T.label);
+    y0 += KEY_BAND_MM + keyRowExtraMm(x0, keyItems.map((k) => k.label), T.label);
     y1 -= 4.0;
   }
 

@@ -22,7 +22,7 @@
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, keyRow, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, keyRow, keyRowExtraMm, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { chartPalette, kindKey, paramBool } from "../core/palette";
 import { invalidParam, kindStrPair, kindValue } from "../core/read";
@@ -211,15 +211,21 @@ export function renderDiverging(code: DivCode, spec: StudioChartV1, canvas: Char
     const keyBand = 6.0;
     const title = spec.unit ?? "";
     const axisY = H - foot - (title ? 7.8 : 4.6);
-    const fr = hFrame({
-      categories: data.categories,
-      labelPt: 6.5,
-      widthMm: W,
-      top: keyBand + 0.8,
-      base: axisY,
-      rightGutter: 3,
-      barRatio: code === "K-04" ? 0.6 : 0.55,
-    });
+    const keyLabels = data.series.map((s, si) => (sideNames && data.series.length === 2 ? sideNames[sides[si] === "left" ? 0 : 1] : s.name));
+    const frameAt = (top: number) =>
+      hFrame({
+        categories: data.categories,
+        labelPt: 6.5,
+        widthMm: W,
+        top,
+        base: axisY,
+        rightGutter: 3,
+        barRatio: code === "K-04" ? 0.6 : 0.55,
+      });
+    const fr0 = frameAt(keyBand + 0.8);
+    // FIG-02a P1-7: KUNCI multi-baris (hanya saat fit) menurunkan tepi atas plot.
+    const keyExtra = sides[0] !== "signed" ? keyRowExtraMm(fr0.x0, keyLabels) : 0;
+    const fr = keyExtra > 0 ? frameAt(keyBand + keyExtra + 0.8) : fr0;
     const sx = linearScale(dom.min, dom.max, fr.x0, fr.x1);
     drawGridX(doc, dom.ticks, sx, fr.top, axisY, pal);
     if (sides[0] !== "signed") {
@@ -270,7 +276,7 @@ export function renderDiverging(code: DivCode, spec: StudioChartV1, canvas: Char
     drawXAxis(doc, { y: axisY, x0: fr.x0, x1: fr.x1, dom, sx, style, pal, dec: tdec, absolute });
   }
 
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: rep.toJSON() };
 }

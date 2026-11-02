@@ -11,6 +11,8 @@
  */
 import type { DiagramEdge, RoutedEdge, StudioDiagramV1 } from "../../../contract";
 import { DiagramDefect, LATTICE_Y, polylineD, snap, type Sheet, type SheetNode } from "../core";
+import { diagramFitNote, diagramFitRoute } from "../fit/state";
+import { nudgeRoutes } from "./lanesroute";
 
 type Pt = readonly [number, number];
 type Side = "bottom" | "top" | "right" | "left";
@@ -140,6 +142,18 @@ function detour(pts: readonly Pt[], ends: readonly [string, string], nodes: read
   );
 }
 
+/**
+ * FIG-02b2: saat fit dengan cacat rute terukur, lintasan tengah yang dikunci kisi tetapi jatuh di
+ * luar rentang kedua stub (sering tepat di garis tepi simpul) diganti titik tengah tanpa kunci kisi.
+ */
+function between(m: number, a: number, b: number, on: boolean): number {
+  if (!on) return m;
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  if (m >= lo - 1e-6 && m <= hi + 1e-6) return m;
+  return Number(((a + b) / 2.0).toFixed(3));
+}
+
 /** Python `list.index(e)`: indeks elemen pertama yang sama nilainya. */
 function indexOfEdge(list: readonly DiagramEdge[], e: DiagramEdge): number {
   return list.findIndex((x) => x === e || (x.from === e.from && x.to === e.to && x.kind === e.kind && x.label === e.label));
@@ -151,8 +165,41 @@ function nodeOf(sheet: Sheet, id: string): SheetNode {
   return n;
 }
 
+/**
+ * FIG-02b2: rute rak di sisi kanan badan rak (hanya saat fit dan bila lint render pertama mengukur
+ * garis menembus teks). Konektor keluar dari sisi kanan perangkat (jangkar dikipas), berjalan tegak
+ * pada jalur sendiri di kanan rak (rentang terpendek paling dalam, tanpa silang), lalu masuk ke sisi
+ * kanan perangkat tujuan. Tidak pernah melewati label perangkat di antaranya.
+ */
+function routeRackSide(s: StudioDiagramV1, sheet: Sheet): RoutedEdge[] {
+  const edges = s.edges ?? [];
+  const right = Math.max(...[...sheet.nodes.values()].map((n) => n.x + n.w));
+  const per = new Map<string, DiagramEdge[]>();
+  for (const e of edges) for (const id of [e.from, e.to]) per.set(id, [...(per.get(id) ?? []), e]);
+  const cy = (id: string) => nodeOf(sheet, id).y + nodeOf(sheet, id).h / 2;
+  const span = (e: DiagramEdge) => Math.abs(cy(e.from) - cy(e.to));
+  const rank = edges.map((e, i) => ({ e, i })).sort((a, b) => span(a.e) - span(b.e) || a.i - b.i);
+  const lane = new Map(rank.map((r, k) => [r.e, k]));
+  const step = snap(LATTICE_Y, LATTICE_Y);
+  return edges.map((e) => {
+    const end = (id: string): Pt => {
+      const g = per.get(id)!.slice().sort((a, b) => lane.get(a)! - lane.get(b)!);
+      return anchor(nodeOf(sheet, id), "right", g.indexOf(e), g.length);
+    };
+    const p = end(e.from);
+    const q = end(e.to);
+    const lx = right + step * (lane.get(e)! + 1);
+    const pts: Pt[] = [p, [lx, p[1]], [lx, q[1]], q];
+    return { from: e.from, to: e.to, kind: e.kind, label: e.label, points: pts, d: polylineD(pts) };
+  });
+}
+
 /** HS `route_edges` atas lembar tertempat (keluarga selain sequence). */
 export function routePlaced(s: StudioDiagramV1, sheet: Sheet): RoutedEdge[] {
+  if (s.family === "rack" && diagramFitRoute("lineThroughText")) {
+    diagramFitNote("RACK_ROUTE", "konektor rak dirute pada jalur di sisi kanan badan rak", "tidak ada");
+    return routeRackSide(s, sheet);
+  }
   const edges = s.edges ?? [];
   const nodes = [...sheet.nodes.values()];
   const grouped = new Map<string, DiagramEdge[]>();
@@ -167,8 +214,20 @@ export function routePlaced(s: StudioDiagramV1, sheet: Sheet): RoutedEdge[] {
     push(gk(e.from, sa), e);
     push(gk(e.to, OPP[sa]), e);
   }
+  // FIG-02b2 P1-12: saat fit dengan cacat rute terukur, slot jangkar per sisi diurutkan menurut
+  // pusat simpul di ujung lain (x untuk sisi atas/bawah, y untuk kiri/kanan) agar kipas tidak bersilang.
+  const laneFix = diagramFitRoute("edgeCollinear", "edgeCross");
+  if (laneFix) {
+    for (const [k, g] of grouped) {
+      const [side, id] = k.split("\u0000");
+      const other = (e: DiagramEdge) => nodeOf(sheet, e.from === id ? e.to : e.from);
+      const key = (e: DiagramEdge) => (side === "top" || side === "bottom" ? other(e).x + other(e).w / 2 : other(e).y + other(e).h / 2);
+      const idx = new Map(g.map((e, i) => [e, i]));
+      g.sort((a, b) => key(a) - key(b) || idx.get(a)! - idx.get(b)!);
+    }
+  }
   const stub = snap(LATTICE_Y, LATTICE_Y);
-  const out: RoutedEdge[] = [];
+  const raw: Pt[][] = [];
   for (const e of edges) {
     const a = nodeOf(sheet, e.from);
     const b = nodeOf(sheet, e.to);
@@ -183,17 +242,34 @@ export function routePlaced(s: StudioDiagramV1, sheet: Sheet): RoutedEdge[] {
       const pa: Pt = [p[0], p[1] + (sa === "bottom" ? stub : -stub)];
       // E-17: stub target arah balik dari batas (masuk dari luar).
       const pb: Pt = [q[0], q[1] + (sb === "bottom" ? stub : -stub)];
-      const midy = snap((pa[1] + pb[1]) / 2.0, LATTICE_Y);
+      const midy = between(snap((pa[1] + pb[1]) / 2.0, LATTICE_Y), pa[1], pb[1], laneFix);
       pts = [p, pa, [pa[0], midy], [pb[0], midy], pb, q];
     } else {
       const pa: Pt = [p[0] + (sa === "right" ? stub : -stub), p[1]];
       const pb: Pt = [q[0] + (sb === "right" ? stub : -stub), q[1]];
-      const midx = snap((pa[0] + pb[0]) / 2.0, sheet.colMm);
+      const midx = between(snap((pa[0] + pb[0]) / 2.0, sheet.colMm), pa[0], pb[0], laneFix);
       pts = [p, pa, [midx, pa[1]], [midx, pb[1]], pb, q];
     }
-    pts = detour(pts, [e.from, e.to], nodes, sheet.widthMm, sheet.colMm);
-    out.push({ from: e.from, to: e.to, kind: e.kind, label: e.label, points: pts, d: polylineD(pts) });
+    raw.push(pts);
   }
+  const out: RoutedEdge[] = [];
+  let routes = edges.map((e, i) => {
+    const pts = raw[i];
+    if (!laneFix) return detour(pts, [e.from, e.to], nodes, sheet.widthMm, sheet.colMm);
+    // FIG-02b2: detur mulai dari ujung stub agar konektor keluar tegak lurus sisi simpul
+    // (bukan menyusuri garis tepi simpul) dan segmen dalamnya dapat dipisah jalurnya.
+    const inner = detour(pts.slice(1, -1), [e.from, e.to], nodes, sheet.widthMm, sheet.colMm);
+    return [pts[0], ...inner, pts[pts.length - 1]];
+  });
+  if (laneFix) {
+    const n = nudgeRoutes(routes, edges.map((e) => [e.from, e.to] as const), nodes, sheet.widthMm);
+    routes = n.paths;
+    if (n.moved) diagramFitNote("EDGE_LANES", `${n.moved} segmen konektor berimpit dipindah ke jalur sendiri`, "kurangi konektor yang berbagi kanal bila jalur terlalu rapat");
+  }
+  edges.forEach((e, i) => {
+    const pts = routes[i];
+    out.push({ from: e.from, to: e.to, kind: e.kind, label: e.label, points: pts, d: polylineD(pts) });
+  });
   return out;
 }
 

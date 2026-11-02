@@ -7,7 +7,7 @@
  * `CHART_DATA_MARKS`), `data-series`, `data-index`; sumbu `data-axis="x|y"`;
  * panel komposit `<g data-panel="<code>">`. Dekorasi tidak membawa `data-mark`.
  */
-import type { ChartCode } from "../enums";
+import type { ChartCode, ChartIntentOrientation, ChartIntentSort } from "../enums";
 import type { ParamValue } from "./common";
 import type { StudioDiagramV1 } from "./diagram";
 
@@ -53,6 +53,35 @@ export interface StudioChartV1 {
    * Renderer dan registri mengabaikannya.
    */
   x?: Record<string, unknown>;
+  /**
+   * Delta FIG-03a (D-482 butir 2): maksud analitis opsional (konten, bukan tampilan). Diisi
+   * perakit dari medan blok chart v2 (`orientation`, `sort`, `topN`, `otherLabel`,
+   * `labelShort`); absen = perilaku mesin sebelum FIG-03a (SVG byte-identik). Hanya pada spec
+   * tingkat atas (panel komposit tidak membawanya).
+   */
+  intent?: ChartIntent;
+}
+
+/** FIG-03a — maksud analitis chart (E58, E59, C61; register agen §17 bagian grafik). */
+export interface ChartIntent {
+  /** Arah baca kategori; `auto` = perilaku mesin (termasuk AUTO_ORIENT). */
+  orientation?: ChartIntentOrientation;
+  /** Urutan kategori; `none` = urutan agen. */
+  sort?: ChartIntentSort;
+  /** Pertahankan N kategori terbesar (3..30), sisanya digabung menjadi satu kategori "Lainnya (k)". */
+  topN?: number;
+  /** Label kategori gabungan `topN` (maks 40 karakter; bawaan "Lainnya"). */
+  otherLabel?: string;
+  /** Label sumbu singkat per kategori; label lengkap tetap di data dan `<title>` SVG. */
+  labelShort?: ChartLabelShort[];
+}
+
+/** FIG-03a — pasangan label kategori lengkap -> label sumbu singkat. */
+export interface ChartLabelShort {
+  /** Label kategori yang ada (titik kategoris atau `categories` seri), persis sama. */
+  label: string;
+  /** Teks sumbu/tick pengganti (maks 32 karakter). */
+  short: string;
 }
 
 export interface ChartAccent {
@@ -106,7 +135,7 @@ export const CHART_DATA_SHAPES = [
   "steps",
 ] as const satisfies readonly ChartDataShape[];
 
-export type ChartPanelSpec = Omit<StudioChartV1, "$schema" | "composite" | "widthMm" | "source" | "title"> & { kind: ChartCode };
+export type ChartPanelSpec = Omit<StudioChartV1, "$schema" | "composite" | "widthMm" | "source" | "title" | "intent"> & { kind: ChartCode };
 
 /** Komposit galeri: panel bernama berisi kode chart (permintaan S02). */
 export interface ChartComposite {

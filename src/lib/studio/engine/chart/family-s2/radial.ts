@@ -44,7 +44,11 @@ import {
   valueDomain,
 } from "./common";
 
+import { fitActive, fitNote } from "../core/fit";
+import { measure } from "../core/textfit";
+
 const DEFAULT_SECTORS = 36;
+
 const DEFAULT_COMPASS = ["U", "T", "S", "B"] as const;
 
 /** Lingkaran tanpa isian sebagai path dua busur (SvgDoc.circle mewajibkan isian hex). */
@@ -167,7 +171,79 @@ export function renderRadial(ctx: S2Ctx): void {
     const anchor = Math.abs(x - cx) < 0.5 ? "middle" : x > cx ? "start" : "end";
     doc.text(x, mid(y, lp), s, { sizePt: lp, fill: pal.ink700, anchor });
   });
-  if (!gal) {
+  if (!gal && fitActive()) {
+    // FIG-02c (hanya saat fit): label lingkar dipasang pada sinar yang paling sedikit membuat
+    // label memotong baji (utara kanan/kiri, selatan, timur, barat; seri = posisi lama).
+    const tl = tickLabels(dom);
+    const tp = pt(ctx, TYPE_PT.datum.tick);
+    const capH = ptToMm(tp);
+    const off = northUp ? 0 : 90;
+    /** Indeks baji yang memuat titik, atau -1 (lint menilai potong tanda per baji). */
+    const wedgeAt = (x: number, y: number): number => {
+      const d = Math.hypot(x - cx, y - cy);
+      let ph = (Math.atan2(x - cx, -(y - cy)) * 180) / Math.PI;
+      ph = ((ph % 360) + 360) % 360;
+      const th = (((clockwise ? ph - off : off - ph) % 360) + 360) % 360;
+      const k = Math.min(n - 1, Math.floor(th / w + 1e-9));
+      return d <= scale(counts[k]) ? k : -1;
+    };
+    type Place = (tk: number, wMm: number) => { x: number; y: number; anchor: "start" | "end" };
+    const places: Place[] = [
+      (tk) => ({ x: cx + 0.8, y: cy - scale(tk) + capH + 0.4, anchor: "start" }),
+      (tk) => ({ x: cx - 0.8, y: cy - scale(tk) + capH + 0.4, anchor: "end" }),
+      (tk) => ({ x: cx + 0.8, y: cy + scale(tk) - 0.4, anchor: "start" }),
+      (tk) => ({ x: cx - 0.8, y: cy + scale(tk) - 0.4, anchor: "end" }),
+      (tk) => ({ x: cx + scale(tk) - 0.6, y: cy - 0.6, anchor: "end" }),
+      (tk) => ({ x: cx + scale(tk) - 0.6, y: cy + capH + 0.6, anchor: "end" }),
+      (tk) => ({ x: cx - scale(tk) + 0.6, y: cy - 0.6, anchor: "start" }),
+      (tk) => ({ x: cx - scale(tk) + 0.6, y: cy + capH + 0.6, anchor: "start" }),
+    ];
+    const ticks = dom.ticks.slice(1);
+    const widths = ticks.map((_, i) => measure(tl[i + 1], tp, "data"));
+    const cuts = (pl: Place, tk: number, i: number): boolean => {
+      const p = pl(tk, widths[i]);
+      const x0 = p.anchor === "start" ? p.x : p.x - widths[i];
+      const per = new Map<number, number>();
+      for (let u = 0; u < 7; u++) {
+        for (let v = 0; v < 3; v++) {
+          const sx = x0 + widths[i] * (0.12 + 0.76 * (u / 6));
+          const sy = p.y - capH * 0.87 + capH * 0.99 * (0.2 + 0.6 * (v / 2));
+          const k = wedgeAt(sx, sy);
+          if (k >= 0) per.set(k, (per.get(k) ?? 0) + 1);
+        }
+      }
+      return [...per.values()].some((c) => c > 0 && c < 21);
+
+    };
+    const straddles = (pl: Place): number => ticks.reduce((a, tk, i) => a + (cuts(pl, tk, i) ? 1 : 0), 0);
+    let bestK = 0;
+    let bestS = straddles(places[0]);
+    for (let k = 1; k < places.length && bestS > 0; k++) {
+      const s = straddles(places[k]);
+      if (s < bestS) {
+        bestS = s;
+        bestK = k;
+      }
+    }
+    if (bestK > 0) fitNote("RADIAL_LABEL_MOVED", "label lingkar dipindah ke sinar yang tidak memotong baji");
+    // Label lingkar yang tetap memotong baji pada sinar terbaik disembunyikan (lingkar kisinya
+    // tetap tergambar); label terluar selalu dipertahankan.
+    const hide = ticks.map((tk, i) => i < ticks.length - 1 && cuts(places[bestK], tk, i));
+    const nHide = hide.filter(Boolean).length;
+    if (nHide) fitNote("LABEL_DROPPED", `${nHide} label lingkar disembunyikan karena memotong baji di semua sinar (lingkar kisi tetap tergambar)`);
+    ticks.forEach((tk, i) => {
+      if (hide[i]) return;
+      const p = places[bestK](tk, widths[i]);
+
+      doc.text(p.x, p.y, tl[i + 1], {
+        sizePt: tp,
+        fill: pal.ink400,
+        face: "data",
+        anchor: p.anchor,
+        attrs: ` stroke="#${pal.paper}" stroke-width="0.6" paint-order="stroke"`,
+      });
+    });
+  } else if (!gal) {
     const tl = tickLabels(dom);
     const tp = pt(ctx, TYPE_PT.datum.tick);
     dom.ticks.slice(1).forEach((tk, i) => {

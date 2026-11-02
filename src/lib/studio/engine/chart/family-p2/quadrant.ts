@@ -41,6 +41,8 @@ import {
   xAxis,
   yAxis,
 } from "./common";
+import { fitActive } from "../core/fit";
+import { placePointLabels } from "../core/labelfit";
 
 const CODE = "P-13" as const;
 const QUADS = ["kiriAtas", "kananAtas", "kiriBawah", "kananBawah"] as const;
@@ -199,7 +201,7 @@ export function renderQuadrant(spec: StudioChartV1, canvas: ChartCanvas, tpl: Re
     // data-accent-group: subjek aksen = grup/kuadran (beberapa titik satu grup = satu subjek).
     const grp = accent[i] ? ` data-accent-group="${escAttr(p.group ?? quadOf(p.x, p.y))}"` : "";
     doc.circle(sx(p.x), sy(p.y), r, fill, { mark: { mark: "point", series: p.group ?? "titik", index: i }, attrs: grp });
-    if (p.label) {
+    if (p.label && !fitActive()) {
       doc.text(sx(p.x) + ptToMm(5), sy(p.y) - ptToMm(4), p.label, {
         sizePt: ctx.pt(6.2),
         fill: accent[i] ? pal.role.accent : pal.ink700,
@@ -207,6 +209,20 @@ export function renderQuadrant(spec: StudioChartV1, canvas: ChartCanvas, tpl: Re
       });
     }
   });
+
+  // FIG-02a P1-8: saat fit, label titik ditempatkan tanpa tabrakan (8 posisi + penunjuk).
+  if (fitActive()) {
+    const font = { pt: ctx.pt(6.2) };
+    const lab = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.label);
+    const dots = pts.map((p) => [sx(p.x) - r, sy(p.y) - r, sx(p.x) + r, sy(p.y) + r] as [number, number, number, number]);
+    const placed = placePointLabels(lab.map(({ p }) => ({ x: sx(p.x), y: sy(p.y), r, text: p.label as string })), font, [Math.max(0.3, x0), Math.max(0.3, y0), Math.min(W - 0.3, x1), y1], dots);
+    placed.forEach((pl, k) => {
+      if (!pl) return;
+      const { p, i } = lab[k];
+      if (pl.leader) doc.line(pl.leader.x1, pl.leader.y1, pl.leader.x2, pl.leader.y2, pal.ink400, 0.18, { attrs: ' data-leader="point"' });
+      doc.text(pl.x, pl.y, p.label as string, { sizePt: font.pt, fill: accent[i] ? pal.role.accent : pal.ink700, anchor: pl.anchor, attrs: ' data-label="point"' });
+    });
+  }
 
   // Sumbu.
   if (style === "gallery") {

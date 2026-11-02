@@ -3,6 +3,8 @@
  * lebar per tingkat (P5). Dipakai keluarga layered, topology, stack.
  */
 import type { DiagramBox, DiagramNode, DiagramSheet, LayoutResult, StudioDiagramV1 } from "../../../contract";
+import { diagramFitActive, diagramFitAllows, diagramFitNote } from "../fit/state";
+import { fitTierWidth, grownHeight, planNodeText } from "../fit/text";
 import { baselineStepMm, latticeOf, nodeSize, pyStr, sheetHeight, snap } from "./geometry";
 
 /** `n.get("class", {}).get("tier", n.get("class", {}).get("row", 0))` lalu `str()`. */
@@ -56,6 +58,25 @@ export function layoutLayered(s: StudioDiagramV1, sheet: DiagramSheet): LayoutRe
     for (const n of group) {
       const [, h] = nodeSize(n, lat, group);
       if (h > hmax) hmax = h;
+    }
+    if (diagramFitActive()) {
+      // FIG-02b P1-10: lebar berbasis label (bungkus <= 3 baris), tinggi tumbuh per baris.
+      const wMax = Math.max(w, Math.floor((W - (m - 1) * gap) / m / lat.x + 1e-9) * lat.x);
+      const fit = fitTierWidth(group, w, wMax, lat.x, hmax);
+      w = fit.w;
+      let grown = hmax;
+      for (const n of group) {
+        const plan = planNodeText(n, w, hmax);
+        if (diagramFitAllows("grow")) grown = Math.max(grown, grownHeight(hmax, plan, lat.y));
+        if (plan.overflow) {
+          diagramFitNote(
+            "NODE_LABEL_LINES",
+            `label simpul '${pyStr(n.id)}' butuh lebih dari 3 baris pada lebar ${w.toFixed(1)} mm (${m} simpul setingkat)`,
+            "persingkat label simpul (maks ~40 karakter); detail ke `sub`",
+          );
+        }
+      }
+      hmax = grown;
     }
     const total = m * w + (m - 1) * gap;
     const x = snap(Math.max(0.0, (W - total) / 2.0), lat.x);

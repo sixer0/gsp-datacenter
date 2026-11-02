@@ -44,6 +44,8 @@ import {
   xTickBand,
 } from "./common";
 import { type BandwidthRule, bandwidth, kde, linspace, sortedAsc } from "./stats";
+import { fitActive } from "../core/fit";
+import { placePointLabels } from "../core/labelfit";
 
 const GRID_POINTS = 200;
 const MIN_SAMPLE = 10;
@@ -135,7 +137,21 @@ export function renderDensity(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     });
   });
 
-  if (multi) {
+  if (multi && fitActive()) {
+    // FIG-02a P1-8: label puncak tanpa tabrakan (hanya saat fit).
+    const peaks = curves.map((c) => {
+      let im = 0;
+      c.dens.forEach((d, i) => {
+        if (d > c.dens[im]) im = i;
+      });
+      return { x: sx(c.grid[im]), y: sy(c.dens[im]), r: 0.4, text: c.name };
+    });
+    const placed = placePointLabels(peaks, { pt: lblPt }, [0.3, 0.3, W - 0.3, base]);
+    placed.forEach((pl, gi) => {
+      if (!pl) return;
+      doc.text(pl.x, pl.y, curves[gi].name, { sizePt: lblPt, fill: gi === acc ? pal.role.accent : datum ? pal.ink700 : pal.ink400, anchor: pl.anchor, attrs: ' data-label="series"' });
+    });
+  } else if (multi) {
     curves.forEach((c, gi) => {
       let im = 0;
       c.dens.forEach((d, i) => {

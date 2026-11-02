@@ -35,7 +35,7 @@ import type {
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { type ChartPalette, chartPalette, chartParam, kindKey, resolveChartColor } from "../core/palette";
 import { chartFloors } from "../core/prepare";
@@ -108,7 +108,7 @@ export function beginChart(code: P1Code, spec: StudioChartV1, canvas: ChartCanva
   const pal = chartPalette(spec, tpl);
   if ((spec.apparatus ?? "page") === "page") apparatusMarker(doc, spec);
   doc.paper(pal.paper);
-  const foot = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const foot = figureFootMm(spec) + (spec.note ? 5 : 0);
   return {
     code,
     spec,
@@ -131,7 +131,7 @@ export function beginChart(code: P1Code, spec: StudioChartV1, canvas: ChartCanva
 
 export function endChart(ctx: P1Ctx): SvgResult {
   const { spec, doc, pal, W, H } = ctx;
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: { checksRun: ctx.checks, issues: ctx.issues } };
 }

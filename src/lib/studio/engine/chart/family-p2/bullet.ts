@@ -38,6 +38,8 @@ import {
   tokenHex,
   xAxis,
 } from "./common";
+import { fitActive } from "../core/fit";
+import { drawGutterLabel, gutterPlan } from "../core/labelfit";
 
 const CODE = "P-09" as const;
 
@@ -128,7 +130,12 @@ export function renderBullet(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
   const VAL = ctx.pt(6.4);
   const showLabels = style === "gallery" || pts.length > 1;
   const labelW = showLabels ? Math.max(...pts.map((p) => textWidthMm(p.label, LBL))) : 0;
-  const x0 = showLabels ? Math.min(Math.max(labelW + 1.6, 4), W * 0.4) : 1.0;
+  const x00 = showLabels ? Math.min(Math.max(labelW + 1.6, 4), W * 0.4) : 1.0;
+  const top0 = style === "gallery" ? 0.8 : 3.4;
+  const base0 = H - ctx.footBand - (style === "datum" ? 9.4 : 5.4);
+  // FIG-02a P1-5: talang terukur + bungkus (hanya saat fit).
+  const gp = showLabels ? gutterPlan(pts.map((p) => p.label), { pt: LBL }, { currentMm: x00, capMm: W * 0.4, padMm: 1.6, pitchMm: (base0 - 1.0 - top0) / pts.length }) : null;
+  const x0 = gp ? Math.max(x00, gp.gutterMm) : x00;
   const step = niceDomain([0, max], { zero: true }).step;
   const tdec = decimalsFor(step);
   const ticks = niceDomain([0, max], { zero: true }).ticks.filter((t) => t <= max + 1e-9);
@@ -171,8 +178,19 @@ export function renderBullet(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
         doc.line(xt, yc - th / 2, xt, yc + th / 2, pal.role.limitExceeded, ptToMm(2.2), { attrs: ` data-target="${i}"` });
       }
     }
-    if (showLabels) doc.text(x0 - 1.2, mid(yc, LBL), p.label, { sizePt: LBL, fill: pal.ink400, anchor: "end" });
-    if (style === "datum") {
+    if (showLabels && gp) drawGutterLabel(doc, gp, i, x0 - 1.2, mid(yc, LBL), { sizePt: LBL, fill: pal.ink400, anchor: "end" });
+    else if (showLabels) doc.text(x0 - 1.2, mid(yc, LBL), p.label, { sizePt: LBL, fill: pal.ink400, anchor: "end" });
+    // FIG-02a P1-8: baris rapat (celah antarpita < tinggi huruf) -> label nilai di ujung batang (hanya saat fit).
+    const cramped = fitActive() && rowStep - bandH < ptToMm(VAL) * 1.1;
+    if (style === "datum" && cramped) {
+      doc.text(sx(p.value) + (actualBar ? 0.6 : Math.max(0.6, barH / 2) + 0.6), mid(yc, VAL), withUnit(fmt(p.value, dec), unit), {
+        face: "data",
+        sizePt: VAL,
+        fill: pal.ink700,
+        anchor: "start",
+        attrs: ' data-label="value"',
+      });
+    } else if (style === "datum") {
       doc.text(Math.max(x0 + textWidthMm("0", VAL, "data"), sx(p.value) - 0.5), yb - 0.7, withUnit(fmt(p.value, dec), unit), {
         face: "data",
         sizePt: VAL,

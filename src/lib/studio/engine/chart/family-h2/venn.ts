@@ -30,6 +30,8 @@ import { defect } from "../core/guards";
 import { kindKey } from "../core/palette";
 import { num, ptToMm } from "../core/svg";
 import { type H2Prep, assertAccentCount, closeDoc, finite, h2Enum, h2Int, openDoc, prepareH2, schemaError } from "./shared";
+import { fitActive, fitNote } from "../core/fit";
+import { measure, wrapEllipsize } from "../core/textfit";
 
 const REGION_LABELS = ["eksklusif", "total"] as const;
 
@@ -205,7 +207,103 @@ export function renderVenn(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolv
   const lh = ptToMm(look.labelPt);
   const vh = ptToMm(look.valuePt);
   const centroid: XY = [C.reduce((a, p) => a + p[0], 0) / n, C.reduce((a, p) => a + p[1], 0) / n];
+
+  // Posisi angka wilayah irisan (dihitung lebih dulu; digambar setelah label himpunan seperti semula).
+  const regionPt = Math.max(look.valuePt, 7.4);
+  const regions: Array<{ at: XY; v: number }> = [];
+  for (let a = 0; a < n; a++) {
+    for (let b = a + 1; b < n; b++) {
+      if (!(data.pair[a][b] > 0)) continue;
+      const dx = C[b][0] - C[a][0];
+      const dy = C[b][1] - C[a][1];
+      const d = Math.hypot(dx, dy);
+      const u: XY = d > 1e-9 ? [dx / d, dy / d] : [1, 0];
+      const t = (d - R[b] + R[a]) / 2;
+      let at: XY = [C[a][0] + u[0] * t, C[a][1] + u[1] * t];
+      if (n === 3) {
+        const k = 3 - a - b;
+        const vx = at[0] - C[k][0];
+        const vy = at[1] - C[k][1];
+        const vd = Math.hypot(vx, vy);
+        const push = Math.max(0, R[a] + R[b] - d) * 0.25;
+        if (vd > 1e-9) at = [at[0] + (vx / vd) * push, at[1] + (vy / vd) * push];
+      }
+      regions.push({ at, v: regionMode === "total" ? data.pair[a][b] : pairOnly(a, b) });
+    }
+  }
+  if (n === 3 && data.triple > 0) regions.push({ at: centroid, v: data.triple });
+
+  // FIG-02c (hanya saat fit): nama himpunan dibungkus (<= 3 baris, lalu elipsis dengan <title>)
+  // dan blok nama+angka digeser menjauh dari irisan sampai tidak menutup angka wilayah.
+  const fit = fitActive();
+  type BoxT = [number, number, number, number];
+  const hitB = (p: BoxT, q: BoxT): boolean => p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
+  const regionBoxes: BoxT[] = regions.map((rg) => {
+    const w = measure(label(rg.v), regionPt, "data");
+    const y = rg.at[1] + ptToMm(regionPt) * 0.35;
+    return [rg.at[0] - w / 2 - 0.3, y - ptToMm(regionPt) * 0.9 - 0.2, rg.at[0] + w / 2 + 0.3, y + ptToMm(regionPt) * 0.15 + 0.2];
+  });
+  const blocks: BoxT[] = [];
+  const nameFit: Array<{ lines: string[]; title?: string; at: XY } | undefined> = [];
+  const blockH = (nLines: number): number => lh + (nLines - 1) * lh * 1.2 + 0.8 + vh;
+  let wrapped = 0;
   data.names.forEach((name, i) => {
+    if (!fit) return;
+    const nameFont = { pt: look.labelPt };
+    const valueW = measure(label(values[i]), look.valuePt, "data");
+    const fitsWhole = measure(name, look.labelPt) <= R[i] * 1.6;
+    if (fitsWhole) return;
+    let dirv: XY;
+    if (n === 2) {
+      const j = 1 - i;
+      const dx = C[i][0] - C[j][0];
+      const dy = C[i][1] - C[j][1];
+      const d = Math.hypot(dx, dy);
+      dirv = d > 1e-9 ? [dx / d, dy / d] : [0, -1];
+    } else {
+      const dx = C[i][0] - centroid[0];
+      const dy = C[i][1] - centroid[1];
+      const d = Math.hypot(dx, dy);
+      dirv = d > 1e-9 ? [dx / d, dy / d] : [0, -1];
+    }
+    let best: { lines: string[]; title?: string; at: XY } | null = null;
+    for (const wf of [1.3, 1.0, 0.8, 0.6]) {
+      const wr = wrapEllipsize(name, R[i] * wf, 3, nameFont);
+      const bw = Math.max(valueW, ...wr.lines.map((l) => measure(l, look.labelPt)));
+      const bh = blockH(wr.lines.length);
+      for (const tf of [0, 0.15, 0.3, 0.45, 0.6]) {
+        const base = n === 2 ? (() => {
+          const j = 1 - i;
+          const d = Math.hypot(C[i][0] - C[j][0], C[i][1] - C[j][1]);
+          return Math.min(R[i] * 0.8, Math.max(-R[i] * 0.8, (R[i] - (d - R[j])) / 2));
+        })() : R[i] * 0.45;
+        const t = Math.min(base + tf * R[i], R[i] * 0.85);
+        const at: XY = [C[i][0] + dirv[0] * t, C[i][1] + dirv[1] * t];
+        const box: BoxT = [at[0] - bw / 2 - 0.2, at[1] - bh / 2 - 0.2, at[0] + bw / 2 + 0.2, at[1] + bh / 2 + 0.2];
+        if (box[0] < 0.3 || box[2] > W - 0.3 || box[1] < 0.3 || box[3] > H - prep.footMm) continue;
+        if (regionBoxes.some((q) => hitB(q, box)) || blocks.some((q) => hitB(q, box))) continue;
+        best = { lines: wr.lines, title: wr.truncated ? name : undefined, at };
+        blocks.push(box);
+        break;
+      }
+      if (best) break;
+    }
+    if (!best) return;
+    wrapped++;
+    nameFit[i] = best;
+  });
+  if (wrapped) fitNote("VENN_LABEL_WRAP", `${wrapped} nama himpunan dibungkus/digeser agar tidak menutup angka irisan`);
+
+  data.names.forEach((name, i) => {
+    const nf = nameFit[i];
+    if (nf) {
+      const top0 = nf.at[1] - blockH(nf.lines.length) / 2;
+      const extra = (nf.lines.length - 1) * lh * 1.2;
+      doc.textLines(nf.at[0], top0 + lh * 0.8, nf.lines, { sizePt: look.labelPt, fill: pal.ink700, anchor: "middle" }, lh * 1.2, nf.title);
+      doc.text(nf.at[0], top0 + lh + extra + 0.8 + vh * 0.8, label(values[i]), { face: "data", sizePt: look.valuePt, fill: pal.ink900, anchor: "middle", attrs: ' data-label="value"' });
+
+      return;
+    }
     let at: XY;
     if (n === 2) {
       const j = 1 - i;
@@ -227,31 +325,10 @@ export function renderVenn(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resolv
     doc.text(at[0], blockTop + lh + 0.8 + vh * 0.8, label(values[i]), { face: "data", sizePt: look.valuePt, fill: pal.ink900, anchor: "middle", attrs: ' data-label="value"' });
   });
 
-  const regionPt = Math.max(look.valuePt, 7.4);
-  const regionText = (at: XY, v: number): void => {
-    doc.text(at[0], at[1] + ptToMm(regionPt) * 0.35, label(v), { face: "data", sizePt: regionPt, fill: pal.ink900, anchor: "middle", attrs: ' data-label="value"' });
-  };
-  for (let a = 0; a < n; a++) {
-    for (let b = a + 1; b < n; b++) {
-      if (!(data.pair[a][b] > 0)) continue;
-      const dx = C[b][0] - C[a][0];
-      const dy = C[b][1] - C[a][1];
-      const d = Math.hypot(dx, dy);
-      const u: XY = d > 1e-9 ? [dx / d, dy / d] : [1, 0];
-      const t = (d - R[b] + R[a]) / 2;
-      let at: XY = [C[a][0] + u[0] * t, C[a][1] + u[1] * t];
-      if (n === 3) {
-        const k = 3 - a - b;
-        const vx = at[0] - C[k][0];
-        const vy = at[1] - C[k][1];
-        const vd = Math.hypot(vx, vy);
-        const push = Math.max(0, R[a] + R[b] - d) * 0.25;
-        if (vd > 1e-9) at = [at[0] + (vx / vd) * push, at[1] + (vy / vd) * push];
-      }
-      regionText(at, regionMode === "total" ? data.pair[a][b] : pairOnly(a, b));
-    }
+  for (const rg of regions) {
+    doc.text(rg.at[0], rg.at[1] + ptToMm(regionPt) * 0.35, label(rg.v), { face: "data", sizePt: regionPt, fill: pal.ink900, anchor: "middle", attrs: ' data-label="value"' });
   }
-  if (n === 3 && data.triple > 0) regionText(centroid, data.triple);
+
 
   return closeDoc(doc, spec, prep, dedupe(issues));
 }

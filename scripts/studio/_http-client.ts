@@ -22,6 +22,9 @@
 /** Batas waktu satu panggilan HTTP CLI Studio (ms). */
 export const STUDIO_HTTP_TIMEOUT_MS = 60_000;
 
+/** Metode HTTP yang dipakai klien Studio (PATCH ditambahkan MCP-D1 untuk R14; tipe saja, perilaku tetap). */
+export type StudioMethod = "GET" | "POST" | "HEAD" | "PATCH";
+
 /** `manual` = 3xx dikembalikan apa adanya (lalu dipetakan `REMOTE_REDIRECT`); `follow` = bawaan fetch. */
 export type RedirectPolicy = "manual" | "follow";
 
@@ -122,7 +125,7 @@ export function correlationIdOf(headers: HttpResponseLike["headers"], body: unkn
  * Satu panggilan ke `<baseUrl><path>`. Jawaban HTTP apa pun dikembalikan (cek `ok`, lalu
  * {@link httpFailureOf}); hanya kegagalan transport yang dilempar ({@link StudioUnreachableError}).
  */
-export async function studioRequest(opts: StudioHttpOptions, method: "GET" | "POST" | "HEAD", path: string, req: StudioRequest = {}): Promise<HttpReply> {
+export async function studioRequest(opts: StudioHttpOptions, method: StudioMethod, path: string, req: StudioRequest = {}): Promise<HttpReply> {
   const f = opts.fetchImpl ?? (globalThis.fetch as unknown as HttpFetch);
   const timeoutMs = opts.timeoutMs ?? STUDIO_HTTP_TIMEOUT_MS;
   const headers: Record<string, string> = { "x-internal-secret": opts.secret, accept: req.binary ? "*/*" : "application/json" };

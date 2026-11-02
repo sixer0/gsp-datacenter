@@ -12,7 +12,7 @@
  */
 import type { LintIssue, ParamValue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
-import { FIGURE_APPARATUS_BAND_MM } from "../core/apparatus";
+import { figureFootMm } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { type ChartPalette, chartPalette } from "../core/palette";
 import { accentOf } from "../core/params";
@@ -80,7 +80,7 @@ export function prepH1(spec: StudioChartV1, tpl: ResolvedTemplate, code: H1Code)
     fid: figureLabel(spec),
     pal: chartPalette(spec, tpl),
     ...floors,
-    footBand: (spec.note ? 5 : 0) + (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0),
+    footBand: (spec.note ? 5 : 0) + figureFootMm(spec),
     issues: [],
   };
 }

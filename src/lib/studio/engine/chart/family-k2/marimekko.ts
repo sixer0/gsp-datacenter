@@ -21,7 +21,7 @@
 import type { ChartRenderer } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { fmt, withUnit } from "../../bind";
-import { keyRow } from "../core/apparatus";
+import { keyRow, keyRowExtraMm } from "../core/apparatus";
 import { defect } from "../core/guards";
 import { textWidthMm } from "../core/svg";
 import {
@@ -43,6 +43,7 @@ import {
   resolveTarget,
   sum,
 } from "./common";
+import { categoryAxisPlan, drawCategoryLabel } from "../core/labelfit";
 
 interface Mekko {
   categories: string[];
@@ -123,12 +124,17 @@ export const renderMarimekko: ChartRenderer = (spec, canvas, tpl) => {
 
   let { x0, y0 } = ctx;
   const { x1 } = ctx;
-  const catBand = 4.4;
-  const y1 = ctx.y1 - catBand;
   const datum = ctx.style === "datum";
+  // FIG-02a P1-4: slot terkecil menentukan rencana label kategori (hanya saat fit).
+  const wTot0 = sum(widths);
+  const fullW0 = x1 - x0 - (datum ? textWidthMm("100", T.tick, "data") + 1.8 : 0);
+  const lp = categoryAxisPlan(categories, Math.min(...widths.map((w) => (w / wTot0) * fullW0)), { pt: T.label }, { maxRotateBandMm: Math.max(10, (ctx.y1 - y0) * 0.4) });
+  const catBand = 4.4 + (lp?.extraBandMm ?? 0);
+  const y1 = ctx.y1 - catBand;
   if (datum) {
-    keyRow(doc, x0, y0 + 3.0, series.map((s, si) => ({ label: s.name, color: seriesColour[si] })), pal, T.label);
-    y0 += KEY_BAND_MM;
+    const keyItems = series.map((s, si) => ({ label: s.name, color: seriesColour[si] }));
+    keyRow(doc, x0, y0 + 3.0, keyItems, pal, T.label);
+    y0 += KEY_BAND_MM + keyRowExtraMm(x0, keyItems.map((k) => k.label), T.label);
     x0 += textWidthMm("100", T.tick, "data") + 1.8;
   }
   const wTot = sum(widths);
@@ -154,7 +160,8 @@ export const renderMarimekko: ChartRenderer = (spec, canvas, tpl) => {
       }
       yb -= h;
     });
-    doc.text(cx + bw / 2, y1 + 3.4, cat, { sizePt: T.label, fill: pal.ink700, anchor: "middle" });
+    if (lp) drawCategoryLabel(doc, lp, ci, cx + bw / 2, y1 + 3.4, { sizePt: T.label, fill: pal.ink700, anchor: "middle" });
+    else doc.text(cx + bw / 2, y1 + 3.4, cat, { sizePt: T.label, fill: pal.ink700, anchor: "middle" });
     cx += cw;
   });
 

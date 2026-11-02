@@ -19,7 +19,7 @@
 import type { ChartAccent, LintIssue, StudioChartV1 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM } from "../core/apparatus";
+import { figureFootMm } from "../core/apparatus";
 import { type CategoricalPoint, defect, figureLabel, requireCategorical } from "../core/guards";
 import type { ChartPalette } from "../core/palette";
 import { kindKey, readInt, readNum } from "../core/read";
@@ -36,7 +36,7 @@ export function styleOf(spec: Pick<StudioChartV1, "style">): K1Style {
 
 /** Tinggi pita kaki: aparatus "figure" + catatan (sama dengan gaya galeri inti). */
 export function footBandMm(spec: StudioChartV1): number {
-  return (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  return figureFootMm(spec) + (spec.note ? 5 : 0);
 }
 
 /** Atribut akar SVG keluarga. */

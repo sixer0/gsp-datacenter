@@ -14,8 +14,9 @@
  * yang menunjuk endpoint render (`renderFieldIssue`). Kode galat tetap
  * `SCHEMA_INVALID` (400), pola sama dengan DISPLAY_FIELD/V1_FIELD (E41).
  */
-import { TABLE_BLOCK_TYPES } from "../../enums";
+import { CHART_INTENT_LIMITS, CHART_INTENT_ORIENTATIONS, CHART_INTENT_SORTS, TABLE_BLOCK_TYPES } from "../../enums";
 import type { ValidationIssue } from "../../types/api";
+import { FIGURE_TEXT_CHECK_ID, FIGURE_TEXT_KEYWORD } from "./figure-text";
 
 /** C29 — DF-01..DF-52: nama tidak sah di objek mana pun dalam SID01-SID03. */
 export const DISPLAY_FIELDS_GLOBAL = [
@@ -364,6 +365,7 @@ const CHILD: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     keyRow: "InlineV2",
     limit: "ChartLimit",
     form: "ChartCustomFormV2",
+    labelShort: "ChartLabelShortV2",
   },
   // Delta DC-05 (register 05 §5.3): payload contractRecord.
   ContractRecordPayloadV2: { phase: "ContractPhaseV2", refs: "ContractRefV2", evidence: "ContractEvidenceV2", items: "ContractItemV2" },
@@ -560,6 +562,45 @@ function enumList(p: Record<string, unknown>): string {
   return Array.isArray(p.allowedValues) ? p.allowedValues.map((v) => JSON.stringify(v)).join(", ") : "";
 }
 
+// ── Delta FIG-03a (D-482 butir 2): medan maksud analitis blok chart -> `CHART_INTENT` ──
+
+const L = CHART_INTENT_LIMITS;
+const quoted = (xs: readonly string[]) => xs.map((x) => JSON.stringify(x)).join(", ");
+/** Pesan awam per medan maksud (pointer = medan yang salah). */
+const CHART_INTENT_MESSAGES: Readonly<Record<string, string>> = {
+  orientation: `orientation tidak sah; pakai salah satu: ${quoted(CHART_INTENT_ORIENTATIONS)}`,
+  sort: `sort tidak sah; pakai salah satu: ${quoted(CHART_INTENT_SORTS)}`,
+  topN: `topN harus bilangan bulat ${L.topNMin}..${L.topNMax} (contoh: "topN": 8)`,
+  otherLabel: `otherLabel harus teks 1..${L.otherLabelMax} karakter dan hanya bersama topN`,
+  labelShort: `labelShort harus larik 1..${L.labelShortItemsMax} pasangan { "label": <kategori yang ada>, "short": <maks ${L.labelShortMax} karakter> }`,
+  label: "labelShort[].label wajib teks 1..200 karakter yang sama persis dengan label kategori data",
+  short: `labelShort[].short wajib teks 1..${L.labelShortMax} karakter`,
+};
+
+/** Issue `CHART_INTENT` untuk galat ajv pada medan maksud chart; `null` = bukan medan maksud. */
+function chartIntentIssue(rootId: SchemaV2RootId, data: unknown, e: AjvErrorLike, prefix: string): ValidationIssue | null {
+  const p = e.params as Record<string, unknown>;
+  const at = (pointer: string, message: string): ValidationIssue => ({ pointer: prefix + pointer, keyword: e.keyword, checkId: "CHART_INTENT", message });
+  const here = locateSchemaV2Object(rootId, data, e.instancePath);
+  if (e.keyword === "dependentRequired" && here === "ChartV2" && p.property === "otherLabel") {
+    return at(`${e.instancePath}/otherLabel`, "otherLabel hanya diterima bersama topN");
+  }
+  if (here === "ChartLabelShortV2") {
+    if (e.keyword === "required" && typeof p.missingProperty === "string" && CHART_INTENT_MESSAGES[p.missingProperty]) {
+      return at(`${e.instancePath}/${p.missingProperty}`, CHART_INTENT_MESSAGES[p.missingProperty]);
+    }
+    if (e.keyword === "additionalProperties") return at(e.instancePath, 'labelShort[] hanya berisi "label" dan "short"');
+    if (e.keyword === "type" || e.keyword === "minItems" || e.keyword === "maxItems") return at(e.instancePath, CHART_INTENT_MESSAGES.labelShort);
+  }
+  const vf = valueField(e.instancePath);
+  if (vf === null || !CHART_INTENT_MESSAGES[vf.field]) return null;
+  const parent = locateSchemaV2Object(rootId, data, vf.parent);
+  const intentField = parent === "ChartV2" && vf.field !== "label" && vf.field !== "short";
+  const pairField = parent === "ChartLabelShortV2" && (vf.field === "label" || vf.field === "short");
+  if (!intentField && !pairField) return null;
+  return at(e.instancePath, CHART_INTENT_MESSAGES[vf.field]);
+}
+
 /**
  * Issue ber-checkId kontrak (CH-01..CH-05) untuk satu galat ajv; `null` = bukan galat kontrak
  * (diteruskan ke pemetaan generik). Keyword issue dibakukan per kelompok agar galat ajv
@@ -628,6 +669,9 @@ function classifyContractError(rootId: SchemaV2RootId, data: unknown, e: AjvErro
  * - `render` di akar kiriman (D-247) -> `checkId: "RENDER_FIELD"` (pesan menunjuk endpoint render);
  * - medan/nilai tampilan DF-01..DF-73 (C29, C30; DF-72/73 delta DC-05) -> `checkId: "DISPLAY_FIELD"`,
  *   pesan register §5.1 apa adanya;
+ * - medan maksud chart FIG-03a (`orientation`, `sort`, `topN`, `otherLabel`, `labelShort`)
+ *   -> `checkId: "CHART_INTENT"` dengan pointer medan yang salah;
+ * - teks figur v2 di atas batas render (SEC-FIX3 N-5, keyword semu `figureTextLength`) -> `checkId: "FIGURE_TEXT"`;
  * - payload contractRecord dan chart.custom (register 05 §5.4) -> `CONTRACT_ENUM`,
  *   `CONTRACT_PATTERN`, `CONTRACT_DATE`, `CONTRACT_REF_TARGET`, `CHART_CUSTOM_FORM`;
  * - galat lain apa adanya tanpa `checkId`.
@@ -649,6 +693,11 @@ export function classifySchemaV2Errors(
   };
   for (const e of errors ?? []) {
     const p = e.params as Record<string, unknown>;
+    // SEC-FIX3 N-5: galat semu teks figur (validator v2 bersama, `figure-text.ts`) -> batas render saat kiriman.
+    if (e.keyword === FIGURE_TEXT_KEYWORD) {
+      push({ pointer: prefix + e.instancePath, keyword: "maxLength", checkId: FIGURE_TEXT_CHECK_ID, message: e.message ?? "teks figur terlalu panjang" });
+      continue;
+    }
     if (e.keyword === "additionalProperties" && typeof p.additionalProperty === "string") {
       const field = p.additionalProperty;
       const loc = locateSchemaV2Object(rootId, data, e.instancePath);
@@ -676,6 +725,11 @@ export function classifySchemaV2Errors(
         push({ pointer: prefix + e.instancePath, keyword: e.keyword, checkId: "DISPLAY_FIELD", message: DISPLAY_FIELD_MESSAGE });
         continue;
       }
+    }
+    const intentIssue = chartIntentIssue(rootId, data, e, prefix);
+    if (intentIssue !== null) {
+      push(intentIssue);
+      continue;
     }
     const contractIssues = classifyContractError(rootId, data, e, prefix);
     if (contractIssues !== null) {

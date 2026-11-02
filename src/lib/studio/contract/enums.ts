@@ -499,6 +499,30 @@ export type ChartCustomMark = (typeof CHART_CUSTOM_MARKS)[number];
 export const CHART_CUSTOM_ORIENTATIONS = ["vertical", "horizontal"] as const;
 export type ChartCustomOrientation = (typeof CHART_CUSTOM_ORIENTATIONS)[number];
 
+// ── Delta FIG-03a (aditif; D-482 butir 2): medan maksud analitis blok chart v2 ──
+// Konten, bukan tampilan: arah baca kategori, urutan, N teratas + "Lainnya", label sumbu
+// singkat. Semua opsional; absen = perilaku mesin sebelum FIG-03a (byte-identik).
+
+/** E58 — `ChartV2.orientation` (absen = `auto` = perilaku mesin, termasuk AUTO_ORIENT). */
+export const CHART_INTENT_ORIENTATIONS = ["auto", "horizontal", "vertical"] as const;
+export type ChartIntentOrientation = (typeof CHART_INTENT_ORIENTATIONS)[number];
+
+/** E59 — `ChartV2.sort` (absen = `none` = urutan agen, D-368; P-01/P-04 tetap ikut templat). */
+export const CHART_INTENT_SORTS = ["none", "desc", "asc"] as const;
+export type ChartIntentSort = (typeof CHART_INTENT_SORTS)[number];
+
+/** C61 — batas medan maksud chart (skema v2, skema v1 `intent`, dan pemeriksaan mesin). */
+export const CHART_INTENT_LIMITS = {
+  topNMin: 3,
+  topNMax: 30,
+  otherLabelMax: 40,
+  labelShortMax: 32,
+  labelShortItemsMax: 200,
+} as const;
+
+/** Label bawaan kategori gabungan `topN` (mesin menambah " (k)" = jumlah kategori yang digabung). */
+export const CHART_INTENT_OTHER_LABEL = "Lainnya";
+
 /** E53 — bucket kuota; urutan = urutan seri QH-04 (KD-38). */
 export const QUOTA_BUCKETS = ["render", "validate", "import", "query"] as const;
 export type QuotaBucket = (typeof QUOTA_BUCKETS)[number];

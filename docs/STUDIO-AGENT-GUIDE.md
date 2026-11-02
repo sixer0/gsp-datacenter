@@ -379,6 +379,72 @@ atau semuanya selebar bentang halaman. Lebar dalam mm diturunkan dari ukuran ker
 dipatok juga parameter templat. Bila satu figur tampak perlu lebar lain, laporkan ke
 pemilik templat; jangan menambah medan.
 
+#### 4.1.1 Maksud analitis chart (opsional)
+
+Bila gambar terlalu padat (lihat saran `suggest` di laporan render), blok chart boleh membawa
+empat medan maksud. Semuanya opsional; tanpa medan ini gambar sama persis dengan sebelumnya.
+Medan tampilan murni (`labelWrap`, `legendPosition`, `heightMm`, `params`, ...) tetap ditolak.
+
+| Medan | Nilai | Berlaku untuk | Efek |
+|---|---|---|---|
+| `orientation` | `"auto"` / `"horizontal"` / `"vertical"` | P-01, P-02, W-02 | `horizontal`: P-02/W-02 digambar sebagai bar P-01 (urutan data tetap); `vertical`: P-01 menjadi kolom P-02, dan P-02/W-02 tidak diputar otomatis |
+| `sort` | `"none"` / `"desc"` / `"asc"` | kategori bebas urutan: P-01..P-04, P-06, P-09, P-11, P-14, K-01..K-03, K-05..K-09, K-12 | urutan menurut nilai (seri: jumlah semua seri; K-02: pangsa seri pertama); `none` = urutan kiriman |
+| `topN` (+ `otherLabel`) | bilangan bulat 3..30; `otherLabel` maks 40 karakter | P-01, P-02, P-04, K-05..K-09, P-03, K-01, K-03, K-12 | N kategori terbesar (menurut nilai mutlak) dipertahankan; sisanya digabung menjadi satu kategori `"Lainnya (k)"` bernilai JUMLAH sisanya, di posisi terakhir |
+| `labelShort` | `[{ "label": <label persis>, "short": <maks 32 karakter> }]` | data `categorical` dan `series` | teks sumbu memakai `short`; label lengkap tetap di data dan di `<title>` SVG |
+
+Aturan:
+
+- Medan yang tidak berlaku untuk kode itu tidak menggagalkan kiriman: render memberi laporan
+  `HINT_IGNORED` dengan alasannya. Medan yang diterapkan dilaporkan `INTENT_APPLIED`, termasuk
+  total `topN` (total gambar sama dengan total data). Grafik komposit mengabaikan keempatnya.
+- Studio tidak pernah menggabung kategori tanpa `topN`. Pie/donut di atas batas iris dan gambar
+  yang terlalu tinggi tetap ditolak; pesannya menyarankan `topN`, pisah gambar, atau kode lain.
+- Batas kapasitas (D-501/D-505/D-506/D-508), sama untuk blok v2, dokumen v1, dan artefak `studio.chart/v1` /
+  `studio.diagram/v1` (R09): chart maks 200 kategori/butir per larik, 24 seri, 2.000 titik xy, 5.000 sel matriks
+  (dihitung dari isi `values`; tabel P-15 lewat `params.tableRows` x `tableHead` dihitung sama: maks 200 baris,
+  5.000 sel), 24 panel komposit; diagram maks 24 simpul, 48 tepi, 24 zona (24 anggota per zona,
+  96 total), 24 butir legenda, 24 catatan, 12 sumber (total teks sumber 1.000 karakter); judul diagram (teks
+  caption blok diagram) dan label simpul/tepi/zona maks 300 karakter; caption/sumber/baris kunci figur maks 64 run; satu blok/spec figur maks 1 MiB.
+  Teks figur v2 dinilai saat kirim (R04, R08, R12/R13, PATCH): caption diagram (juga chart `steps`) maks 300
+  karakter, sumber diagram maks 1.000, caption/sumber chart maks 2.000. Di atasnya ditolak `400 SCHEMA_INVALID`
+  `checkId: "FIGURE_TEXT"` dengan `pointer` ke `/caption` atau `/source` blok; caption tabel tetap maks 20.000.
+  Setiap larik figur lain juga berbatas. Di atas batas data ditolak SEBELUM `topN` diterapkan (`maxItems` /
+  `maxLength` skema -> 400, atau 422 `FIGURE_CAPACITY` untuk figur tersimpan dan artefak): ringkas data sendiri lebih
+  dulu atau pecah menjadi beberapa gambar.
+- `otherLabel` tanpa `topN`, nilai di luar enum/rentang, atau bentuk `labelShort` yang salah ditolak
+  `400 SCHEMA_INVALID` `checkId: "CHART_INTENT"` dengan `pointer` ke medan itu. `labelShort[].label`
+  yang bukan label kategori, label ganda, atau `short` yang membuat dua kategori tampil sama ditolak
+  `SCHEMA_INVALID` dengan `details.pointer` relatif blok (mis. `/labelShort/2/label`).
+- Data negatif: peringkat `topN` memakai nilai mutlak; nilai "Lainnya" tetap jumlah bertanda.
+
+Contoh per medan (potongan blok chart; `caption`/`source` seperti biasa):
+
+```json
+{ "type": "chart", "code": "P-02", "orientation": "horizontal",
+  "data": { "shape": "categorical", "points": [
+    { "label": "Dinas Pekerjaan Umum dan Penataan Ruang", "value": 41 },
+    { "label": "Dinas Kesehatan", "value": 28 } ] } }
+```
+
+```json
+{ "type": "chart", "code": "P-02", "sort": "desc",
+  "data": { "shape": "categorical", "points": [
+    { "label": "Gardu A", "value": 12 }, { "label": "Gardu B", "value": 31 }, { "label": "Gardu C", "value": 19 } ] } }
+```
+
+```json
+{ "type": "chart", "code": "P-01", "topN": 8, "otherLabel": "Kecamatan lain",
+  "data": { "shape": "categorical", "points": [ { "label": "Kecamatan 01", "value": 120 } ] } }
+```
+
+```json
+{ "type": "chart", "code": "P-03",
+  "labelShort": [ { "label": "Pengadaan perangkat jaringan inti dan sakelar distribusi", "short": "Perangkat jaringan" } ],
+  "data": { "shape": "series",
+    "categories": ["Pengadaan perangkat jaringan inti dan sakelar distribusi", "Jasa"],
+    "series": [ { "name": "Rencana", "values": [405, 136] }, { "name": "Realisasi", "values": [389, 140] } ] } }
+```
+
 Contoh satu section berisi chart kategoris bersasaran, chart komposit dengan ambang panel, dan
 gambar bersumber:
 

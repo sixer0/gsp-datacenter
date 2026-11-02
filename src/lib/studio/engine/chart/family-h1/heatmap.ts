@@ -21,7 +21,7 @@
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { fmt } from "../../bind";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect } from "../core/guards";
 import { colorFamilyExact } from "../core/palette";
 import { kindStrList } from "../core/read";
@@ -211,7 +211,7 @@ export function renderHeatmap(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   doc.close();
 
   if (showScale) drawScale(doc, x1 + 2.0, y0, y1, colors, bounds, pal, spec.unit);
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return finishH1({ svg: doc.toString(), widthMm: W, heightMm: H }, prep);
 }

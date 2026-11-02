@@ -15,7 +15,7 @@
  */
 import type { ChartRenderer } from "../../../contract";
 import { fmt, withUnit } from "../../bind";
-import { keyRow } from "../core/apparatus";
+import { keyRow, keyRowExtraMm } from "../core/apparatus";
 import { defect } from "../core/guards";
 import { escAttr, hexColor } from "../core/svg";
 import {
@@ -84,8 +84,9 @@ export const renderIconArray: ChartRenderer = (spec, canvas, tpl) => {
   const { x0, x1 } = ctx;
   let { y0, y1 } = ctx;
   if (ctx.style === "datum") {
-    keyRow(doc, x0, y0 + 3.0, pts.map((p, i) => ({ label: `${p.label} ${fmt(p.value, 0)}`, color: colours[i] })), pal, T.label);
-    y0 += KEY_BAND_MM;
+    const keyItems = pts.map((p, i) => ({ label: `${p.label} ${fmt(p.value, 0)}`, color: colours[i] }));
+    keyRow(doc, x0, y0 + 3.0, keyItems, pal, T.label);
+    y0 += KEY_BAND_MM + keyRowExtraMm(x0, keyItems.map((k) => k.label), T.label);
   }
   const capBand = caption ? 4.6 : 0;
   y1 -= capBand;

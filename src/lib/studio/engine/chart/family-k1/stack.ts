@@ -22,7 +22,7 @@
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt, pyRound } from "../../bind";
-import { apparatusMarker, figureApparatus, keyRow, noteLine, FIGURE_APPARATUS_BAND_MM } from "../core/apparatus";
+import { apparatusMarker, figureApparatus, keyRow, keyRowExtraMm, noteLine, figureFootMm } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { chartPalette, paramBool } from "../core/palette";
 import { kindBool, kindNumMap } from "../core/read";
@@ -130,7 +130,11 @@ export function renderStack(code: StackCode, spec: StudioChartV1, canvas: ChartC
     const keyBand = 6.0;
     const title = code === "K-02" ? "Komposisi (%)" : (spec.unit ?? "");
     const axisY = H - foot - (title ? 7.8 : 4.6);
-    const fr = hFrame({ categories: data.categories, labelPt: 6.5, widthMm: W, top: keyBand + 0.8, base: axisY, rightGutter: Math.max(3, totalW), barRatio: 0.55 });
+    const frameAt = (top: number) => hFrame({ categories: data.categories, labelPt: 6.5, widthMm: W, top, base: axisY, rightGutter: Math.max(3, totalW), barRatio: 0.55 });
+    const fr0 = frameAt(keyBand + 0.8);
+    // FIG-02a P1-7: KUNCI multi-baris (hanya saat fit) menurunkan tepi atas plot.
+    const keyExtra = keyRowExtraMm(fr0.x0, order.map((s) => s.name));
+    const fr = keyExtra > 0 ? frameAt(keyBand + keyExtra + 0.8) : fr0;
     const domMax = total100 ? 100 : maxSum > 0 ? maxSum : 1;
     const nd = niceDomain([0, domMax], { zero: true });
     const dom = { ...nd, ticks: nd.ticks.filter((t) => t <= domMax + 1e-9) };
@@ -228,7 +232,7 @@ export function renderStack(code: StackCode, spec: StudioChartV1, canvas: ChartC
     drawXAxis(doc, { y: axisY, x0: fr.x0, x1: fr.x1, dom, sx, style, pal, dec: decimalsFor(dom.step) });
   }
 
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: rep.toJSON() };
 }

@@ -22,13 +22,16 @@
  * `labelEnds` ([awal, akhir]: hanya kedua ujung berlabel teks ini).
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { kindKey, paramEnum, resolveChartColor } from "../core/palette";
 import { kindStrPair } from "../core/read";
 import { MM_PER_PT, SvgDoc, num, ptToMm, textWidthMm } from "../core/svg";
 import { type XyLayout, drawAxes, drawGrid, layoutXy, mplDomain } from "./axes";
 import { type H1Prep, type XyPoint, finishH1, kindBool, requireXy, seriesOf } from "./common";
 import { renderHexbin } from "./hexbin";
+import { fitActive } from "../core/fit";
+import { type Segment, placePointLabels } from "../core/labelfit";
+
 
 /** Ambang "ribuan titik bertumpuk" (Tabel 8.2 H-01). */
 export const DENSE_SCATTER_N = 1000;
@@ -42,7 +45,7 @@ function frameDoc(spec: StudioChartV1, W: number, H: number, prep: H1Prep): SvgD
 }
 
 function closeDoc(doc: SvgDoc, spec: StudioChartV1, prep: H1Prep, W: number, H: number): SvgResult {
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, prep.pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, prep.pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, prep.pal, H);
   return finishH1({ svg: doc.toString(), widthMm: W, heightMm: H }, prep);
 }
@@ -56,6 +59,37 @@ function pointLabel(doc: SvgDoc, x: number, y: number, dx: number, dy: number, s
   const w = textWidthMm(s, LABEL_PT);
   const right = x + dx + w <= W - 0.3;
   doc.text(right ? x + dx : x - dx, y + dy, s, { sizePt: LABEL_PT, fill, anchor: right ? "start" : "end", attrs: ' data-label="point"' });
+}
+
+/**
+ * FIG-02a P1-8: label titik tanpa tabrakan (hanya saat fit). Mengembalikan `false` di luar
+ * fit agar pemanggil memakai `pointLabel` lama (byte-identik).
+ */
+function fitPointLabels(
+  doc: SvgDoc,
+  L: XyLayout,
+  items: ReadonlyArray<{ x: number; y: number; r: number; label: string; fill: string }>,
+  dots: ReadonlyArray<{ x: number; y: number; r: number }>,
+  W: number,
+  ink: string,
+): boolean {
+  if (!fitActive()) return false;
+  const font = { pt: LABEL_PT };
+  const f = L.frame;
+  const bounds: [number, number, number, number] = [Math.max(0.3, f.x0), Math.max(0.3, f.y0 - 2), Math.min(W - 0.3, f.x1 + 1), f.y1];
+  const obstacles = dots.map((d) => [d.x - d.r, d.y - d.r, d.x + d.r, d.y + d.r] as [number, number, number, number]);
+  const placed = placePointLabels(
+    items.map((it) => ({ x: it.x, y: it.y, r: it.r, text: it.label })),
+    font,
+    bounds,
+    obstacles,
+  );
+  placed.forEach((pl, i) => {
+    if (!pl) return;
+    if (pl.leader) doc.line(pl.leader.x1, pl.leader.y1, pl.leader.x2, pl.leader.y2, ink, 0.18, { attrs: ' data-leader="point"' });
+    doc.text(pl.x, pl.y, items[i].label, { sizePt: LABEL_PT, fill: items[i].fill, anchor: pl.anchor, attrs: ' data-label="point"' });
+  });
+  return true;
 }
 
 // ── H-01 scatter ──────────────────────────────────────────────────────────
@@ -101,8 +135,13 @@ export function renderScatter(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   for (const p of pts.filter((q) => q.accent)) {
     doc.circle(L.sx(p.x), L.sy(p.y), rAcc, pal.role.accent, { mark: { mark: "point", series: seriesOf(p), index: p.index } });
   }
-  for (const p of pts) {
-    if (p.label) pointLabel(doc, L.sx(p.x), L.sy(p.y), ptToMm(5), -ptToMm(4), p.label, p.accent ? pal.role.accent : pal.ink700, W);
+  const labelled = pts.filter((p) => p.label);
+  const allDots = pts.map((p) => ({ x: L.sx(p.x), y: L.sy(p.y), r: p.accent ? rAcc : r }));
+  const fitItems = labelled.map((p) => ({ x: L.sx(p.x), y: L.sy(p.y), r: p.accent ? rAcc : r, label: p.label as string, fill: p.accent ? pal.role.accent : pal.ink700 }));
+  if (!fitPointLabels(doc, L, fitItems, allDots, W, pal.ink400)) {
+    for (const p of pts) {
+      if (p.label) pointLabel(doc, L.sx(p.x), L.sy(p.y), ptToMm(5), -ptToMm(4), p.label, p.accent ? pal.role.accent : pal.ink700, W);
+    }
   }
   return closeDoc(doc, spec, prep, W, H);
 }
@@ -172,11 +211,15 @@ export function renderBubble(spec: StudioChartV1, canvas: ChartCanvas, tpl: Reso
     });
   }
   if (kindBool(spec, tpl, "H-02", "directLabels", true)) {
-    pts.forEach((p, i) => {
-      if (!p.label) return;
-      const r = radius(sizes[i]);
-      pointLabel(doc, L.sx(p.x), L.sy(p.y), r + 0.8, ptToMm(LABEL_PT) * 0.35, p.label, p.accent ? pal.role.accent : pal.ink700, W);
-    });
+    const allDots = pts.map((p, i) => ({ x: L.sx(p.x), y: L.sy(p.y), r: radius(sizes[i]) }));
+    const fitItems = pts.flatMap((p, i) => (p.label ? [{ x: L.sx(p.x), y: L.sy(p.y), r: radius(sizes[i]), label: p.label, fill: p.accent ? pal.role.accent : pal.ink700 }] : []));
+    if (!fitPointLabels(doc, L, fitItems, allDots, W, pal.ink400)) {
+      pts.forEach((p, i) => {
+        if (!p.label) return;
+        const r = radius(sizes[i]);
+        pointLabel(doc, L.sx(p.x), L.sy(p.y), r + 0.8, ptToMm(LABEL_PT) * 0.35, p.label, p.accent ? pal.role.accent : pal.ink700, W);
+      });
+    }
   }
   return closeDoc(doc, spec, prep, W, H);
 }
@@ -210,6 +253,42 @@ export function renderConnected(spec: StudioChartV1, canvas: ChartCanvas, tpl: R
   }
   const last = pts.length - 1;
   const ends = kindStrPair({ spec, tpl, code: "H-04" }, "labelEnds");
+  // FIG-02c (hanya saat fit): label ujung/aksen menghindari segmen jalur, titik, dan label lain;
+  // offset anotasi acuan dicoba lebih dulu. Di luar fit jalur lama di bawah dipakai apa adanya.
+  if (fitActive()) {
+    const items: Array<{ x: number; y: number; r: number; text: string; fill: string; prefer: { x: number; y: number; anchor: "start" | "middle" | "end" } }> = [];
+    pts.forEach((q, i) => {
+      const p = ends ? (i === 0 ? { ...q, label: ends[0] } : i === last ? { ...q, label: ends[1] } : { ...q, label: undefined }) : q;
+      if (!p.label || !(i === 0 || i === last || p.accent)) return;
+      const x = L.sx(p.x);
+      const y = L.sy(p.y);
+      const rr = p.accent ? rAcc : r;
+      if (style === "datum") {
+        const color = p.accent ? pal.role.accent : i === 0 ? pal.role.improving : pal.role.limitExceeded;
+        const dy = i === 0 && !p.accent ? -ptToMm(6) : i === last ? ptToMm(10) : -ptToMm(4);
+        const dx = i === 0 && !p.accent ? -ptToMm(2) : i === last ? -ptToMm(6) : ptToMm(5);
+        items.push({ x, y, r: rr, text: p.label, fill: color, prefer: { x: x + dx, y: y + dy, anchor: "start" } });
+      } else {
+        const dx = rr + 0.6;
+        const right = x + dx + textWidthMm(p.label, LABEL_PT) <= W - 0.3;
+        items.push({ x, y, r: rr, text: p.label, fill: pal.ink900, prefer: { x: right ? x + dx : x - dx, y: y - 1.2, anchor: right ? "start" : "end" } });
+      }
+    });
+    const f = L.frame;
+    const segs: Segment[] = [];
+    for (let i = 0; i + 1 < pts.length; i++) segs.push([L.sx(pts[i].x), L.sy(pts[i].y), L.sx(pts[i + 1].x), L.sy(pts[i + 1].y)]);
+    const dots = pts.map((p) => {
+      const rr = p.accent ? rAcc : r;
+      return [L.sx(p.x) - rr, L.sy(p.y) - rr, L.sx(p.x) + rr, L.sy(p.y) + rr] as [number, number, number, number];
+    });
+    const placed = placePointLabels(items, { pt: LABEL_PT }, [0.3, Math.max(0.3, f.y0 - 2), W - 0.3, f.y1], dots, segs);
+    placed.forEach((pl, k) => {
+      if (!pl) return;
+      if (pl.leader) doc.line(pl.leader.x1, pl.leader.y1, pl.leader.x2, pl.leader.y2, ink, 0.18, { attrs: ' data-leader="point"' });
+      doc.text(pl.x, pl.y, items[k].text, { sizePt: LABEL_PT, fill: items[k].fill, anchor: pl.anchor, attrs: ' data-label="point"' });
+    });
+    return closeDoc(doc, spec, prep, W, H);
+  }
   pts.forEach((q, i) => {
     // `labelEnds`: hanya titik awal dan akhir, dengan teks petunjuk.
     const p = ends ? (i === 0 ? { ...q, label: ends[0] } : i === last ? { ...q, label: ends[1] } : { ...q, label: undefined }) : q;

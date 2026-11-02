@@ -79,6 +79,7 @@ import {
   preloadAssetBytes,
   templateForDoc,
 } from "./common";
+import { assertFigureCapacity } from "./figure-limits";
 import { ArtifactSpecReader, buildFigures, chartSvg } from "./figures";
 import {
   createRenderJob,
@@ -122,6 +123,11 @@ export async function renderArtifactImpl(
     });
   }
   const fmts = asked.length > 0 ? asked : [...allowed];
+
+  // SEC-FIX2 N-1 (D-506): batas kapasitas figur yang sama dengan pratinjau/render dokumen SEBELUM job -> 422
+  // `BY_CONSTRUCTION_FAILED` (`FIGURE_CAPACITY`) cepat; spec v1 besar (artefak lama) tidak pernah sampai ke mesin.
+  if (art.kind === "CHART") assertFigureCapacity("chart", art.spec);
+  else if (art.kind === "DIAGRAM") assertFigureCapacity("diagram", art.spec);
 
   // INT-R (D-98, F-048): otorisasi templat + gerbang dokumen inline SEBELUM job (403/422 ke pemanggil).
   const htmlGate = art.kind === "HTML" ? await gateHtmlArtifact(art.spec as unknown as StudioHtmlV1, caller) : null;
@@ -389,6 +395,8 @@ async function renderHtmlArtifact(
     const reader = new ArtifactSpecReader();
     const a = await reader.read(src.artifactId);
     let svg: SvgResult;
+    // SEC-FIX2 N-1: artefak yang dibungkus juga dicek batasnya sebelum mesin (galat job, tanpa render).
+    if (a.kind === "CHART" || a.kind === "DIAGRAM") assertFigureCapacity(a.kind === "CHART" ? "chart" : "diagram", a.spec);
     if (a.kind === "CHART") svg = chartSvg(a.spec as StudioChartV1, baseTpl);
     else if (a.kind === "DIAGRAM") svg = buildDiagramSvg(a.spec as StudioDiagramV1, { release: false, grid: figureGrid(baseTpl.params) });
     else throw new StudioEngineError("REGISTRY_KIND_UNKNOWN", `html source artifact ${src.artifactId} is ${a.kind}; only CHART/DIAGRAM can be wrapped`);

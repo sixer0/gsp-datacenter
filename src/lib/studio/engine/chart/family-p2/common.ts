@@ -15,7 +15,7 @@
 import type { ChartCanvas, ChartCode, LintIssue, ParamValue, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { normalizeHex, resolveColorToken } from "../../tokens/color";
-import { FIGURE_APPARATUS_BAND_MM, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
+import { figureFootMm, apparatusMarker, figureApparatus, noteLine } from "../core/apparatus";
 import { defect, figureLabel } from "../core/guards";
 import { type ChartPalette, chartPalette } from "../core/palette";
 import { chartFloors } from "../core/prepare";
@@ -60,7 +60,7 @@ export function beginP2(spec: StudioChartV1, canvas: ChartCanvas, tpl: ResolvedT
   const doc = new SvgDoc(W, H, `data-chart="${code}" data-style="${style}"`, floors.minFontPt);
   if ((spec.apparatus ?? "page") === "page") apparatusMarker(doc, spec);
   doc.paper(pal.paper);
-  const footBand = (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) + (spec.note ? 5 : 0);
+  const footBand = figureFootMm(spec) + (spec.note ? 5 : 0);
   return {
     code,
     spec,
@@ -82,7 +82,7 @@ export function beginP2(spec: StudioChartV1, canvas: ChartCanvas, tpl: ResolvedT
 /** Catatan, aparatus "figure", lalu hasil renderer (lint keluaran dijalankan pemanggil). */
 export function finishP2(ctx: P2Ctx): SvgResult {
   const { spec, doc, pal, W, H } = ctx;
-  if (spec.note) noteLine(doc, spec.note, W, H - (spec.apparatus === "figure" ? FIGURE_APPARATUS_BAND_MM : 0) - 1.4, pal);
+  if (spec.note) noteLine(doc, spec.note, W, H - figureFootMm(spec) - 1.4, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
   return { svg: doc.toString(), widthMm: W, heightMm: H, report: { checksRun: [...new Set(ctx.checks)], issues: ctx.issues } };
 }
@@ -204,6 +204,13 @@ export interface AxisOpts {
   bare?: boolean;
   /** Ukuran huruf tick (pt fisik) bila beda dari bawaan gaya; tetap dijepit lantai. */
   sizePt?: number;
+  /**
+   * FIG-02c (opsional, sumbu x): teks lengkap label yang dipotong -> `<g data-fit="ellipsis"><title>`.
+   * Bila diisi, label digambar lewat `textLines`; tanpa medan ini jalur lama tidak berubah.
+   */
+  labelTitle?: (v: number) => string | undefined;
+  /** FIG-02c (opsional, sumbu x): x label tick bila beda dari `scale(v)` (mis. dijepit ke sel panel). */
+  labelAt?: (v: number) => number;
 }
 
 /** Sumbu x mendatar: garis + label tick di bawahnya. */
@@ -216,7 +223,13 @@ export function xAxis(ctx: P2Ctx, o: AxisOpts): void {
   for (const t of o.ticks) {
     const x = o.scale(t);
     if (o.tickMarks) doc.line(x, o.at, x, o.at + 0.9, st.color, st.width);
-    if (!o.bare) doc.text(x, o.at + (o.tickMarks ? 3.8 : 3.4), o.label(t), { sizePt: tf.sizePt, face: tf.face, fill: ctx.pal.ink400, anchor: "middle" });
+    if (o.bare) continue;
+    if (o.labelTitle || o.labelAt) {
+      const lx = o.labelAt ? o.labelAt(t) : x;
+      const opts = { sizePt: tf.sizePt, face: tf.face, fill: ctx.pal.ink400, anchor: "middle" as const };
+      doc.textLines(lx, o.at + (o.tickMarks ? 3.8 : 3.4), [o.label(t)], opts, ptToMm(tf.sizePt) * 1.2, o.labelTitle?.(t));
+    } else doc.text(x, o.at + (o.tickMarks ? 3.8 : 3.4), o.label(t), { sizePt: tf.sizePt, face: tf.face, fill: ctx.pal.ink400, anchor: "middle" });
+
   }
   doc.close();
 }

@@ -17,7 +17,9 @@
  */
 import type { ChartCanvas, ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
 import { fmt } from "../../bind";
-import { apparatusMarker, figureApparatus, noteLine } from "./apparatus";
+import { apparatusMarker, figureApparatus, figureCaptionTopMm, figureExtraMm, noteLine } from "./apparatus";
+import { fitActive } from "./fit";
+import { drawGutterLabel, gutterPlan } from "./labelfit";
 import type { CorePrep } from "./prepare";
 import { axisDomain } from "./scale";
 import { SvgDoc, dcPx, textWidthMm } from "./svg";
@@ -66,7 +68,7 @@ export function dcHeightMm(spec: StudioChartV1, family: "bar" | "column" | "thre
   let badan = family === "column" ? 46 + (pts.some((p) => p.sub !== undefined && p.sub !== "") ? 12 : 0) : n * 7.2 + 6;
   if (spec.note) badan += 6;
   if (family === "threshold") badan += 5;
-  return badan + (spec.apparatus === "figure" ? 22 : 0);
+  return badan + (spec.apparatus === "figure" ? 22 + figureExtraMm(spec) : 0);
 }
 
 /**
@@ -114,14 +116,20 @@ export function renderDatum(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
   const series = spec.unit ? spec.unit : "nilai";
 
   if (prep.family === "bar" || prep.family === "threshold") {
-    const kiri = 22;
-    const kanan = W - 24;
-    const lebar = kanan - kiri;
-    let y = 3;
     // FIX-H8: pita diperbesar hanya bila kanvas memang disediakan untuknya (tinggi gaya datum);
     // panel/kanvas lebih pendek tetap memakai geometri DC tetap (tanpa luapan).
     const rowsMin = barRows(pts.length);
     const rows = rowsMin.scaled && H + 1e-9 >= datumHeightMm(spec, prep.family) ? rowsMin : DC_BAR_ROWS;
+    // FIG-02a P1-5: talang terukur + bungkus hanya saat fit aktif dan label melewati 22 mm DC.
+    const gp = gutterPlan(
+      pts.map((p) => p.label),
+      { pt: 6.6, face: D },
+      { currentMm: 22, capMm: W * 0.42, padMm: 2.2, pitchMm: rows.pitch },
+    );
+    const kiri = gp ? Math.max(22, gp.gutterMm) : 22;
+    const kanan = W - 24;
+    const lebar = kanan - kiri;
+    let y = 3;
     const tb = rows.thick;
     const jarak = rows.pitch;
     // Garis dasar label: DC `y + tb * 0,78`; pada pita diperbesar = tengah batang + selisih DC yang sama.
@@ -140,7 +148,8 @@ export function renderDatum(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
       const warna = lewat ? prep.overColour : x.accent ? pal.role.accent : pal.ink700;
       const tinta = lewat ? prep.overColour : x.accent ? pal.role.accent : pal.ink900;
       const top = y + rows.inset;
-      doc.text(kiri - 2.2, baseline(top), x.label, { face: D, sizePt: 6.6, fill: pal.ink400, anchor: "end" });
+      if (gp) drawGutterLabel(doc, gp, i, kiri - 2.2, baseline(top), { face: D, sizePt: 6.6, fill: pal.ink400, anchor: "end" });
+      else doc.text(kiri - 2.2, baseline(top), x.label, { face: D, sizePt: 6.6, fill: pal.ink400, anchor: "end" });
       doc.rect(kiri, top, L, tb, warna, { mark: { mark: "bar", series, index: i } });
       if (prep.valueLabel !== "none") {
         const s = fmt(v, dec);
@@ -210,7 +219,10 @@ export function renderDatum(spec: StudioChartV1, canvas: ChartCanvas, tpl: Resol
     if (unit) doc.text(kiri, atas - 1.6, unit, { face: D, sizePt: 6.2, fill: pal.ink400, anchor: "start" });
   }
 
-  if (spec.note) noteLine(doc, spec.note, W, H - 1.6, pal);
+  // DC menaruh catatan di H - 1,6 (bertumpuk dengan SUMBER pada apparatus figure); saat fit
+  // (FIG-02a) catatan dinaikkan satu baris di atas caption.
+  const noteY = fitActive() && spec.apparatus === "figure" ? figureCaptionTopMm(spec, H) - 4.2 : H - 1.6;
+  if (spec.note) noteLine(doc, spec.note, W, noteY, pal);
   if (spec.apparatus === "figure") figureApparatus(doc, spec, pal, H);
 
   return {
