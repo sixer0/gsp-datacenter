@@ -17,7 +17,8 @@
  *                          tanpa env -> FILE_WRITE_DISABLED (M-1). Path UNC/perangkat ditolak (M-2).
  * - `STUDIO_MCP_TOOLSETS`  MCP-D1 (D-475): daftar toolset dipisah koma (`reports`, `documents`, `query`, atau
  *                          `all`); bawaan semua. Hanya alat toolset itu yang muncul di tools/list (beban token
- *                          per giliran lebih kecil). Nama tak dikenal -> CONFIG_INVALID.
+ *                          per giliran lebih kecil). Nama tak dikenal -> CONFIG_INVALID. `write` (IMPL-W) hanya
+ *                          bila disebut eksplisit (tidak termasuk bawaan maupun `all`).
  */
 import path from "node:path";
 import { normalizeBaseUrl } from "../_http-client";
@@ -33,7 +34,13 @@ export const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 /** MCP-D1: kelompok alat. reports = laporan kerja; documents = dokumen klien; query = cari/baca. */
 export const TOOLSETS = ["reports", "documents", "query"] as const;
-export type Toolset = (typeof TOOLSETS)[number];
+/**
+ * IMPL-W (D-522): toolset `write` (jalur tulis minimal: studio_write, studio_edit + alat baca) hanya bila disebut
+ * eksplisit di STUDIO_MCP_TOOLSETS; bawaan dan `all` tetap tiga toolset lama agar beban per giliran konfigurasi
+ * yang sudah ada tidak berubah.
+ */
+export const OPT_IN_TOOLSETS = ["write"] as const;
+export type Toolset = (typeof TOOLSETS)[number] | (typeof OPT_IN_TOOLSETS)[number];
 
 export type SecretIssue = "empty" | "unresolved-reference";
 
@@ -119,10 +126,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>, cw
 /** `STUDIO_MCP_TOOLSETS`: kosong/`all` = semua; selain nama TOOLSETS -> ConfigError. */
 export function parseToolsets(raw: string | undefined): Toolset[] {
   const names = (raw ?? "").split(",").map((n) => n.trim().toLowerCase()).filter((n) => n !== "");
-  if (names.length === 0 || names.includes("all")) return [...TOOLSETS];
-  const bad = names.filter((n) => !(TOOLSETS as readonly string[]).includes(n));
-  if (bad.length > 0) throw new ConfigError(`STUDIO_MCP_TOOLSETS memuat nama tak dikenal: ${bad.join(", ")}; pilihan: ${TOOLSETS.join(", ")}, all`);
-  return TOOLSETS.filter((t) => names.includes(t));
+  const known: readonly string[] = [...TOOLSETS, ...OPT_IN_TOOLSETS];
+  const bad = names.filter((n) => n !== "all" && !known.includes(n));
+  if (bad.length > 0) throw new ConfigError(`STUDIO_MCP_TOOLSETS memuat nama tak dikenal: ${bad.join(", ")}; pilihan: ${known.join(", ")}, all`);
+  const optIn = OPT_IN_TOOLSETS.filter((t) => names.includes(t));
+  if (names.length === 0 || names.includes("all")) return [...TOOLSETS, ...optIn];
+  return [...TOOLSETS.filter((t) => names.includes(t)), ...optIn];
 }
 
 /** Ringkasan konfigurasi yang AMAN dicetak (tanpa rahasia; hanya apakah terisi). */

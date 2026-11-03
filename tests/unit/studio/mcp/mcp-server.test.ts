@@ -414,6 +414,6 @@ describe('galat server, rahasia, pagar jaringan', () => {
     expect(c).toMatchObject({ baseUrl: 'http://127.0.0.1:9021', secret: '', defaultAgentId: null, fileRoots: [ROOT], fileWriteEnabled: false });
     expect(() => loadConfig({ STUDIO_BASE_URL: 'ftp://x' }, ROOT)).toThrow(/http/);
     expect(() => loadConfig({ STUDIO_MCP_FILE_ROOTS: 'relatif' }, ROOT)).toThrow(/absolut/);
-    expect(TOOLS).toHaveLength(22);
+    expect(TOOLS).toHaveLength(24); // IMPL-W: +studio_write, +studio_edit (toolset write)
   });
 });

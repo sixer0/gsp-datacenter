@@ -2082,7 +2082,7 @@ export interface RefreshResult {
 const partOrder = (p: string): number => (p === "record" ? -1 : p === "references" ? 1e9 : /^bab [0-9]+$/.test(p) ? Number(p.slice(4)) : 1e8);
 
 /** Payload per bagian dari blok kiriman (record/references = payload slot; bab = chapter). */
-function partsOfValues(values: ReadonlyArray<Record<string, unknown>>): Map<string, unknown> {
+export function partsOfValues(values: ReadonlyArray<Record<string, unknown>>): Map<string, unknown> {
   const out = new Map<string, unknown>();
   for (const v of values) out.set(partOf(v), draftPayloadOf(v));
   return out;

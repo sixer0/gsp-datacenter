@@ -1164,3 +1164,5 @@ MCP-D3 (D-480; F-1 F-2 F-3 + Low) scripts/studio/mcp/** , tests/unit/studio/mcp/
 | SEC-FIX2 | selesai (D-507); controller menambah artifacts/_lib/prepare.ts + tests/unit/studio/api/secfix2-artifact-create.test.ts | 2026-11-02 | lepas |
 | SEC-FIX3 | src/lib/studio/services/render/figure-limits.ts, src/lib/studio/contract/** (validasi kiriman blok figur), src/lib/studio/services/ingest/** (bila validasi kiriman di sana), tests/unit/studio/**/secfix3-*.test.ts, scripts/studio/scan-figure-limits.ts (baru, baca-saja), delegation_progress/coder_execution_secfix3.md | 2026-11-03 | aktif |
 | SEC-FIX3 | selesai (D-509) | 2026-11-03 | lepas |
+| ANALYSIS-R4 | research/26_efficiency_results_r4.md, C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/analysis_r4/** | 2026-11-03 | aktif |
+| IMPL-W | scripts/studio/mcp/** , scripts/studio/studio-report.ts (aditif), tests/unit/studio/mcp/** , docs/STUDIO-MCP.md, delegation_progress/coder_execution_implw.md | 2026-11-03 | aktif |
