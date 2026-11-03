@@ -39,6 +39,9 @@ export interface GutterPlan {
  * (teks maksimum = currentMm - padMm). Mengembalikan `null` bila fit tidak aktif atau
  * semua label sudah muat (jalur lama dipakai apa adanya).
  */
+/** IMPL-W5 D1: ruang kosong minimum di kiri label kategori terlebar (mm). */
+export const LABEL_EDGE_MM = 0.4;
+
 export function gutterPlan(
   labels: readonly string[],
   font: FitFont,
@@ -66,7 +69,9 @@ export function gutterPlan(
     titles.push(w.truncated ? l : undefined);
     if (w.truncated) truncated++;
   });
-  const used = Math.max(0, ...lines.flat().map((s) => measureFont(s, font)));
+  // IMPL-W5 D1: talang = label terlebar + jarak ke plot + ruang tepi kiri, agar glif pertama label terlebar tidak
+  // menempel/terpotong di tepi gambar saat dirasterisasi (sebelumnya tepi kiri label = tepat 0 mm).
+  const used = Math.max(0, ...lines.flat().map((s) => measureFont(s, font))) + LABEL_EDGE_MM;
   fitNote("LABEL_GUTTER", `talang label kiri diukur: ${(used + o.padMm).toFixed(1)} mm${truncated ? `, ${truncated} label dipotong (teks lengkap di <title>)` : ""}`);
   return { gutterMm: used + o.padMm, textMaxMm: textMax, lines, titles, lineMm };
 }

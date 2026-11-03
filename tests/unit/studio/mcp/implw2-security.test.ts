@@ -94,7 +94,8 @@ describe('M-1: studio_edit replace/insert tidak dapat mengubah struktur', () => 
     const { call } = await connect({ fetch: m.f, env });
     const r = await call('studio_edit', { documentId: DOC, edits: [{ after: 'Bukti awal', insert: PIPE_TABLE }] });
     expect(r.isError, r.text).toBeFalsy();
-    expect(r.data.edited).toEqual(['bab 3']);
+    // IMPL-W5 E6: record ikut terkirim hanya karena ReportedAt dicap jam server; butir tetap.
+    expect(r.data.edited).toEqual(['record', 'bab 3']);
     expect(m.s.latest().sections.record.items.map((i: any) => i.key)).toEqual(['R3F2-1', 'R3F2-2']);
   });
 
@@ -104,7 +105,7 @@ describe('M-1: studio_edit replace/insert tidak dapat mengubah struktur', () => 
     const r = await call('studio_edit', { documentId: DOC, edits: [{ find: 'Ringkasan awal.', replace: 'Initiator: mallory' }, { after: 'Bukti awal', insert: '```' }] });
     expect(r.isError, r.text).toBeFalsy();
     expect(m.s.latest().sections.record).not.toHaveProperty('initiator');
-    expect(r.data.edited.sort()).toEqual(['bab 1', 'bab 3']);
+    expect(r.data.edited.sort()).toEqual(['bab 1', 'bab 3', 'record']); // IMPL-W5 E6: record = ReportedAt saja
   });
 
   it('mode anonim: intro bab 1 diganti `agentId: mallory` -> POST tidak membawa agentId mallory', async () => {

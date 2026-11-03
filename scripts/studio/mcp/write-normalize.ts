@@ -212,6 +212,27 @@ export function normalizeEditArgs(a: Args): ToolWarning[] {
         prune(o, ["figure", "chart"], n, where);
         return o;
       }
+      // IMPL-W5 E1: { section, append } (blok/larik blok; bentuk varian blok dipetakan seperti studio_write).
+      if (o.append !== undefined || (o.blocks !== undefined && o.find === undefined && o.after === undefined)) {
+        alias(o, ["blocks"], "append", n, where);
+        alias(o, ["heading", "chapter", "bab", "under"], "section", n, where);
+        const v = o.append;
+        const rowsLike = Array.isArray(v) && v.length > 0 && v.every((r) => Array.isArray(r) && r.every((c) => typeof c === "string" || typeof c === "number"));
+        o.append = Array.isArray(v) && !rowsLike ? v.map((b, k) => (typeof b === "string" ? b : normalizeBlock(b, n, `${where}.append[${k}]`))) : typeof v === "string" || rowsLike ? v : normalizeBlock(v, n, `${where}.append`);
+        if (typeof o.section === "number") o.section = String(o.section);
+        prune(o, ["section", "append"], n, where);
+        return o;
+      }
+      // IMPL-W5 E2: { section, addRow, table? }.
+      if (o.addRow !== undefined || o.addRows !== undefined || ((o.rows !== undefined || o.row !== undefined) && o.column === undefined && o.cell === undefined)) {
+        alias(o, ["addRows", "rows", "row"], "addRow", n, where);
+        alias(o, ["heading", "chapter", "bab"], "section", n, where);
+        if (Array.isArray(o.addRow)) o.addRow = (o.addRow as unknown[]).map((r) => (Array.isArray(r) ? r.map(cell) : cell(r)));
+        if (typeof o.table === "string" && /^\d{1,3}$/.test(o.table)) o.table = Number(o.table);
+        if (typeof o.section === "number") o.section = String(o.section);
+        prune(o, ["section", "addRow", "table"], n, where);
+        return o;
+      }
       if (o.pid !== undefined) {
         alias(o, ["offset", "position", "pos"], "at", n, where);
         alias(o, ["len", "count"], "length", n, where);

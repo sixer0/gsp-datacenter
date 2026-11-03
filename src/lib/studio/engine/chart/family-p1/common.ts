@@ -41,6 +41,7 @@ import { type ChartPalette, chartPalette, chartParam, kindKey, resolveChartColor
 import { chartFloors } from "../core/prepare";
 import { type NiceDomain, type Scale, axisDomain, decimalsFor, linearScale, niceDomain } from "../core/scale";
 import { SvgDoc, ptToMm, textWidthMm, midBaseline } from "../core/svg";
+import { measure } from "../core/textfit";
 import { accentOf } from "../core/params";
 import { kindAxis, kindBool as coreKindBool, kindEnum as coreKindEnum, kindInt as coreKindInt, kindValue } from "../core/read";
 
@@ -370,7 +371,8 @@ export const mid = midBaseline;
 
 /** Tepi kiri plot berlabel kategori (pola chart/core gallery). */
 export function labelGutter(ctx: P1Ctx, labels: readonly string[], sizePt: number, maxFrac = 0.42): number {
-  const w = Math.max(0, ...labels.map((s) => textWidthMm(s, sizePt)));
+  // IMPL-W5 D1: metrik glif nyata (textfit), bukan taksiran rerata em.
+  const w = Math.max(0, ...labels.map((s) => measure(s, sizePt)));
   return Math.min(Math.max(w + 1.6, 6), ctx.W * maxFrac);
 }
 

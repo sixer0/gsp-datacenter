@@ -70,7 +70,8 @@ describe('lewat MCP', () => {
       'GET /api/studio/documents': () => ({ status: 200, body: { documents: [{ id: DOC, createdBy: `agent:${AGENT}`, currentRevisionNo: 6 }] } }),
       'GET /api/studio/contracts': () => ({ status: 200, body: { contracts: [{ documentId: DOC }], nextCursor: null } }),
       [`GET /api/studio/documents/${DOC}`]: () => ({ status: 200, body: { document: { id: DOC, docNumber: '040/GSP/LAP/XI/2026', createdBy: `agent:${AGENT}`, currentRevisionNo: 6 }, revision: { revisionNo: 6, createdBy: `agent:${AGENT}` } } }),
-      'POST /api/studio/slots': (c) => (conflicts === 0 && c.body.slot === 'record' ? (conflicts++, { status: 409, body: { error: 'Meta kiriman berbeda', code: 'META_CONFLICT', details: { fields: { title: { current: 'Lama', sent: 'Baru' } } } } }) : undefined),
+      // IMPL-W5 E6: cap ReportedAt mengirim record berjudul LAMA (sah); konflik hanya bila record membawa judul baru.
+      'POST /api/studio/slots': (c) => (conflicts === 0 && c.body.slot === 'record' && JSON.stringify(c.body).includes('"Baru"') ? (conflicts++, { status: 409, body: { error: 'Meta kiriman berbeda', code: 'META_CONFLICT', details: { fields: { title: { current: 'Lama', sent: 'Baru' } } } } }) : undefined),
       [`PATCH /api/studio/documents/${DOC}/structure`]: (c) => ({ status: 200, body: { revision: { revisionNo: 7 }, echo: c.body } }),
     });
     const { call } = await connect({ fetch: m.f, env });

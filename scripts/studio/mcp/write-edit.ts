@@ -7,8 +7,8 @@
 import type { ReportPartMarkdown } from "../../../src/lib/studio/services/draft/md-report";
 import { McpToolError } from "./safety";
 import type { ToolWarning } from "./tool-kit";
-import { cellText, guardLine, paragraphLines } from "./write-content";
-import { exactView, findCell, findText, fold, spansHaveMarkup, spliceSpans, type MatchUnit, type Tier } from "./write-match";
+import { blockLines, cellText, expectedParagraphs, guardLine, isRows, itemStatusOf, paragraphLines, stableKey, type Block, type Cell } from "./write-content";
+import { exactView, findCell, findSection, findText, fold, notAppliedOf, spansHaveMarkup, spliceSpans, type MatchUnit, type NotApplied, type Tier } from "./write-match";
 
 export type Region = keyof ReportPartMarkdown;
 export interface EditPart {
@@ -18,7 +18,9 @@ export interface EditPart {
 export type EditOp =
   | { find: string; replace: string; section?: string; occurrence?: "all"; target?: { plain: string; nth: number } }
   | { after: string; insert: string; section?: string }
-  | { cell: { section?: string; row: string; column: string }; value: string };
+  | { cell: { section?: string; row: string; column: string }; value: string }
+  | { section: string; append: Block[] }
+  | { section: string; addRow: Cell[][]; table?: number | string };
 
 export interface Unit {
   part: number;
@@ -214,10 +216,14 @@ export interface EditPlan {
   refCells: boolean;
   /** per bagian: paragraf yang boleh hilang/berubah (jumlah suntingan paragraf) dan selisih jumlah blok yang diharapkan. */
   paraDelta: Map<string, { removedMax: number; delta: number }>;
+  /** IMPL-W5 E1: blok yang ditambahkan `append` per bagian: indeks section (-1 = pembuka bab), jenis blok bukan paragraf, teks paragraf. */
+  appended?: Map<string, Array<{ section: number; kinds: string[]; paras: string[] }>>;
 }
 
 const FIELD_NAMES: Readonly<Record<string, string>> = { status: "status", owner: "owner", reportedat: "reportedAt", verdict: "verdict", initiator: "initiator", taskref: "taskRef", cardids: "cardIds" };
 const LIST_MARKER_RE = /^((?:[-*+]|\d{1,9}[.)]|>)\s+)(.*)$/;
+/** Kolom kunci tabel butir (sama dengan importer kontrak `ITEM_KEY_COLUMNS`). */
+const ITEM_KEY_COLUMNS = new Set(["id", "kartu", "card", "key"]);
 
 /** Baris yang berubah dijaga ulang; penanda daftar/kutipan di awal dipertahankan, isinya lewat guardLine. */
 function guardChanged(line: string): string {
@@ -254,43 +260,235 @@ function reguard(parts: EditPart[], snapshot: ReadonlyArray<Record<Region, strin
   });
 }
 
-/** Terapkan suntingan berurutan (setiap suntingan melihat hasil sebelumnya). Mengembalikan bagian tersentuh + rencana. */
-export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w: ToolWarning) => void): { touched: Set<number>; plan: EditPlan } {
+/** IMPL-W5: section (judul `#..######`) per bagian dan region: baris judul + akhir (eksklusif). Record tidak bersection. */
+interface SecRef {
+  part: number;
+  region: Region;
+  head: number;
+  end: number;
+  title: string;
+  /** urutan section di bagian itu (cocok dengan `chapter.sections[ordinal]`). */
+  ordinal: number;
+}
+function sectionsOf(parts: readonly EditPart[]): SecRef[] {
+  const out: SecRef[] = [];
+  parts.forEach((p, pi) => {
+    if (p.part === "record") return;
+    let ordinal = 0;
+    for (const region of ["intro", "body", "tail"] as const) {
+      const lines = p.md[region];
+      const heads = lines.map((l, i) => (/^#{1,6}\s+/.test(l) ? i : -1)).filter((i) => i >= 0);
+      heads.forEach((h, k) => out.push({ part: pi, region, head: h, end: heads[k + 1] ?? lines.length, title: lines[h].replace(/^#{1,6}\s+/, "").replace(/\\(?=[\p{P}\p{S}])/gu, "").trim(), ordinal: ordinal++ }));
+    }
+  });
+  return out;
+}
+
+/** IMPL-W5 E2: tabel di dalam section (baris berawalan `|` berurutan) + keterangan (paragraf sesudahnya). */
+interface TableRef {
+  start: number;
+  end: number;
+  header: string[];
+  caption: string;
+}
+function tablesIn(lines: readonly string[], from: number, to: number): TableRef[] {
+  const out: TableRef[] = [];
+  let i = from;
+  while (i < to) {
+    if (!lines[i].trimStart().startsWith("|")) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < to && lines[j].trimStart().startsWith("|")) j++;
+    let c = j;
+    while (c < to && lines[c].trim() === "") c++;
+    const caption = c < to && !lines[c].trimStart().startsWith("|") && !/^#{1,6}\s/.test(lines[c]) ? exactView(lines[c]).text : "";
+    out.push({ start: i, end: j, header: splitRow(lines[i]).map((x) => x.replace(/\\\|/g, "|")), caption });
+    i = j;
+  }
+  return out;
+}
+
+/** Jenis blok bukan paragraf + teks paragraf yang dihasilkan satu blok append (sama dengan susunan `studio_write`). */
+function blockShape(b: Block): { kinds: string[]; paras: string[] } {
+  const paras = expectedParagraphs(b);
+  if (typeof b === "string") return { kinds: [], paras };
+  if (isRows(b)) return { kinds: ["table"], paras };
+  const o = b as unknown as Record<string, unknown>;
+  if (isRows(o.table) || (o.chart !== null && typeof o.chart === "object")) return { kinds: ["table"], paras };
+  if (Array.isArray(o.list)) return { kinds: ["list"], paras };
+  return { kinds: [], paras };
+}
+
+export interface ApplyOptions {
+  /** IMPL-W5 E5: status butir tersimpan (kunci huruf kecil -> kode); status tak terpetakan memakai status ini. */
+  prevItemStatus?: ReadonlyMap<string, string>;
+}
+
+/**
+ * Terapkan suntingan berurutan (setiap suntingan melihat hasil sebelumnya). Mengembalikan bagian tersentuh + rencana.
+ * IMPL-W5 E3: alamat (sel, jangkar `after`, section append/addRow) dicari di keadaan sesudah suntingan sebelumnya di
+ * batch ini; tidak ketemu -> dicari di isi tersimpan lalu dipetakan ke blok yang sama (identitas baris dilacak). E4:
+ * galat alamat (TEXT_NOT_FOUND/TEXT_AMBIGUOUS) tidak menggagalkan batch; suntingan itu masuk `notApplied`.
+ */
+export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w: ToolWarning) => void, opts: ApplyOptions = {}): { touched: Set<number>; plan: EditPlan; notApplied: NotApplied[]; errors: unknown[] } {
   const touched = new Set<number>();
-  const plan: EditPlan = { fields: new Set(), itemCells: false, refCells: false, paraDelta: new Map() };
+  const plan: EditPlan = { fields: new Set(), itemCells: false, refCells: false, paraDelta: new Map(), appended: new Map() };
+  const notApplied: NotApplied[] = [];
+  const errors: unknown[] = [];
   const delta = (pi: number, removed: number, d: number) => {
     const k = parts[pi].part;
     const cur = plan.paraDelta.get(k) ?? { removedMax: 0, delta: 0 };
     plan.paraDelta.set(k, { removedMax: cur.removedMax + removed, delta: cur.delta + d });
   };
   const snapshot = parts.map((p) => ({ header: [...p.md.header], intro: [...p.md.intro], body: [...p.md.body], tail: [...p.md.tail] }));
+  const stored: EditPart[] = parts.map((p, i) => ({ part: p.part, md: snapshot[i] }));
   const trusted = parts.map(() => new Map<string, number>());
+  const trust = (pi: number, line: string) => trusted[pi].set(line, (trusted[pi].get(line) ?? 0) + 1);
+  // E3: identitas baris (indeks baris tersimpan; -1 = baris baru) agar alamat di isi tersimpan dapat dipetakan ke keadaan kini.
+  const ids = parts.map((p) => ({ header: p.md.header.map((_, i) => i), intro: p.md.intro.map((_, i) => i), body: p.md.body.map((_, i) => i), tail: p.md.tail.map((_, i) => i) }));
+  const splice = (pi: number, region: Region, start: number, del: number, add: readonly string[], keepFirst = false) => {
+    const first = ids[pi][region][start];
+    parts[pi].md[region].splice(start, del, ...add);
+    ids[pi][region].splice(start, del, ...add.map((_, k) => (k === 0 && keepFirst && del > 0 ? first : -1)));
+  };
+  /** Satuan di isi tersimpan -> satuan yang sama di keadaan kini (null bila bloknya sudah dihapus). */
+  const remap = (su: Unit): Unit | null => {
+    const at = ids[su.part][su.region].indexOf(su.start);
+    if (at < 0) return null;
+    return unitsOf(parts).find((u) => u.part === su.part && u.region === su.region && u.start === at && u.kind === su.kind && u.cell === su.cell) ?? null;
+  };
+  /** E3: cari di keadaan kini; TEXT_NOT_FOUND -> cari di isi tersimpan lalu petakan; selain itu galat asli. */
+  const resolve = <T>(find: (ps: readonly EditPart[]) => T, map: (t: T) => T | null, label: string): T => {
+    try {
+      return find(parts);
+    } catch (e) {
+      if (!(e instanceof McpToolError) || e.code !== "TEXT_NOT_FOUND" || !changed) throw e;
+      let t: T;
+      try {
+        t = find(stored);
+      } catch {
+        throw e;
+      }
+      const m = map(t);
+      if (m === null) throw e;
+      warn({ code: "ADDRESS_FROM_STORED", message: `${label}: alamat tidak ada lagi sesudah suntingan sebelumnya di batch ini; dipetakan dari isi tersimpan ke blok yang sama` });
+      return m;
+    }
+  };
+  const secResolve = (target: string, label: string): SecRef =>
+    resolve(
+      (ps) => {
+        const all = sectionsOf(ps);
+        return all[findSection(target, all.map((s) => ({ title: s.title, part: ps[s.part].part })), label)];
+      },
+      (s) => {
+        const at = ids[s.part][s.region].indexOf(s.head);
+        return at < 0 ? null : (sectionsOf(parts).find((x) => x.part === s.part && x.region === s.region && x.head === at) ?? null);
+      },
+      label,
+    );
+  let changed = false;
   const cellSet = (u: Unit, next: string) => {
     const lines = parts[u.part].md[u.region];
     const cells = splitRow(lines[u.start]);
     cells[u.cell as number] = cellText(next);
     lines[u.start] = joinRow(cells);
-    trusted[u.part].set(lines[u.start], (trusted[u.part].get(lines[u.start]) ?? 0) + 1);
+    trust(u.part, lines[u.start]);
     if (u.region === "tail") plan.refCells = true;
     else plan.itemCells = true;
     touched.add(u.part);
   };
-  edits.forEach((e, i) => {
-    const label = `edit ${i + 1}`;
+  /** Kunci butir yang sudah dipakai (tabel butir semua bagian + record tersimpan), untuk kunci baru tanpa bentrok. */
+  const usedKeys = (): Set<string> => {
+    const used = new Set<string>([...(opts.prevItemStatus?.keys() ?? [])]);
+    for (const u of unitsOf(parts)) if (u.kind === "cell" && u.headerRow !== true && ITEM_KEY_COLUMNS.has((u.column ?? "").trim().toLowerCase()) && u.text.trim() !== "") used.add(u.text.trim().toLowerCase());
+    return used;
+  };
+  const applyOne = (e: EditOp, label: string): void => {
+    if ("append" in e) {
+      // IMPL-W5 E1: blok di akhir section, urut; susunan + escape sama dengan studio_write (blockLines).
+      const sec = secResolve(e.section, label);
+      const pname = parts[sec.part].part;
+      if (pname === "references") throw new McpToolError("EDIT_INVALID", `${label}: append tidak berlaku untuk bagian Rujukan; pakai addRow. Tidak ada yang ditulis`);
+      const lines = parts[sec.part].md[sec.region];
+      let at = sec.end;
+      while (at > sec.head + 1 && lines[at - 1].trim() === "") at--;
+      const used = usedKeys();
+      const add: string[] = [];
+      const kinds: string[] = [];
+      const paras: string[] = [];
+      let blocks = 0;
+      e.append.forEach((b, k) => {
+        const bl = blockLines(b, warn, `${label} blok ${k + 1}`, used, opts.prevItemStatus);
+        if (bl.length === 0) return;
+        add.push("", ...bl);
+        const shape = blockShape(b);
+        kinds.push(...shape.kinds);
+        paras.push(...shape.paras);
+        blocks += shape.kinds.length + shape.paras.length;
+        if (shape.kinds.includes("table")) plan.itemCells = true;
+      });
+      if (add.length === 0) throw new McpToolError("EDIT_INVALID", `${label}: append tanpa isi; tidak ada yang ditulis`);
+      for (const l of add) trust(sec.part, l);
+      splice(sec.part, sec.region, at, 0, [...add, ""]);
+      delta(sec.part, 0, blocks);
+      plan.appended?.set(pname, [...(plan.appended.get(pname) ?? []), { section: sec.ordinal, kinds, paras }]);
+      touched.add(sec.part);
+      return;
+    }
+    if ("addRow" in e) {
+      // IMPL-W5 E2: baris baru di tabel section (bawaan tabel terakhir); lebar = jumlah kolom tabel.
+      const sec = secResolve(e.section, label);
+      const lines = parts[sec.part].md[sec.region];
+      const tables = tablesIn(lines, sec.head + 1, sec.end);
+      const t = pickTable(tables, e.table, label);
+      const bad = e.addRow.findIndex((r) => r.length !== t.header.length);
+      if (bad >= 0) throw new McpToolError("EDIT_INVALID", `${label}: baris ${bad + 1} berisi ${e.addRow[bad].length} sel, tabel ${t.header.length} kolom; tidak ada yang ditulis. Judul kolom ada di blok rincian`, { untrusted: true, details: { edit: label, expectedHeader: t.header } });
+      const head = t.header.map((h) => h.trim().toLowerCase());
+      const keyIdx = head.findIndex((h) => ITEM_KEY_COLUMNS.has(h));
+      const titleIdx = head.findIndex((h) => h === "judul" || h === "title");
+      const items = keyIdx >= 0 && head.includes("status");
+      const used = items ? usedKeys() : new Set<string>();
+      const generated: string[] = [];
+      const rows = e.addRow.map((r) => {
+        const cells = r.map((c) => String(c ?? "").replace(/\s+/g, " ").trim());
+        if (items && cells[keyIdx] === "") {
+          let k = stableKey(titleIdx >= 0 && cells[titleIdx] !== "" ? cells[titleIdx] : cells.filter((_, j) => j !== keyIdx).join(" "));
+          for (let n = 2; used.has(k.toLowerCase()); n++) k = `${k.replace(/-\d+$/, "")}-${n}`;
+          used.add(k.toLowerCase());
+          cells[keyIdx] = k;
+          generated.push(k);
+        }
+        return joinRow(cells.map(cellText));
+      });
+      if (generated.length > 0) warn({ code: "ITEM_KEY_GENERATED", message: `${label}: ${generated.length} butir tanpa kunci diberi kunci stabil (${generated.slice(0, 5).join(", ")})` });
+      for (const l of rows) trust(sec.part, l);
+      splice(sec.part, sec.region, t.end, 0, rows);
+      if (sec.region === "tail") plan.refCells = true;
+      else plan.itemCells = true;
+      touched.add(sec.part);
+      return;
+    }
     if ("cell" in e) {
       // IMPL-W3: sel tabel struktural (row = teks sel mana pun di baris, column = judul kolom), tepat satu sel.
-      const units = unitsOf(parts);
-      const u = units[findCell(e.cell, matchUnitsOf(units, parts), label)];
+      const u = resolve((ps) => {
+        const units = unitsOf(ps);
+        return units[findCell(e.cell, matchUnitsOf(units, ps), label)];
+      }, remap, label);
       cellSet(u, e.value);
       return;
     }
     if ("insert" in e) {
-      const [h] = locate(e.after, parts, label, { ...(e.section !== undefined ? { section: e.section } : {}) });
+      const h = resolve((ps) => locate(e.after, ps, label, { ...(e.section !== undefined ? { section: e.section } : {}) })[0], (x) => {
+        const u = remap(x.unit);
+        return u === null ? null : { ...x, unit: u };
+      }, label);
       if (h.unit.kind === "field") throw new McpToolError("INVALID_ARGUMENT", `${label}: after menunjuk medan record; sisipan hanya sesudah paragraf atau tabel`);
-      const lines = parts[h.unit.part].md[h.unit.region];
       const add = e.insert.trim() === "" ? [] : paragraphLines(e.insert.trim(), warn, label);
       if (add.length === 0) throw new McpToolError("INVALID_ARGUMENT", `${label}: insert kosong`);
-      lines.splice(h.unit.blockEnd, 0, "", ...add, "");
+      splice(h.unit.part, h.unit.region, h.unit.blockEnd, 0, ["", ...add, ""]);
       delta(h.unit.part, 0, e.insert.trim().split(/\n\s*\n/).filter((x) => x.trim() !== "").length);
       touched.add(h.unit.part);
       return;
@@ -321,6 +519,19 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       return b[0] - a[0] || b[1] - a[1] || b[2] - a[2];
     });
     for (const h of hits) applyFind(h, e.find, e.replace, all, label);
+  };
+  edits.forEach((e, i) => {
+    const label = `edit ${i + 1}`;
+    try {
+      applyOne(e, label);
+      changed = true;
+    } catch (err) {
+      // E4: galat alamat -> suntingan ini tidak diterapkan (kandidat dari keadaan yang dilihatnya); galat lain menolak batch.
+      const na = notAppliedOf(err, i, changed);
+      if (na === null) throw err;
+      notApplied.push(na);
+      errors.push(err);
+    }
   });
   function applyFind(h: Hit, find: string, replace: string, all: boolean, label: string): void {
     const u = h.unit;
@@ -331,7 +542,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       if (whole !== normalize(u.text).text && normalize(plainOf(find)).text !== normalize(plainOf(u.text)).text && fold(find).text !== fold(u.text).text) {
         throw new McpToolError("EDIT_INVALID", `${label}: replace "" menghapus paragraf hanya bila find berisi SELURUH teks paragraf itu; untuk membuang sebagian kalimat, tulis replace berisi sisa kalimat. Tidak ada yang ditulis`);
       }
-      lines.splice(u.start, u.end - u.start);
+      splice(u.part, u.region, u.start, u.end - u.start, []);
       delta(u.part, 1, -1);
       touched.add(u.part);
       return;
@@ -345,7 +556,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       const m = FIELD_RE.exec(lines[u.start]) as RegExpExecArray;
       const next = plain ? plainNext() : spliceSpans(u.text, h.spans as Array<[number, number]>, () => replace);
       const v = next.replace(/\s+/g, " ").trim();
-      if (v === "") lines.splice(u.start, 1);
+      if (v === "") splice(u.part, u.region, u.start, 1, []);
       else lines[u.start] = `${m[1]}: ${v}`;
       plan.fields.add(FIELD_NAMES[m[1].trim().toLowerCase()] ?? m[1].trim());
     } else if (u.kind === "cell") {
@@ -362,16 +573,80 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
         return repl;
       });
       if (escaped) warn({ code: "TEXT_ESCAPED", message: `${label}: teks pengganti yang menyerupai struktur di-escape agar tetap teks` });
-      lines.splice(u.start, u.end - u.start, ...next.split("\n"));
+      splice(u.part, u.region, u.start, u.end - u.start, next.split("\n"), true);
       delta(u.part, 1, 0);
     } else {
-      lines.splice(u.start, u.end - u.start, ...paragraphLines(plainNext(), warn, label));
+      splice(u.part, u.region, u.start, u.end - u.start, paragraphLines(plainNext(), warn, label), true);
       delta(u.part, 1, 0);
     }
     touched.add(u.part);
   }
+  // Semua suntingan gagal alamat -> perilaku lama: galat pertama (ok:false, 0 tulis).
+  if (edits.length > 0 && notApplied.length === edits.length) throw errors[0];
+  normalizeItemStatuses(parts, snapshot, trust, opts.prevItemStatus ?? new Map(), warn);
   reguard(parts, snapshot, trusted);
-  return { touched, plan };
+  return { touched, plan, notApplied, errors };
+}
+
+/** E2: tabel sasaran addRow: bawaan terakhir; angka = urutan 1..n di section; teks = keterangan atau baris judul. */
+function pickTable(tables: readonly TableRef[], sel: number | string | undefined, label: string): TableRef {
+  const list = () => ({ untrusted: true, details: { edit: label, tables: tables.map((t, i) => ({ table: i + 1, header: t.header.slice(0, 8).join(" | "), caption: t.caption.slice(0, 120) })) } });
+  if (tables.length === 0) throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu tidak memuat tabel; tambahkan tabel dengan append. Tidak ada yang ditulis untuk suntingan ini`, list());
+  if (sel === undefined) return tables[tables.length - 1];
+  if (typeof sel === "number") {
+    if (sel >= 1 && sel <= tables.length) return tables[sel - 1];
+    throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu memuat ${tables.length} tabel, bukan tabel ${sel}. Daftar tabel ada di blok rincian`, list());
+  }
+  const f = fold(sel).text.trim();
+  const hit = tables.filter((t) => fold(t.caption).text.includes(f) || fold(t.header.join(" ")).text.includes(f));
+  if (hit.length === 1) return hit[0];
+  throw new McpToolError(hit.length === 0 ? "TEXT_NOT_FOUND" : "TEXT_AMBIGUOUS", `${label}: ${hit.length === 0 ? "tidak ada tabel yang keterangan/judul kolomnya memuat teks table" : `${hit.length} tabel cocok; pakai nomor tabel`}. Daftar tabel ada di blok rincian`, list());
+}
+
+/**
+ * IMPL-W5 E5: sel status tabel butir yang berubah/baru -> kode registri lewat alias (terblokir -> blocked, butuh
+ * tinjauan -> review, ...). Tak terpetakan: butir yang sudah ada di record memakai status sebelumnya (ITEM_STATUS_KEPT;
+ * butir tidak pernah hilang); butir baru tetap di teks tanpa masuk record (ITEM_STATUS_UNKNOWN). Tidak pernah menolak.
+ */
+function normalizeItemStatuses(parts: EditPart[], snapshot: ReadonlyArray<Record<Region, string[]>>, trust: (pi: number, line: string) => void, prev: ReadonlyMap<string, string>, warn: (w: ToolWarning) => void): void {
+  const kept: string[] = [];
+  const unknown: string[] = [];
+  parts.forEach((p, pi) => {
+    if (p.part === "record") return;
+    for (const r of ["intro", "body", "tail"] as const) {
+      const lines = p.md[r];
+      const left = new Map<string, number>();
+      for (const l of snapshot[pi][r]) left.set(l, (left.get(l) ?? 0) + 1);
+      for (const t of tablesIn(lines, 0, lines.length)) {
+        const head = t.header.map((h) => h.trim().toLowerCase());
+        const keyIdx = head.findIndex((h) => ITEM_KEY_COLUMNS.has(h));
+        const st = head.indexOf("status");
+        if (keyIdx < 0 || st < 0) continue;
+        for (let i = t.start + 1; i < t.end; i++) {
+          if (TABLE_SEP_RE.test(lines[i].trim())) continue;
+          if ((left.get(lines[i]) ?? 0) > 0) {
+            left.set(lines[i], (left.get(lines[i]) as number) - 1);
+            continue;
+          }
+          const cells = splitRow(lines[i]);
+          const raw = (cells[st] ?? "").replace(/\\\|/g, "|");
+          const key = (cells[keyIdx] ?? "").trim();
+          let next = itemStatusOf(raw);
+          if (next === undefined) {
+            next = prev.get(key.toLowerCase());
+            if (next !== undefined) kept.push(`${key}: ${raw.slice(0, 40)}`);
+            else unknown.push(`${key}: ${raw.slice(0, 40)}`);
+          }
+          if (next === undefined || next === raw.trim()) continue;
+          cells[st] = next;
+          lines[i] = joinRow(cells);
+          trust(pi, lines[i]);
+        }
+      }
+    }
+  });
+  if (kept.length > 0) warn({ code: "ITEM_STATUS_KEPT", message: `status butir tidak dikenal (${kept.slice(0, 5).join("; ")}); butir tetap di record dengan status sebelumnya, teks lain diterapkan. Pakai done, running, ready, todo, review, blocked, cancelled` });
+  if (unknown.length > 0) warn({ code: "ITEM_STATUS_UNKNOWN", message: `status butir baru tidak dikenal (${unknown.slice(0, 5).join("; ")}); baris tetap di teks, belum masuk record sampai statusnya dikenal. Pakai done, running, ready, todo, review, blocked, cancelled` });
 }
 
 /**

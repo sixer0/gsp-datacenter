@@ -351,7 +351,11 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
   const priorTitles = titlesOf(content);
   const metaBefore = isRecord(content.meta) ? { ...content.meta } : {};
   const warnings: ToolWarning[] = [];
-  const res = applyClientEdits(content, (Array.isArray(a.edits) ? a.edits : []) as ClientEditOp[], (w) => warnings.push(w));
+  const ops = (Array.isArray(a.edits) ? a.edits : []) as ClientEditOp[];
+  const res = applyClientEdits(content, ops, (w) => warnings.push(w));
+  // IMPL-W5 E4: semua suntingan gagal alamat -> perilaku lama (ok:false, galat pertama, 0 tulis).
+  if (ops.length > 0 && res.notApplied.length === ops.length) throw res.errors[0];
+  const na = res.notApplied.length > 0 ? { notApplied: res.notApplied } : {};
   const charts = res.charts;
   const touched: Scope[] = [...res.touched];
   // IMPL-W4 butir 2: saluran meta dokumen klien (nomor, revisi, tanggal, judul, penyusun, ...): slot depan + setMeta.
@@ -367,7 +371,7 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
     if (front.length > 0 && !ctx.session.isAdopted(id)) await requireOwnParts(ctx, id, front, requesterOf(agentId));
   }
   if (JSON.stringify(content) === before) {
-    return { text: `studio_edit: dokumen ${tok(id)} rev ${rev} tidak berubah; tidak ada yang ditulis`, data: { documentId: id, revisionNo: rev, state: "tidak berubah", edited: [] }, ...(warnings.length > 0 ? { warnings } : {}) };
+    return { text: `studio_edit: dokumen ${tok(id)} rev ${rev} tidak berubah; tidak ada yang ditulis`, data: { documentId: id, revisionNo: rev, state: "tidak berubah", edited: [], ...na }, ...(warnings.length > 0 ? { warnings } : {}) };
   }
   const change = CHANGE("studio_edit: sunting teks/data");
   const sections = isRecord(content.sections) ? content.sections : {};
@@ -433,5 +437,5 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
   ctx.session.noteParts(id, edited.filter((w) => w.startsWith("slot ") || w.startsWith("bab ")).map((w) => [w, editRev.get(w) ?? null] as const));
   const f = await finishDoc(ctx, id, agentId);
   const metaEcho = applied !== null ? { meta: Object.fromEntries(["title", "number", "rev", "date", "author"].filter((k) => applied?.[k] !== undefined).map((k) => [k, tok(applied?.[k] ?? "", "(teks)")])) } : {};
-  return clientOutput("studio_edit", id, docNumber, lastRev, mine > 0 ? "diperbarui" : "tidak berubah", f, warnings, { edited, basisRevisionNo: rev, ...metaEcho }, await verifyClient(ctx, id, f, { priorTitles, detail: bool(a, "detail") }), bool(a, "detail"));
+  return clientOutput("studio_edit", id, docNumber, lastRev, mine > 0 ? "diperbarui" : "tidak berubah", f, warnings, { edited, basisRevisionNo: rev, ...metaEcho, ...na }, await verifyClient(ctx, id, f, { priorTitles, detail: bool(a, "detail") }), bool(a, "detail"));
 }

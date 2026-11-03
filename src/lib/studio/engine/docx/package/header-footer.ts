@@ -11,6 +11,8 @@
 import type {
   Borders,
   Cell,
+  ControlSheetData,
+  CoverData,
   HeaderFooterSpec,
   Inline,
   NormUnit,
@@ -212,6 +214,40 @@ export function registerCellPatterns(p: RenderContext["tpl"]["params"]): string[
   );
 }
 
+/** IMPL-W5 D2: label nomor dokumen di blok kendali sampul (ID/EN). */
+const DISPLAY_NUMBER_LABEL = /^(?:nomor(?:\s+dokumen)?|no\.?(?:\s+dokumen)?|document\s+(?:number|no\.?)|doc(?:ument)?\.?\s*no\.?)$/i;
+const cellPlain = (c: Cell | undefined): string =>
+  c === undefined ? "" : typeof c.text === "string" ? c.text : Array.isArray(c.runs) ? c.runs.map((r) => ("t" in r ? r.t : "")).join("") : (c.paragraphs ?? []).map((p) => ((p as { runs?: Run[] }).runs ?? []).map((r) => ("t" in r ? r.t : "")).join("")).join(" ");
+
+/**
+ * IMPL-W5 D2 (D-557): nomor dokumen yang DICETAK sampul (blok kendali "Nomor dokumen"/"Document number"), bila ada.
+ * Kaki halaman mengikuti nomor tampilan dokumen (meta.number agen), bukan nomor unik server; tanpa blok kendali
+ * (dokumen lama, mode explicit benchmark) -> undefined (cadangan meta.docNumber, perilaku lama).
+ */
+export function displayDocNumber(ctx: RenderContext): string | undefined {
+  const cover = ctx.snapshot.doc.front?.cover?.data as CoverData | undefined;
+  for (const row of cover?.control?.rows ?? []) {
+    for (let i = 0; i + 1 < row.length; i += 2) {
+      if (!DISPLAY_NUMBER_LABEL.test(inlinePlain(row[i]).trim())) continue;
+      const v = inlinePlain(row[i + 1]).trim();
+      if (v !== "") return v;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * IMPL-W5 D2: revisi terkini = baris terakhir riwayat revisi lembar kendali (model revisi dokumen itu sendiri, sama
+ * dengan lembar kendali), kata "Rev"/"Revisi"/"Revision" di depan dibuang karena pola sel sudah mencetak "REV".
+ * Tanpa riwayat -> undefined (cadangan meta.rev).
+ */
+export function displayRev(ctx: RenderContext): string | undefined {
+  const cs = ctx.snapshot.doc.front?.controlSheet?.data as ControlSheetData | undefined;
+  const rows = (cs?.revisionHistory?.rows ?? []).filter((r) => r.kind !== "header");
+  const v = cellPlain(rows[rows.length - 1]?.cells[0]).replace(/^\s*rev(?:isi|ision)?\.?\s*/i, "").trim();
+  return v !== "" ? v : undefined;
+}
+
 /**
  * Sel blok register bawaan dari pola templat (RQ-6, permintaan RT-01):
  * - pola `device.registerBlock.cells` (P4S-11) dengan medan `{org}` (org.shortName),
@@ -241,9 +277,9 @@ function registerDefaultCells(ctx: RenderContext): Run[][] {
       case "org":
         return org;
       case "nomor":
-        return meta.docNumber ?? "";
+        return displayDocNumber(ctx) ?? meta.docNumber ?? "";
       case "rev":
-        return meta.rev;
+        return displayRev(ctx) ?? meta.rev;
       case "tanggal":
         return datumDate(meta.issueDate);
       case "kelas":

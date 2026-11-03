@@ -71,7 +71,8 @@ describe('W3-M1: tulis ulang tak lengkap atas laporan sendiri yang lengkap', () 
     expect(JSON.stringify(m.s.chapter('2'))).toBe(ch2);
     expect(r.data.missing ?? []).toEqual([]);
     expect(r.data.state).not.toBe('INCOMPLETE');
-    expect(posts(m.calls).every((c) => c.body.slot !== 'record')).toBe(true);
+    // IMPL-W5 E6: record boleh terkirim hanya untuk cap ReportedAt (jam server); butir/bukti tetap (asersi di atas).
+    expect(rec1.reportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+07:00$/);
     expect(JSON.stringify(m.s.chapter('1'))).toContain(sections[0].blocks[0]);
   });
 });

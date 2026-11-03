@@ -273,7 +273,7 @@ export function chartBlock(c: ClientChart, metaSource: string | null, warn: (w: 
 // ── tabel ───────────────────────────────────────────────────────────────
 
 const NUMERAL = /^[−+-]?(?:\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d+)?\s*%?$/;
-const cellOf = (c: Cell): Rec => {
+export const cellOf = (c: Cell): Rec => {
   const s = String(c ?? "").replace(/\s+/g, " ").trim();
   if (s === "") return {};
   const i = inl(s);

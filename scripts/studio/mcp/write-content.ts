@@ -200,11 +200,18 @@ const ITEM_STATUS_ALIASES: Readonly<Record<string, string>> = {
   "perlu tinjauan": "review", "perlu review": "review", "perlu ditinjau": "review", "menunggu tinjauan": "review", "menunggu review": "review", "needs review": "review",
   "belum mulai": "todo", "belum dimulai": "todo", "akan dikerjakan": "todo",
   "dalam proses": "running", "sedang berjalan": "running", "sedang dikerjakan": "running", "on going": "running",
+  // IMPL-W5 E5 (D-557, r6: sel "terblokir" di studio_edit -> RECORD_ELEMENTS_DROPPED): padanan tambahan.
+  aktif: "running", menunggu: "todo", "butuh tinjauan": "review", "butuh review": "review", tinjauan: "review", "dalam tinjauan": "review",
 };
+
+/** Kode status butir registri (CI-01..CI-07). */
+export const ITEM_STATUS_CODES: ReadonlySet<string> = new Set(["todo", "ready", "running", "review", "done", "blocked", "cancelled"]);
 
 /** Kunci alias status: huruf kecil, `-`/`_` menjadi spasi, spasi dirapatkan. */
 const statusKey = (s: string): string => s.trim().toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
 const lookupStatus = (table: Readonly<Record<string, string>>, raw: string): string | undefined => table[raw.trim().toLowerCase()] ?? table[statusKey(raw)];
+/** IMPL-W5 E5: status butir sehari-hari (ID/EN, huruf besar/kecil bebas) -> kode registri; undefined = tak terpetakan. */
+export const itemStatusOf = (raw: string): string | undefined => (ITEM_STATUS_CODES.has(raw.trim()) ? raw.trim() : lookupStatus(ITEM_STATUS_ALIASES, raw));
 
 const KEY_RE = new RegExp(CONTRACT_KEY_PATTERN);
 const ACTOR_RE = new RegExp(CONTRACT_ACTOR_PATTERN);
@@ -219,7 +226,7 @@ export function stableKey(seed: string): string {
  * konverter, kolom `key` disisipkan bila tidak ada, kunci kosong/tak sah dibangkitkan/dirapikan, status butir
  * dipetakan ke kode registri. Tabel lain dikembalikan apa adanya.
  */
-export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, where: string, used: Set<string>): Rows {
+export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, where: string, used: Set<string>, prevStatus?: ReadonlyMap<string, string>): Rows {
   if (rows.length < 2) return rows;
   const roles = rows[0].map((h) => COLUMN_ALIASES[String(h).trim().toLowerCase()] ?? null);
   const statusIdx = roles.indexOf("status");
@@ -240,6 +247,7 @@ export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, wher
   const generated: string[] = [];
   const fixed: string[] = [];
   const unknown: string[] = [];
+  const kept: string[] = [];
   for (let i = 1; i < out.length; i++) {
     const r = out[i];
     let key = String(r[keyIdx] ?? "").trim();
@@ -257,9 +265,14 @@ export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, wher
     for (let n = 2; used.has(k.toLowerCase()); n++) k = `${key}-${n}`;
     used.add(k.toLowerCase());
     r[keyIdx] = k;
-    const st = lookupStatus(ITEM_STATUS_ALIASES, String(r[s] ?? ""));
+    const st = itemStatusOf(String(r[s] ?? ""));
+    const prev = prevStatus?.get(k.toLowerCase());
     if (st !== undefined) r[s] = st;
-    else unknown.push(String(r[s] ?? ""));
+    else if (prev !== undefined) {
+      // IMPL-W5 E5: butir yang sudah ada di record tidak pernah hilang karena status tak terpetakan; status lama dipakai.
+      kept.push(`${k}: ${String(r[s] ?? "")}`);
+      r[s] = prev;
+    } else unknown.push(String(r[s] ?? ""));
     const ownerIdx = out[0].indexOf("owner");
     if (ownerIdx >= 0 && typeof r[ownerIdx] === "string") {
       const o = (r[ownerIdx] as string).trim().toLowerCase().replace(/\s+/g, "-");
@@ -268,6 +281,7 @@ export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, wher
   }
   if (generated.length > 0) warn({ code: "ITEM_KEY_GENERATED", message: `${where}: ${generated.length} butir tanpa kunci diberi kunci stabil (${generated.slice(0, 5).join(", ")})` });
   if (fixed.length > 0) warn({ code: "ITEM_KEY_REPAIRED", message: `${where}: kunci butir dirapikan (${fixed.slice(0, 5).join("; ")})` });
+  if (kept.length > 0) warn({ code: "ITEM_STATUS_KEPT", message: `${where}: status butir tidak dikenal (${kept.slice(0, 5).join(", ")}); butir tetap di record dengan status sebelumnya. Pakai done, running, ready, todo, review, blocked, cancelled` });
   if (unknown.length > 0) warn({ code: "ITEM_STATUS_UNKNOWN", message: `${where}: status butir tidak dikenal (${unknown.slice(0, 5).join(", ")}); baris tetap di teks tetapi tidak masuk record. Pakai done, running, ready, todo, review, blocked, cancelled` });
   return out;
 }
@@ -316,6 +330,8 @@ export interface WorkReportInput {
   agentId: string | null;
   /** epoch ms (tanggal ReportedAt bawaan, zona +07:00). */
   now: number;
+  /** IMPL-W5 E5: status butir tersimpan (kunci huruf kecil -> kode) untuk tulis ulang laporan yang sudah ada. */
+  prevItemStatus?: ReadonlyMap<string, string>;
 }
 
 export interface BuiltReport {
@@ -353,6 +369,8 @@ function fieldsOf(header: readonly string[]): Record<string, string> {
 
 /** Tanggal hari ini di zona WIB (+07:00), YYYY-MM-DD. */
 export const wibDate = (now: number): string => new Date(now + 7 * 3600_000).toISOString().slice(0, 10);
+/** IMPL-W5 E6: jam server di zona WIB, ISO 8601 ber-zona (C37), mis. 2026-11-04T10:04:05+07:00. */
+export const wibStamp = (now: number): string => `${new Date(now + 7 * 3600_000).toISOString().slice(0, 19)}+07:00`;
 
 /**
  * IMPL-W3 butir 4: medan kepala opsional dinormalkan ke bentuk yang dibaca konverter. Tanpa ini konverter memotong nilai
@@ -421,13 +439,13 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
   }
   let reportedAt = v.reportedAt ?? null;
   if (reportedAt !== null && !REPORTED_AT_RE.test(reportedAt)) {
-    warn({ code: "REPORTED_AT_DEFAULTED", message: `meta.reportedAt "${reportedAt}" bukan YYYY-MM-DD; dipakai tanggal hari ini` });
+    warn({ code: "REPORTED_AT_DEFAULTED", message: `meta.reportedAt "${reportedAt}" bukan YYYY-MM-DD; dipakai jam server (WIB)` });
     reportedAt = null;
   }
   if (reportedAt !== null) given.reportedAt = reportedAt;
   normalizeOptionalFields(v, warn);
   for (const f of ["verdict", "initiator", "taskRef", "cardIds"] as const) if (v[f] !== undefined) given[f] = v[f] as string;
-  const header = [`Status: ${status}`, ...(owner !== null ? [`Owner: ${owner}`] : []), `ReportedAt: ${reportedAt ?? wibDate(input.now)}`];
+  const header = [`Status: ${status}`, ...(owner !== null ? [`Owner: ${owner}`] : []), `ReportedAt: ${reportedAt ?? wibStamp(input.now)}`];
   for (const [f, label] of [["verdict", "Verdict"], ["initiator", "Initiator"], ["taskRef", "TaskRef"], ["cardIds", "CardIds"]] as const) if (v[f] !== undefined) header.push(`${label}: ${v[f]}`);
   return { header, title: v.title ?? null, given };
 }
@@ -449,7 +467,7 @@ export function recordMetaFields(meta: Record<string, string>, agentId: string |
 }
 
 /** Paragraf yang dihasilkan satu blok (string dipecah baris kosong; keterangan tabel/grafik = satu paragraf). */
-function expectedParagraphs(b: Block): string[] {
+export function expectedParagraphs(b: Block): string[] {
   if (typeof b === "string") return b.trim().split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x !== "");
   if (isRows(b)) return [];
   const o = b as unknown as Record<string, unknown>;
@@ -464,14 +482,14 @@ function expectedParagraphs(b: Block): string[] {
 }
 
 /** Satu blok -> baris Markdown laporan kerja (paragraf, tabel, daftar, grafik sebagai tabel). */
-function blockLines(b: Block, warn: (w: ToolWarning) => void, where: string, used: Set<string>): string[] {
+export function blockLines(b: Block, warn: (w: ToolWarning) => void, where: string, used: Set<string>, prev?: ReadonlyMap<string, string>): string[] {
   if (typeof b === "string") return b.trim() === "" ? [] : paragraphLines(b.trim(), warn, where);
-  if (isRows(b)) return b.length === 0 ? [] : tableLines(repairItemTable(b, warn, where, used), warn, where);
+  if (isRows(b)) return b.length === 0 ? [] : tableLines(repairItemTable(b, warn, where, used, prev), warn, where);
   const o = b as unknown as Record<string, unknown>;
   if (isObj(o) && isRows(o.table)) {
     const rows = o.table as Rows;
     const cap = typeof o.caption === "string" && o.caption.trim() !== "" ? ["", ...paragraphLines(o.caption.trim(), warn, where)] : [];
-    return rows.length === 0 ? cap : [...tableLines(repairItemTable(rows, warn, where, used), warn, where), ...cap];
+    return rows.length === 0 ? cap : [...tableLines(repairItemTable(rows, warn, where, used, prev), warn, where), ...cap];
   }
   if (isObj(o) && isObj(o.chart)) {
     const c = o.chart as unknown as ChartInput;
@@ -519,7 +537,7 @@ export function buildWorkReport(input: WorkReportInput): BuiltReport {
     const lines: string[] = [];
     paragraphs.push(s.blocks.flatMap(expectedParagraphs));
     for (const b of s.blocks) {
-      const bl = blockLines(b, warn, where, used);
+      const bl = blockLines(b, warn, where, used, input.prevItemStatus);
       if (bl.length > 0) lines.push(...bl, "");
     }
     if (lines.length > 0 && h.key !== null) filled.add(h.key);

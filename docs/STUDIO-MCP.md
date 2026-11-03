@@ -201,7 +201,7 @@ absolut di dalam akar baca, lihat `STUDIO_MCP_FILE_ROOTS`; maks 4 MiB).
 | `studio_figure_preview` | `POST /api/studio/documents/{id}/figures/preview` (FIG-03b, baca saja) | tidak (menulis berkas hanya dengan `downloadDir`) | Render SATU chart/diagram tanpa render dokumen. Sasaran `pid` atau `address` (`3.1.4` / `Gambar 3.1`), atau `block` v2 inline (dry-run, tidak disimpan; dengan `pid`/`address` dirender di posisi itu: lebar slot dan label sama), `rev` (bawaan terkini). Hasil kecil: ukuran (mm, bita SVG), isu tata letak (`checkId`, `detail`, `suggest` dari mesin atau saran baku route, `info` untuk catatan informatif; chart: REPORT FIG-02a/02c; diagram: `report.issues` + `report.geometry` FIG-02b seperti `NODE_LABEL_LINES`, `LABEL_LEADER`, `LABEL_NUMBERED`, `LABEL_UNPLACED`, `GEOM_*`), `layoutIssueCount` (tanpa isu `info`; SEC-FIX: `INTENT_APPLIED` dan `CAPACITY_ADAPT` = info, jadi `topN` yang diterapkan tidak memicu ajakan revisi), ringkasan data MASUKAN (bentuk, jumlah butir, label terpanjang) dan baris `dirender:` (kode/arah/butir yang benar-benar dirender sesudah `orientation`/AUTO_ORIENT/`topN`, `structuredContent.figure.rendered`). Figur di atas batas kardinalitas (mis. > 200 kategori, > 24 simpul diagram) ditolak server SEBELUM render: `block` inline -> `SCHEMA_INVALID` `maxItems`, figur tersimpan -> `BY_CONSTRUCTION_FAILED` `FIGURE_CAPACITY` (kirim `topN` atau pecah gambar); antrean render penuh -> `RENDER_QUEUE_FULL`. SVG TIDAK dikembalikan bawaan: `downloadDir` (akar `STUDIO_MCP_FILE_ROOTS`, nama `<documentId>-<pid>-rev<N>.svg`, aturan sama dengan `studio_file_verify`) atau `includeSvg` (dipotong 6000 karakter, di blok tak tepercaya). Mesin menolak figur -> hasil sukses `rendered: false` + kode |
 | `studio_figure_revise` | GET R05, GET R16 `?rev=basis`, PATCH R16 `op: replace`, lalu pratinjau | tidak | Tambal medan konten satu figur v2 tanpa kirim ulang bab: `patch` (chart: `data`, `caption`, `source`, `note`, `unit`, `dec`, `highlight`, `limit`, `keyRow`, `code`, `form`, `panels`, medan maksud D-482 `orientation`/`sort`/`topN`/`otherLabel`/`labelShort`; diagram: `spec`, `caption`, `source`, `keyRow`; `null` = hapus medan; `caption`/`source`/`keyRow` berupa string -> `{ text }`), `change` wajib, `baseRevisionNo` atau basis sesi (selain itu `BASIS_MISSING`, 0 jaringan). Sasaran `pid`, atau `address` (pid dicari lewat pratinjau di revisi basis; dokumen v1 tanpa pid -> `INVALID_ARGUMENT`). Dokumen yang dibuat pemanggil lain -> `DOCUMENT_OWNED_BY_OTHER` kecuali `adoptExisting`. Hasil: revisi baru + pratinjau revisi itu (`preview: false` = tanpa pratinjau; pratinjau gagal -> peringatan `PREVIEW_FAILED`, revisi tetap tersimpan) |
 | `studio_write` | GET R04 (+ R21, R05), R13, R12, R15, R17, R10 (jalur `studio_report_submit`) | tidak | IMPL-W (D-522), toolset `write`. Dengan `template` (slug DATUM atau `latest`): dokumen klien, lihat 5.x (IMPL-W2). Tanpa `template`: laporan kerja dari ISI saja: `mission`, `docKey`, `sections: [{ heading, blocks }]` (blok: string = paragraf, larik baris = tabel dengan baris pertama = judul kolom, `{ table, caption }`, `{ list }`, `{ chart }` = ditulis sebagai tabel data), `meta` datar opsional (`status`, `owner`, `taskRef`, `reportedAt`, `verdict`, `initiator`, `cardIds`, `title`). Mesin menyusun Markdown laporan yang dipahami konverter `studio-report` lalu satu panggilan = cek + kirim + kelengkapan + render HTML + verifikasi sha. Perbaikan otomatis (masing-masing peringatan): judul bagian ke bab kontrak (alias registri + alias tambahan + kata utuh; `HEADING_MAPPED`, sisanya bab tambahan `HEADING_EXTRA`), tabel ber-kolom status = tabel butir (kolom dinormalkan, kolom `key` ditambah, kunci stabil `K-<sha8 judul>` untuk butir tanpa kunci, status butir sehari-hari dipetakan; `ITEM_*`), record (Owner = agentId, Status bawaan `draft` (`STATUS_DEFAULTED`), ReportedAt = tanggal WIB hari ini), baris paragraf yang menyerupai judul/tabel di-escape (`TEXT_ESCAPED`). Ditolak hanya bab wajib tanpa isi: `SECTION_MISSING` (0 jaringan). Dokumen yang sudah ada: aturan `guardReportSubmit` apa adanya (milik sendiri dan penulis terakhir = pemanggil -> ditulis ulang; pemilik lain `DOCUMENT_OWNED_BY_OTHER`; penulis terakhir lain `REPORT_CHANGED_BY_OTHER`; bukan laporan kerja `BASIS_MISSING`). Hasil ringkas: `documentId`, `revisionNo`, `state`, `completeness`, `render`, `warnings`, `nextSteps` |
-| `studio_edit` | GET R05 (atau R04 `?mission=&docKey=`), GET R20, lalu jalur `studio_report_update` (R20, R13/R12, R15, R17, R10) | tidak | IMPL-W, toolset `write`. Sunting bergaya patch tanpa basis dari agen: `documentId` (atau `mission` + `docKey`), `edits: [{ find, replace }]` atau `[{ after, insert }]`. Mesin membaca revisi terkini (R20), menulis bagian dokumen sebagai Markdown dengan serializer `studio_report_refresh`, mencocokkan `find` sebagai substring persis dengan spasi dinormalkan (sel tabel dibandingkan tanpa escape `\|`; cadangan tanpa markah inline -> `MARKUP_DROPPED`) yang harus mengenai tepat SATU paragraf/sel tabel/medan record satu kali, lalu mengirim delta dengan basis = revisi yang baru dibaca (`sections` = bagian yang berubah; record ikut bila tabel butir berubah). `replace: ""` menghapus paragraf HANYA bila `find` = seluruh teks paragraf (ternormalisasi; selain itu `EDIT_INVALID`, IMPL-W2 L-1); teks pengganti/sisipan lewat aturan escape M-1 (tidak dapat membentuk tabel, pagar, `Kunci: nilai`, `agentId:`); `{ after, insert }` menyisipkan paragraf sesudah paragraf/tabel yang memuat `after`. Tidak ketemu -> `TEXT_NOT_FOUND`, lebih dari satu -> `TEXT_AMBIGUOUS` (kandidat/lokasi di blok tak tepercaya, 0 tulis); bagian yang diubah pihak lain sesudah baca -> `BASE_CONFLICT` (0 tulis); bagian yang tidak dapat ditulis ulang lewat teks tanpa kehilangan isi -> `EDIT_UNSAFE`; hasil sunting tak dapat dikonversi -> `EDIT_INVALID` (pesan konverter di blok). Pemilik: aturan F-2 (`DOCUMENT_OWNED_BY_OTHER` sebelum isi dibaca, kecuali `adoptExisting: true`). Dokumen klien (IMPL-W2): satuan = paragraf, butir daftar, sel tabel, keterangan/sumber tabel dan figur, judul bab/section, medan meta, teks slot depan; kecocokan yang semuanya di teks depan (salinan meta: nomor tampilan, penyusun) diganti bersama; bab -> R12 (bab utuh, pid tetap), slot -> R13, meta -> R14 `setMeta`, `{ figure, chart }` (data grafik, dicari dari teks keterangan) -> R16 PATCH `op: replace` (internal `studio_figure_revise`; ikut kiriman bab bila bab itu juga disunting); setiap slot/bab diuji dry-run R08 lebih dulu (`CONTENT_INVALID`, 0 tulis); semua kiriman membawa `baseRevisionNo` = revisi yang dibaca (409 `SCOPE_CONFLICT`); hasil di-render ulang docx + sha |
+| `studio_edit` | GET R05 (atau R04 `?mission=&docKey=`), GET R20, lalu jalur `studio_report_update` (R20, R13/R12, R15, R17, R10) | tidak | IMPL-W, toolset `write`. Sunting bergaya patch tanpa basis dari agen: `documentId` (atau `mission` + `docKey`), `edits: [{ find, replace }]` atau `[{ after, insert }]`. Mesin membaca revisi terkini (R20), menulis bagian dokumen sebagai Markdown dengan serializer `studio_report_refresh`, mencocokkan `find` sebagai substring persis dengan spasi dinormalkan (sel tabel dibandingkan tanpa escape `\|`; cadangan tanpa markah inline -> `MARKUP_DROPPED`) yang harus mengenai tepat SATU paragraf/sel tabel/medan record satu kali, lalu mengirim delta dengan basis = revisi yang baru dibaca (`sections` = bagian yang berubah; record ikut bila tabel butir berubah). `replace: ""` menghapus paragraf HANYA bila `find` = seluruh teks paragraf (ternormalisasi; selain itu `EDIT_INVALID`, IMPL-W2 L-1); teks pengganti/sisipan lewat aturan escape M-1 (tidak dapat membentuk tabel, pagar, `Kunci: nilai`, `agentId:`); `{ after, insert }` menyisipkan paragraf sesudah paragraf/tabel yang memuat `after`. Tidak ketemu -> `TEXT_NOT_FOUND`, lebih dari satu -> `TEXT_AMBIGUOUS` (kandidat/lokasi di blok tak tepercaya, 0 tulis); bagian yang diubah pihak lain sesudah baca -> `BASE_CONFLICT` (0 tulis); bagian yang tidak dapat ditulis ulang lewat teks tanpa kehilangan isi -> `EDIT_UNSAFE`; hasil sunting tak dapat dikonversi -> `EDIT_INVALID` (pesan konverter di blok). Pemilik: aturan F-2 (`DOCUMENT_OWNED_BY_OTHER` sebelum isi dibaca, kecuali `adoptExisting: true`). Dokumen klien (IMPL-W2): satuan = paragraf, butir daftar, sel tabel, keterangan/sumber tabel dan figur, judul bab/section, medan meta, teks slot depan; kecocokan yang semuanya di teks depan (salinan meta: nomor tampilan, penyusun) diganti bersama; bab -> R12 (bab utuh, pid tetap), slot -> R13, meta -> R14 `setMeta`, `{ figure, chart }` (data grafik, dicari dari teks keterangan) -> R16 PATCH `op: replace` (internal `studio_figure_revise`; ikut kiriman bab bila bab itu juga disunting); setiap slot/bab diuji dry-run R08 lebih dulu (`CONTENT_INVALID`, 0 tulis); semua kiriman membawa `baseRevisionNo` = revisi yang dibaca (409 `SCOPE_CONFLICT`); hasil di-render ulang docx + sha. IMPL-W5 (D-557): `{ section, append }` (blok/larik blok kosakata `studio_write`, di akhir section, urut) dan `{ section, addRow, table? }` (baris/baris[] ke tabel terakhir section; `table` = nomor 1.. atau teks keterangan/judul kolom; lebar salah -> `EDIT_INVALID` + judul kolom); suntingan berurutan, alamat yang hilang karena suntingan sebelumnya dicari di isi tersimpan (`ADDRESS_FROM_STORED`); galat alamat -> `notApplied`, sisanya disimpan; laporan: `ReportedAt` = jam server bila tidak diberi. Lihat 5.w |
 
 Prompt `studio_laporan_kerja` (argumen `mission`, `docKey`) memberi resep + templat laporan; prompt
 `studio_dokumen_klien` (argumen `mission`, `docKey`, `template`) memberi resep dokumen klien. Resource:
@@ -501,8 +501,8 @@ tersimpan; baca ulang lalu ulangi hanya suntingan untuk bagian di `notWritten`. 
 (`studio_edit adoptExisting`) tidak ditulis ulang utuh: `studio_write` menjawab `BASIS_MISSING`, ubah lewat `studio_edit`
 (sama dengan jalur laporan kerja, siklus 2 I-7). Tulis ulang dokumen sendiri:
 penulis revisi terkini harus pemanggil (`DOCUMENT_CHANGED_BY_OTHER`), basis = revisi yang dibaca, meta berubah ->
-`setMeta`, bab di server yang tidak ditulis ulang tidak dihapus (`CHAPTERS_KEPT`). Keterbatasan: kaki halaman DOCX
-mencetak `docNumber` server (milik mesin/templat; mengubahnya perlu perubahan kontrak, di luar lingkup).
+`setMeta`, bab di server yang tidak ditulis ulang tidak dihapus (`CHAPTERS_KEPT`). Kaki halaman DOCX: sejak IMPL-W5 (D2)
+mencetak nomor tampilan dari blok kendali sampul dan revisi terakhir lembar kendali (lihat 5.w).
 
 Laporan kerja (IMPL-W):
 
@@ -582,6 +582,8 @@ diserap (setMeta judul lalu kirim ulang sekali, `META_UPDATED`). Wrap keras di p
   mengganti semua kecocokan secara eksplisit. Tanpa `occurrence: "all"` tidak pernah lebih dari satu sasaran.
 - Ambigu/tidak ketemu: hasil normal `ok: false` dengan `TEXT_AMBIGUOUS`/`TEXT_NOT_FOUND`; `details.candidates` memuat
   section, row, column, dan untuk teks `find` jendela unik >= 3 kata siap salin, untuk sel alamat `cell` siap salin.
+- IMPL-W5: `{section, append}` / `{section, addRow, table?}`, alamat batch berurutan dengan cadangan isi tersimpan, dan
+  terapkan sebagian (`notApplied`) untuk galat alamat; rincian di 5.w.
 - Posisi (gerbang naturalisasi): `{pid, at, length?, replace, expect?}`. pid dan teks polos per paragraf dari
   `studio_document_get { documentId, view: "paragraphs" }`; `at` = offset di teks polos; `expect` berbeda ->
   `POSITION_MISMATCH` (hasil normal, 0 tulis).
@@ -666,6 +668,52 @@ tabel/gambar yang kurang dalam satu hasil normal dan tidak mengarang isi.
 - **Sisa Low review 13.** Bagian yang sudah ada di server dengan penulis R15 tidak tercatat dan isi berbeda ->
   `PART_CHANGED_BY_OTHER`, kecuali sesi MCP ini yang menulisnya. Pemetaan pid tidak menghitung butir daftar. Galat nyata
   server yang berulang memberi petunjuk "server bermasalah; tunggu lalu coba lagi".
+
+### 5.w Ronde 7 (IMPL-W5, D-557): sunting tanpa rantai jangkar
+
+```text
+studio_edit { "documentId": "<id>", "edits": [
+  { "section": "Bukti", "append": ["Hasil uji ulang.", { "list": ["vitest 18 lulus"] }, { "table": [["uji", "hasil"], ["smoke", "lulus"]], "caption": "Hasil uji" }] },
+  { "section": "Rincian kerja", "addRow": ["", "Uji tambahan", "terblokir", "out/w5.txt 10 B"] },
+  { "section": "Risiko", "addRow": [["Anggaran", "4"], ["SDM", "2"]], "table": "Skor risiko" } ] }
+```
+
+- **append.** Blok = kosakata `studio_write` (string, `[[baris]]`, `{table, caption?, source?, unit?}`, `{list}`, `{subheading}`;
+  klien juga `{chart}`; `{ref}` tidak). Section = judul (samar, tanpa nomor) atau "bab N" (= section terakhir bab itu). Laporan:
+  susunan + escape sama dengan `studio_write` (`blockLines`, `guardLine`), tabel butir lewat konversi record yang sama;
+  `assertEditShape` mengharapkan jenis blok append (tabel/daftar) di akhir section sasaran dan teks paragraf append utuh
+  sesudah konversi (selain itu `CONTENT_INJECTION`). Klien: pembangun bab `studio_write` (`chapterOf`), sumber/satuan tidak
+  dikarang (`SOURCE_MISSING`/`TABLE_UNIT_MISSING` menolak batch), lalu dry-run R08 seperti suntingan lain.
+- **addRow.** Satu baris `[sel, ...]` atau beberapa `[[...], ...]`. Tabel butir (kolom key/id + status): kunci kosong ->
+  kunci stabil `K-<sha8 judul>` tanpa bentrok, status lewat alias, baris masuk record seperti ditulis di tabel.
+- **Alamat batch (E3).** Suntingan diterapkan urut; tiap alamat (sel, jangkar `after`, section/tabel append/addRow) dicari
+  di keadaan sesudah suntingan sebelumnya; tidak ketemu -> dicari di isi tersimpan dan dipetakan ke blok yang sama
+  (identitas baris laporan / identitas objek klien), peringatan `ADDRESS_FROM_STORED`. `find`/`replace` tidak memakai
+  cadangan (teks yang sudah diubah tidak ditimpa dari versi lama).
+- **Terapkan sebagian (E4).** Hanya galat alamat (`TEXT_NOT_FOUND`/`TEXT_AMBIGUOUS`: teks, sel, baris, section, tabel)
+  yang tidak menggagalkan batch: suntingan lain disimpan dalam satu tulisan, hasil `ok: true` + `notApplied: [{ edit,
+  code, seenState, candidates }]` (kandidat dihitung pada keadaan yang dilihat suntingan itu: `tersimpan` atau
+  `sesudah-suntingan-sebelumnya`; hanya di blok `<data-tak-tepercaya>`, `untrustedFields` memuat `notApplied`) + `hint`.
+  Semua gagal alamat -> `ok: false` seperti sebelumnya (0 tulis). Galat lain (skema, `EDIT_INVALID`, `EDIT_UNSAFE`,
+  `CONTENT_INJECTION`, pemilik, konflik, isi klien) tetap menolak seluruh batch, 0 tulis. `isError` tetap tidak dipakai.
+- **Status butir (E5).** Alias tak peka huruf: selesai/done/complete/tuntas -> done; berjalan/sedang berjalan/running/in
+  progress/aktif -> running; belum mulai/todo/to do/belum/pending/menunggu -> todo; siap/ready -> ready; butuh/perlu
+  tinjauan/tinjauan/review/needs-review/menunggu tinjauan -> review; terblokir/terhambat/diblokir/blocked/blokir ->
+  blocked; batal/dibatalkan/cancelled/canceled -> cancelled (enum registri CI-01..07). Tak terpetakan TIDAK menolak:
+  butir yang sudah ada tetap di record dengan status sebelumnya (`ITEM_STATUS_KEPT`); butir baru tetap di teks dan masuk
+  record sesudah statusnya dikenal (`ITEM_STATUS_UNKNOWN`; status wajib di kontrak). Berlaku juga untuk `studio_write`.
+- **ReportedAt (E6).** Laporan kerja tanpa `reportedAt`: revisi yang ditulis (studio_write baru/tulis ulang, studio_edit
+  teks atau meta) dicap jam server WIB `YYYY-MM-DDTHH:MM:SS+07:00` (C37). Nilai eksplisit menang. Tulis ulang identik tetap
+  "tidak berubah" (cap tidak membuat revisi sendiri). Akibat: studio_edit laporan kini juga mengirim bagian record.
+- **Kandidat** dicetak tanpa escape Markdown (`\:` r6 membingungkan agen).
+- **Dokumen klien (D1/D2).** Talang label kategori grafik batang horizontal (K-01..K-04 bertumpuk/divergen, P-01 galeri,
+  P-04..P-07/P-11 berlabel kiri) diukur dengan metrik glif nyata Plex (textfit) + ruang tepi 0,4 mm (taksiran rerata
+  0,5 em memotong "Low-Medium" 0,26 mm di kiri PNG). Kaki halaman DOCX: nomor = nilai "Nomor dokumen" blok kendali
+  sampul (nomor tampilan meta.number), revisi = baris terakhir riwayat revisi lembar kendali tanpa kata "Rev" (Rev 1 ->
+  "REV 1"); tanpa keduanya tetap meta.docNumber / meta.rev (Manual 000 mode explicit tidak berubah, convert_v2 SAME x3).
+  Kaki halaman HTML belum diubah.
+- **Ukuran deskripsi.** `tools/list` dua alat tulis (JSON nama + deskripsi + skema): 8.158 -> 9.053 B (+11,0 %); skema
+  blok `append` divalidasi saat dijalankan (ajv, skema `BLOCK` studio_write) agar tidak diulang di `tools/list`.
 
 ## 6. Keamanan
 
@@ -789,6 +837,12 @@ tabel/gambar yang kurang dalam satu hasil normal dan tidak mengarang isi.
   `REPORT_CHANGED_BY_OTHER`, `AGENT_ID_LOCKED`, 0 jaringan saat ditolak), dan `studio_edit` (paragraf, sel butir -> record,
   medan record, hapus, sisip, `TEXT_NOT_FOUND`/`TEXT_AMBIGUOUS` di blok, penanda palsu dinetralkan, `BASE_CONFLICT` di
   antara baca dan tulis, pemilik + `adoptExisting`, isi berformat kode/kutipan/sel ber-pipa utuh, `MARKUP_DROPPED`).
+- IMPL-W5: `implw5-edit.test.ts` (alias status sel + studio_write, ITEM_STATUS_KEPT, ReportedAt jam server pada
+  studio_write/studio_edit/tulis ulang, append laporan dan klien, addRow tabel butir + lebar salah, sel dengan kunci baris
+  yang diubah, jangkar berantai, notApplied, semua gagal = ok:false, galat isi klien menolak batch);
+  `tests/unit/studio/renderers/implw5-chart-gutter.test.ts` (tepi kiri label >= 0,2 mm dengan metrik nyata untuk K-01 data
+  r6, label 24 karakter, P-01; PNG 300 dpi tanpa tinta kolom x=0..2); `implw5-footer-display.test.ts` (kaki halaman DOCX
+  nomor tampilan + REV 1; kontrol tanpa blok kendali = perilaku lama). Asap DEV: `scripts/studio/mcp/smoke-implw5.ts`.
 - Asap stdio: `scripts/studio/mcp/smoke.ts`, `scripts/studio/mcp/smoke-documents.ts` (bagian 5), dan
   `scripts/studio/mcp/smoke-figures.ts` (FIG-03b: buat dokumen, bab JSON dengan grafik padat, pratinjau, pratinjau inline,
   unduh SVG, revisi berbasis sesi, pratinjau ulang dengan isu lebih sedikit, revisi basis lama -> 409), dan

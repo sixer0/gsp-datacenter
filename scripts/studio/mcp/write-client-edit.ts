@@ -7,10 +7,11 @@
  */
 import { McpToolError } from "./safety";
 import { tok, type ToolWarning } from "./tool-kit";
-import { chartBlock, type ClientChart } from "./write-client";
+import { cellOf, chapterOf, chartBlock, type ClientBlock, type ClientChart } from "./write-client";
+import type { Cell } from "./write-content";
 import { parseInline } from "../../../src/lib/studio/services/import/inline";
 import { normalize } from "./write-edit";
-import { findCell, findText, fold, spliceSpans, type MatchUnit } from "./write-match";
+import { findCell, findSection, findText, fold, notAppliedOf, spliceSpans, type MatchUnit, type NotApplied } from "./write-match";
 import { isPositionEdit, paragraphsOf, resolvePosition, type PositionEdit } from "./write-position";
 
 const NOOP = { warn: () => undefined, drop: () => undefined };
@@ -33,6 +34,8 @@ export interface JUnit {
   remove: (() => void) | null;
   /** larik blok + indeks untuk sisipan sesudahnya (satuan di dalam bab). */
   after: { list: Rec[]; block: Rec } | null;
+  /** IMPL-W5 E3: objek JSON yang diwakili satuan (identitas untuk memetakan alamat dari isi tersimpan). */
+  node?: object;
 }
 
 /** Teks InlineV2 ({text} | {runs:[{t}]}). */
@@ -65,6 +68,7 @@ function setInline(h: Rec, v: string, warn: (w: ToolWarning) => void): void {
 const inlineUnit = (scope: Scope, kind: JUnit["kind"], h: Rec, extra: Partial<JUnit> = {}): JUnit => ({
   scope,
   kind,
+  node: h,
   section: "",
   get: () => inlineText(h),
   set: (v, warn) => setInline(h, v, warn),
@@ -171,7 +175,74 @@ export type ClientEditOp =
   | { after: string; insert: string; section?: string }
   | { cell: { section?: string; row: string; column: string }; value: string }
   | { figure: string; chart: Partial<ClientChart> }
+  | { section: string; append: ClientBlock[] }
+  | { section: string; addRow: Cell[][]; table?: number | string }
   | PositionEdit;
+
+/** IMPL-W5 E1/E2: section sasaran append/addRow dokumen klien (bab = entri bab lalu sub-bagiannya, urut). */
+interface ClientSec {
+  title: string;
+  part: string;
+  ch: Rec;
+  sec: Rec | null;
+}
+function clientSections(content: Rec): ClientSec[] {
+  const out: ClientSec[] = [];
+  const sections = isObj(content.sections) ? content.sections : {};
+  const chapters = isObj(sections.content) && Array.isArray(sections.content.chapters) ? (sections.content.chapters as Rec[]) : [];
+  for (const ch of chapters) {
+    out.push({ title: isObj(ch.title) ? inlineText(ch.title) : "", part: `bab ${String(ch.key)}`, ch, sec: null });
+    for (const sec of Array.isArray(ch.sections) ? (ch.sections as Rec[]).filter(isObj) : []) out.push({ title: isObj(sec.title) ? inlineText(sec.title) : "", part: `bab ${String(ch.key)}`, ch, sec });
+  }
+  return out;
+}
+
+/** Larik blok tempat append mendarat: section, atau (bab) section terakhir / pembuka bab. */
+function landing(t: ClientSec): Rec[] {
+  if (t.sec !== null) return (t.sec.blocks = Array.isArray(t.sec.blocks) ? t.sec.blocks : []) as Rec[];
+  const secs = Array.isArray(t.ch.sections) ? (t.ch.sections as Rec[]).filter(isObj) : [];
+  if (secs.length > 0) {
+    const last = secs[secs.length - 1];
+    return (last.blocks = Array.isArray(last.blocks) ? last.blocks : []) as Rec[];
+  }
+  return (t.ch.intro = Array.isArray(t.ch.intro) ? t.ch.intro : []) as Rec[];
+}
+
+/** Tabel di cakupan section (bab = pembuka + semua sub-bagian). */
+function tablesOf(t: ClientSec): Rec[] {
+  const lists = t.sec !== null ? [t.sec.blocks] : [t.ch.intro, ...(Array.isArray(t.ch.sections) ? (t.ch.sections as Rec[]).map((x) => (isObj(x) ? x.blocks : null)) : [])];
+  return lists.flatMap((l) => (Array.isArray(l) ? (l as Rec[]).filter((b) => isObj(b) && b.type === "table" && Array.isArray(b.rows)) : []));
+}
+
+const headerOf = (tb: Rec): string[] => {
+  const rows = (tb.rows as Rec[]).filter(isObj);
+  const head = rows.find((r) => r.kind === "header") ?? rows[0];
+  return head !== undefined && Array.isArray(head.cells) ? (head.cells as Rec[]).map((c) => (isObj(c) ? inlineText(c) : "")) : [];
+};
+
+function pickClientTable(tables: readonly Rec[], sel: number | string | undefined, label: string): Rec {
+  const list = () => ({ untrusted: true, details: { edit: label, tables: tables.map((t, i) => ({ table: i + 1, header: headerOf(t).slice(0, 8).join(" | "), caption: snip(isObj(t.caption) ? inlineText(t.caption) : "") })) } });
+  if (tables.length === 0) throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu tidak memuat tabel; tambahkan tabel dengan append. Tidak ada yang ditulis untuk suntingan ini`, list());
+  if (sel === undefined) return tables[tables.length - 1];
+  if (typeof sel === "number") {
+    if (sel >= 1 && sel <= tables.length) return tables[sel - 1];
+    throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu memuat ${tables.length} tabel, bukan tabel ${sel}. Daftar tabel ada di blok rincian`, list());
+  }
+  const f = fold(sel).text.trim();
+  const hit = tables.filter((t) => fold(isObj(t.caption) ? inlineText(t.caption) : "").text.includes(f) || fold(headerOf(t).join(" ")).text.includes(f));
+  if (hit.length === 1) return hit[0];
+  throw new McpToolError(hit.length === 0 ? "TEXT_NOT_FOUND" : "TEXT_AMBIGUOUS", `${label}: ${hit.length === 0 ? "tidak ada tabel yang keterangan/judul kolomnya memuat teks table" : `${hit.length} tabel cocok; pakai nomor tabel`}. Daftar tabel ada di blok rincian`, list());
+}
+
+/** Peta objek isi tersimpan -> objek hidup (struktur sama saat klon; objek hidup dimutasi di tempat). */
+function twinMap(stored: unknown, live: unknown, out = new Map<object, object>()): Map<object, object> {
+  if (stored !== null && typeof stored === "object" && live !== null && typeof live === "object") {
+    out.set(stored, live);
+    if (Array.isArray(stored)) stored.forEach((x, i) => twinMap(x, (live as unknown[])[i], out));
+    else for (const k of Object.keys(stored)) twinMap((stored as Rec)[k], (live as Rec)[k], out);
+  }
+  return out;
+}
 
 /** Paragraf baru dari teks agen: baris kosong memisah paragraf, wrap keras digabung, inline Markdown (`kode`, **tebal**) diurai (butir 13). */
 function newParagraphs(text: string): Rec[] {
@@ -183,12 +254,83 @@ function newParagraphs(text: string): Rec[] {
 }
 
 /** Terapkan suntingan berurutan; kembalikan lingkup teks yang berubah dan suntingan grafik (sudah diterapkan ke blok). */
-export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], warn: (w: ToolWarning) => void): { touched: Scope[]; charts: Array<{ key: string; block: Rec; patch: Rec }> } {
+export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], warn: (w: ToolWarning) => void): { touched: Scope[]; charts: Array<{ key: string; block: Rec; patch: Rec }>; notApplied: NotApplied[]; errors: unknown[] } {
   const touched = new Map<string, Scope>();
   const charts: Array<{ key: string; block: Rec; patch: Rec }> = [];
+  const notApplied: NotApplied[] = [];
+  const errors: unknown[] = [];
   const touch = (s: Scope) => touched.set(scopeName(s), s);
-  edits.forEach((e, i) => {
-    const label = `edit ${i + 1}`;
+  // IMPL-W5 E3: isi tersimpan (klon sebelum batch) + peta identitas objek ke isi hidup.
+  const stored = structuredClone(content);
+  const twin = twinMap(stored, content);
+  let changed = false;
+  const resolve = <T>(find: (c: Rec) => T, map: (t: T) => T | null, label: string): T => {
+    try {
+      return find(content);
+    } catch (e) {
+      if (!(e instanceof McpToolError) || e.code !== "TEXT_NOT_FOUND" || !changed) throw e;
+      let t: T;
+      try {
+        t = find(stored);
+      } catch {
+        throw e;
+      }
+      const m = map(t);
+      if (m === null) throw e;
+      warn({ code: "ADDRESS_FROM_STORED", message: `${label}: alamat tidak ada lagi sesudah suntingan sebelumnya di batch ini; dipetakan dari isi tersimpan ke blok yang sama` });
+      return m;
+    }
+  };
+  const remap = (su: JUnit): JUnit | null => {
+    const live = su.node !== undefined ? twin.get(su.node) : undefined;
+    return live === undefined ? null : (clientUnits(content).find((u) => u.node === live && u.kind === su.kind) ?? null);
+  };
+  const secOf = (target: string, label: string): ClientSec =>
+    resolve(
+      (c) => {
+        const all = clientSections(c);
+        return all[findSection(target, all.map((x) => ({ title: x.title, part: x.part })), label)];
+      },
+      (x) => {
+        const ch = twin.get(x.ch) as Rec | undefined;
+        const sec = x.sec === null ? null : ((twin.get(x.sec) as Rec | undefined) ?? undefined);
+        return ch === undefined || sec === undefined ? null : { ...x, ch, sec };
+      },
+      label,
+    );
+  const keepNumbers = (() => {
+    const c = isObj(content.sections) && isObj(content.sections.content) ? content.sections.content : {};
+    return Array.isArray(c.outline) && (c.outline as Rec[]).some((o) => isObj(o) && typeof o.label === "string");
+  })();
+  const one = (e: ClientEditOp, label: string): void => {
+    if ("append" in e) {
+      // IMPL-W5 E1: blok di akhir section (urut), dibangun pembangun yang sama dengan studio_write (sumber/satuan tidak dikarang).
+      const t = secOf(e.section, label);
+      const key = String(t.ch.key);
+      const built = chapterOf({ heading: t.title, blocks: e.append }, key, isObj(t.ch.title) ? inlineText(t.ch.title) : t.title, null, warn, label, undefined, keepNumbers);
+      if (built === null) throw new McpToolError("EDIT_INVALID", `${label}: append tanpa isi; tidak ada yang ditulis`);
+      const intro = Array.isArray(built.intro) ? (built.intro as Rec[]) : [];
+      landing(t).push(...intro);
+      const newSecs = Array.isArray(built.sections) ? (built.sections as Rec[]) : [];
+      if (newSecs.length > 0) {
+        const secs = (t.ch.sections = Array.isArray(t.ch.sections) ? t.ch.sections : []) as Rec[];
+        const at = t.sec !== null ? secs.indexOf(t.sec) + 1 : secs.length;
+        secs.splice(at, 0, ...newSecs);
+      }
+      touch({ kind: "chapter", key });
+      return;
+    }
+    if ("addRow" in e) {
+      // IMPL-W5 E2: baris baru di tabel section (bawaan terakhir); lebar = jumlah kolom tabel.
+      const t = secOf(e.section, label);
+      const tb = pickClientTable(tablesOf(t), e.table, label);
+      const header = headerOf(tb);
+      const bad = e.addRow.findIndex((r) => r.length !== header.length);
+      if (bad >= 0) throw new McpToolError("EDIT_INVALID", `${label}: baris ${bad + 1} berisi ${e.addRow[bad].length} sel, tabel ${header.length} kolom; tidak ada yang ditulis. Judul kolom ada di blok rincian`, { untrusted: true, details: { edit: label, expectedHeader: header } });
+      (tb.rows as Rec[]).push(...e.addRow.map((r) => ({ kind: "body", cells: r.map(cellOf) })));
+      touch({ kind: "chapter", key: String(t.ch.key) });
+      return;
+    }
     if ("figure" in e) {
       const c = locateChart(content, e.figure, label);
       const patch = chartPatch(c.block, e.chart, warn, label);
@@ -207,13 +349,16 @@ export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], w
     }
     const units = clientUnits(content);
     if ("cell" in e) {
-      const u = units[findCell(e.cell, matchUnits(units), label)];
+      const u = resolve((c) => {
+        const us = clientUnits(c);
+        return us[findCell(e.cell, matchUnits(us), label)];
+      }, remap, label);
       u.set(e.value.replace(/\s+/g, " ").trim(), warn);
       touch(u.scope);
       return;
     }
     if ("insert" in e) {
-      const [{ u }] = locateClient(e.after, units, label, { ...(e.section !== undefined ? { section: e.section } : {}) });
+      const u = resolve((c) => locateClient(e.after, clientUnits(c), label, { ...(e.section !== undefined ? { section: e.section } : {}) })[0].u, remap, label);
       if (u.after === null) throw new McpToolError("INVALID_ARGUMENT", `${label}: after harus menunjuk teks di dalam bab (paragraf, tabel, grafik); sisipan tidak berlaku untuk meta/slot`);
       const paras = newParagraphs(e.insert);
       if (paras.length === 0) throw new McpToolError("INVALID_ARGUMENT", `${label}: insert kosong`);
@@ -233,8 +378,23 @@ export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], w
       else u.set(spliceSpans(u.get(), spans ?? [], () => repl), warn);
       touch(u.scope);
     }
+  };
+  edits.forEach((e, i) => {
+    const label = `edit ${i + 1}`;
+    try {
+      one(e, label);
+      changed = true;
+    } catch (err) {
+      // IMPL-W5 E4: galat alamat -> suntingan ini masuk notApplied; galat lain menolak seluruh batch (0 tulis).
+      const na = notAppliedOf(err, i, changed);
+      if (na === null) throw err;
+      notApplied.push(na);
+      errors.push(err);
+    }
   });
-  return { touched: [...touched.values()], charts };
+  // Semua suntingan gagal alamat -> perilaku lama: galat pertama (ok:false, 0 tulis).
+  if (edits.length > 0 && notApplied.length === edits.length) throw errors[0];
+  return { touched: [...touched.values()], charts, notApplied, errors };
 }
 
 function locateChart(content: Rec, figure: string, label: string): { key: string; block: Rec } {

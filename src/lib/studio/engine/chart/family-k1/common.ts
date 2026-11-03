@@ -25,7 +25,8 @@ import type { ChartPalette } from "../core/palette";
 import { kindKey, readInt, readNum } from "../core/read";
 import { accentOf } from "../core/params";
 import type { NiceDomain, Scale } from "../core/scale";
-import { type SvgDoc, textWidthMm, midBaseline } from "../core/svg";
+import { type SvgDoc, midBaseline } from "../core/svg";
+import { measure } from "../core/textfit";
 
 export type K1Code = "K-01" | "K-02" | "K-03" | "K-04" | "K-05" | "K-06";
 export type K1Style = "datum" | "gallery";
@@ -247,7 +248,9 @@ export function hFrame(i: {
   barRatio: number;
   labelFace?: "struct" | "data";
 }): HFrame {
-  const labelW = Math.max(0, ...i.categories.map((c) => textWidthMm(c, i.labelPt, i.labelFace ?? "struct")));
+  // IMPL-W5 D1: talang = label terlebar dengan metrik glif nyata (textfit, sama dengan raster); taksiran rerata 0,5 em
+  // (textWidthMm) memotong label berglif lebar ("Low-Medium" 5,29 em > 5,0 em) di tepi kiri gambar.
+  const labelW = Math.max(0, ...i.categories.map((c) => measure(c, i.labelPt, i.labelFace ?? "struct")));
   const x0 = Math.min(Math.max(labelW + 2.0, 6), i.widthMm * 0.42);
   const x1 = Math.max(x0 + 4, i.widthMm - i.rightGutter);
   const n = Math.max(1, i.categories.length);

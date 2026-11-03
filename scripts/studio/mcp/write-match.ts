@@ -135,7 +135,8 @@ const snip = (s: string, at = 0): string => {
 /** Deskripsi satuan untuk kandidat: bagian, section, jenis, teks, dan (sel) row + column. */
 export function describeUnit(u: MatchUnit): Record<string, unknown> {
   const row = u.rowCells !== undefined ? u.rowCells.filter((c) => c.trim() !== "").slice(0, 2).join(" | ") : undefined;
-  return { part: u.part, section: snip(u.section), kind: u.kind, text: snip(u.text), ...(row !== undefined ? { row: snip(row) } : {}), ...(u.column !== undefined ? { column: snip(u.column) } : {}) };
+  // IMPL-W5: teks kandidat tanpa escape Markdown (`\:` r6 membingungkan agen; `find` dicocokkan tanpa escape juga).
+  return { part: u.part, section: snip(u.section), kind: u.kind, text: snip(exactView(u.text).text), ...(row !== undefined ? { row: snip(row) } : {}), ...(u.column !== undefined ? { column: snip(u.column) } : {}) };
 }
 
 /** 3 kandidat terdekat (irisan kata samar). */
@@ -311,3 +312,65 @@ export function spliceSpans(text: string, spans: ReadonlyArray<[number, number]>
 
 /** Rentang samar memuat markah inline (`*`, `_`, `` ` ``, `[`, `]`, `~`) -> tulis ulang polos lebih aman. */
 export const spansHaveMarkup = (text: string, spans: ReadonlyArray<[number, number]>): boolean => spans.some(([a, b]) => /[*_`[\]~]/.test(text.slice(a, b)));
+
+// ── penargetan section untuk append/addRow (IMPL-W5) ────────────────────
+
+/** Section sasaran `{ section, append }` / `{ section, addRow }`. */
+export interface SectionEntry {
+  /** judul section/bab (teks polos). */
+  title: string;
+  /** nama bagian dokumen ("bab 2", "references"). */
+  part: string;
+}
+
+/**
+ * IMPL-W5 E1/E2: section sasaran append/addRow. Tingkat: nama bagian ("bab 2", "2") -> section TERAKHIR bagian itu;
+ * judul sama (samar, tanpa nomor) -> judul memuat teks. Tepat satu per tingkat; lebih -> TEXT_AMBIGUOUS, nol ->
+ * TEXT_NOT_FOUND (daftar section di blok rincian; galat alamat = dapat diterapkan sebagian).
+ */
+export function findSection(target: string, entries: readonly SectionEntry[], label: string): number {
+  const t = fold(target).text.trim();
+  if (t === "") throw new McpToolError("INVALID_ARGUMENT", `${label}: section kosong`);
+  const byPart = entries.map((e, i) => ({ e, i })).filter(({ e }) => {
+    const part = fold(e.part).text;
+    return t === part || `bab ${t}` === part || t === part.replace(/^bab /, "");
+  });
+  if (byPart.length > 0) return byPart[byPart.length - 1].i;
+  const tt = fk(target);
+  for (const pred of [(s: string) => s === tt, (s: string) => s !== "" && tt !== "" && s.includes(tt)]) {
+    const hit = entries.map((e, i) => ({ s: fk(e.title), i })).filter((x) => pred(x.s));
+    if (hit.length === 1) return hit[0].i;
+    if (hit.length > 1) {
+      throw new McpToolError("TEXT_AMBIGUOUS", `${label}: ${hit.length} section cocok; tulis judul section lengkap atau "bab N". Daftar ada di blok rincian; tidak ada yang ditulis untuk suntingan ini`, {
+        untrusted: true,
+        details: { edit: label, candidates: hit.slice(0, 5).map((x) => ({ part: entries[x.i].part, section: snip(entries[x.i].title) })) },
+      });
+    }
+  }
+  throw new McpToolError("TEXT_NOT_FOUND", `${label}: section tidak ditemukan; daftar section dokumen ada di blok rincian. Tidak ada yang ditulis untuk suntingan ini`, {
+    untrusted: true,
+    details: { edit: label, sections: entries.slice(0, 30).map((e) => ({ part: e.part, section: snip(e.title) })) },
+  });
+}
+
+// ── terapkan sebagian (IMPL-W5 E4) ──────────────────────────────────────
+
+/** Galat ALAMAT (teks/sel/baris/section/tabel tidak ketemu atau ganda): suntingan lain tetap diterapkan. */
+export const ADDRESS_CODES: ReadonlySet<string> = new Set(["TEXT_NOT_FOUND", "TEXT_AMBIGUOUS"]);
+
+export interface NotApplied {
+  /** nomor suntingan (1 = pertama). */
+  edit: number;
+  code: string;
+  /** keadaan yang dilihat suntingan itu saat dicari: isi tersimpan, atau sesudah suntingan sebelumnya di batch ini. */
+  seenState: "tersimpan" | "sesudah-suntingan-sebelumnya";
+  candidates: unknown;
+}
+
+/** Galat alamat -> entri notApplied (kandidat dari rincian galat; isi dokumen = tak tepercaya). Selain itu null. */
+export function notAppliedOf(e: unknown, index: number, changedBefore: boolean): NotApplied | null {
+  if (!(e instanceof McpToolError) || !ADDRESS_CODES.has(e.code)) return null;
+  const d = e.extra.details !== null && typeof e.extra.details === "object" ? (e.extra.details as Record<string, unknown>) : {};
+  const candidates = d.candidates ?? d.sections ?? d.figures ?? d.tables ?? null;
+  return { edit: index + 1, code: e.code, seenState: changedBefore ? "sesudah-suntingan-sebelumnya" : "tersimpan", candidates: { ...(Array.isArray(d.columns) ? { columns: d.columns } : {}), list: candidates } };
+}

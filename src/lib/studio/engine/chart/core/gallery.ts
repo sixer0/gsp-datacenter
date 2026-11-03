@@ -22,6 +22,7 @@ import { drawGutterLabel, gutterPlan } from "./labelfit";
 import type { CorePrep } from "./prepare";
 import { axisDomain, decimalsFor, linearScale, niceDomain } from "./scale";
 import { SvgDoc, textWidthMm, midBaseline } from "./svg";
+import { measure } from "./textfit";
 
 const LBL_PT = 6.4;
 const VAL_PT = 6.4;
@@ -47,7 +48,8 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   if (prep.family === "bar") {
     const top = 0.8;
     const bottom = H - footBand - 0.8;
-    const labelW = Math.max(...pts.map((p) => textWidthMm(p.label, LBL_PT)));
+    // IMPL-W5 D1: label terlebar diukur dengan metrik glif nyata (bukan taksiran rerata em).
+    const labelW = Math.max(...pts.map((p) => measure(p.label, LBL_PT)));
     const x00 = Math.min(Math.max(labelW + 1.6, 6), W * 0.42);
     const gp = gutterPlan(
       pts.map((p) => p.label),
@@ -109,7 +111,7 @@ export function renderGallery(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
     const limit = prep.limit as number;
     const top = 4.4;
     const base = H - footBand - 4.6;
-    const labelW = Math.max(...pts.map((p) => textWidthMm(p.label, LBL_PT)));
+    const labelW = Math.max(...pts.map((p) => measure(p.label, LBL_PT)));
     const x00 = Math.min(Math.max(labelW + 1.6, 6), W * 0.4);
     const gp = gutterPlan(
       pts.map((p) => p.label),
