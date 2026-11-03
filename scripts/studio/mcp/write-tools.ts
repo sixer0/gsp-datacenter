@@ -179,7 +179,7 @@ const WRITE_EXAMPLE = `{"mission":"2026-11-03_x","docKey":"lap-1","sections":[{"
 
 const writeTool: ToolDef = {
   name: "studio_write",
-  description: `Tulis/ganti dokumen dari isi saja; mesin memformat, menomori, cek, render, sha. Laporan: bab Ringkasan, Rincian kerja, Bukti, Isu terbuka, Langkah berikut. Klien: template "latest" + meta {title,author,number}. Contoh: ${WRITE_EXAMPLE}`,
+  description: `Tulis/ganti dokumen dari isi saja; mesin memformat, menomori, cek, render, sha. Laporan: bab Ringkasan, Rincian kerja, Bukti, Isu terbuka, Langkah berikut. Klien: template "latest" + meta {title,author,number}. Argumen harus objek JSON, bukan string berisi JSON. Contoh: ${WRITE_EXAMPLE}`,
   inputSchema: obj({ mission: S.mission, docKey: S.docKey, template: TEMPLATE, title: { type: "string", minLength: 1, maxLength: 200 }, meta: META, sections: SECTIONS, agentId: S.agentId, detail: DETAIL }, ["mission", "docKey", "sections"]),
   annotations: { title: "Tulis dokumen (isi saja)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   toolsets: ["write"],
@@ -706,7 +706,7 @@ function withNotApplied(out: ToolOutput): ToolOutput {
 const editTool: ToolDef = {
   name: "studio_edit",
   description:
-    "Sunting seperti patch tanpa basis. find = frasa >= 3 kata; {cell:{row,column},value}; {after,insert}; {section,append} mis. {section:\"Bukti\",append:[\"Teks.\",{list:[\"a\"]}]}; {section,addRow} mis. {section:\"Rincian kerja\",addRow:[\"\",\"Uji X\",\"done\"]}; {pid,at,replace}; {figure,chart}; meta. Alamat gagal -> notApplied, sisanya disimpan. ReportedAt laporan = jam server.",
+    "Sunting seperti patch tanpa basis. find = frasa >= 3 kata; {cell:{row,column},value}; {after,insert}; {section,append} mis. {section:\"Bukti\",append:[\"Teks.\",{list:[\"a\"]}]}; {section,addRow} mis. {section:\"Rincian kerja\",addRow:[\"\",\"Uji X\",\"done\"]}; {pid,at,replace}; {figure,chart}; meta. Alamat gagal -> notApplied, sisanya disimpan. ReportedAt laporan = jam server. Argumen harus objek JSON, bukan string berisi JSON.",
   inputSchema: obj({ documentId: S.documentId, mission: S.mission, docKey: S.docKey, edits: EDITS, meta: META_EDIT, agentId: S.agentId, adoptExisting: { type: "boolean", description: "Sunting dokumen buatan agentId lain (eksplisit)." }, detail: DETAIL }, []),
   annotations: { title: "Sunting teks dokumen", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   toolsets: ["write"],

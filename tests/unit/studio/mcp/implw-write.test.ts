@@ -75,11 +75,11 @@ describe('builder (murni): isi minimal -> laporan kerja MD', () => {
 });
 
 describe('toolset write', () => {
-  it('tools/list write = 6 alat; deskripsi <= 400 karakter; bawaan tanpa studio_write', async () => {
+  it('tools/list write = 6 alat; deskripsi <= 450 karakter; bawaan tanpa studio_write', async () => {
     const w = await connect({ env });
     expect((await w.client.listTools()).tools.map((t) => t.name).sort()).toEqual(['studio_contracts_query', 'studio_document_get', 'studio_edit', 'studio_file_verify', 'studio_search', 'studio_write']);
     expect(w.client.getInstructions()).toContain('studio_write');
-    for (const t of TOOLS) expect(t.description.length, t.name).toBeLessThanOrEqual(400);
+    for (const t of TOOLS) expect(t.description.length, t.name).toBeLessThanOrEqual(450);
     const all = await connect();
     expect((await all.client.listTools()).tools.map((t) => t.name)).not.toContain('studio_write');
   });
@@ -110,7 +110,9 @@ describe('studio_write lewat MCP', () => {
     // IMPL-W4 butir 5: nextSteps hanya dengan detail: true; ringkasan verifikasi (butir 3) selalu ada.
     expect(r.data.nextSteps).toBeUndefined();
     expect(r.data.verify).toBeDefined();
-    expect(r.data.warnings.map((w: any) => w.code)).toEqual(expect.arrayContaining(['ITEM_KEY_GENERATED', 'HEADING_MAPPED', 'STATUS_DEFAULTED']));
+    // IMPL-W6: ITEM_KEY_* informasional disenyapkan di hasil ringkas (hanya dengan detail: true).
+    expect(r.data.warnings.map((w: any) => w.code)).toEqual(expect.arrayContaining(['HEADING_MAPPED', 'STATUS_DEFAULTED']));
+    expect(r.data.warnings.map((w: any) => w.code)).not.toContain('ITEM_KEY_GENERATED');
     expect(r.bytes).toBeLessThan(4000);
   });
 

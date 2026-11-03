@@ -110,6 +110,17 @@ export interface ToolWarning {
   message: string;
 }
 
+/**
+ * IMPL-W6: peringatan INFORMASIONAL = mesin sudah menanganinya sendiri dan agen tidak perlu bertindak. Disembunyikan dari
+ * hasil ringkas (bawaan) studio_write/studio_edit; tetap tampil dengan `detail: true`. Peringatan lain tidak berubah.
+ */
+export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED"]);
+
+/** Saring peringatan informasional untuk hasil ringkas; `detail: true` mengembalikan daftar utuh. */
+export function quietWarnings(warnings: readonly ToolWarning[], detail: boolean): ToolWarning[] {
+  return detail ? [...warnings] : warnings.filter((w) => !INFORMATIONAL_WARNING_CODES.has(w.code));
+}
+
 export interface ToolOutput {
   text: string;
   data: Record<string, unknown>;

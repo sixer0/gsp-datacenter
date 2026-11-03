@@ -26,7 +26,7 @@ Yang TIDAK perlu kamu pikirkan:
   - Grafik dari data: `{ "chart": { "stacked": true, "categories": [...], "series": [{ "name": "...", "values": [...] }], "caption": "...", "source": "..." } }` di posisi grafik dalam bab.
 
 ```json
-{"mission":"<misi>","docKey":"<kunci>","template":"latest","agentId":"<agentId>",
+{"mission":"<misi>","docKey":"<kunci>","template":"latest",
  "meta":{"title":"<judul>","number":"<nomor dokumen>","revision":"Rev 0, terbitan pertama","date":"<tanggal>"},
  "sections":[
   {"heading":"Chapter 1. Introduction","blocks":[{"subheading":"1.1 Background"},"<paragraf>"]},
@@ -41,7 +41,7 @@ Lalu `studio_file_verify` dengan `downloadDir` untuk mengunduh DOCX final yang s
 
 Kirim `documentId` dan semua perubahan revisi dalam satu `edits`:
 
-1. Kalimat atau angka: `{"find":"<minimal tiga kata dari teks lama>","replace":"<teks baru>"}`. Tanda baca: cukup tanda baca + kata di sebelahnya.
+1. Angka atau kata: `{"find":"<minimal tiga kata dari teks lama>","replace":"<teks baru>"}`; kalimat yang berubah: `find` = SELURUH kalimat lama, `replace` = kalimat baru utuh. Tanda baca: cukup tanda baca + kata di sebelahnya.
 2. Kalimat baru yang harus menjadi bagian paragraf (mis. "kalimat terakhir paragraf terakhir"): `find` kalimat terakhir paragraf itu, `replace` dengan kalimat itu + spasi + kalimat baru. JANGAN memakai `append` untuk ini; `append` membuat paragraf baru.
 3. Paragraf baru di akhir bab: `{"section":"<judul bab>","append":["<paragraf>"]}`.
 4. Sel tabel: `{"cell":{"section":"<judul bab>","row":"<isi sel pertama baris>","column":"<kepala kolom>"},"value":"..."}`.

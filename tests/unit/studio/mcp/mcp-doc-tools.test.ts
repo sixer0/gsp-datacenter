@@ -135,10 +135,10 @@ describe('toolset (STUDIO_MCP_TOOLSETS) dan instruksi', () => {
     expect(instructionsFor(['query'])).not.toContain('studio_templates_list');
   });
 
-  it('pemadatan: setiap alat punya toolset, deskripsi <= 400 karakter, tools/list bawaan < 30 KB, reports/query < 17 KB, documents < 19 KB (FIG-03b)', async () => {
+  it('pemadatan: setiap alat punya toolset, deskripsi <= 450 karakter, tools/list bawaan < 30 KB, reports/query < 17 KB, documents < 19 KB (FIG-03b)', async () => {
     for (const t of TOOLS) {
       expect(t.toolsets.length, t.name).toBeGreaterThan(0);
-      expect(t.description.length, t.name).toBeLessThanOrEqual(400);
+      expect(t.description.length, t.name).toBeLessThanOrEqual(450);
     }
     const all = await connect();
     expect(Buffer.byteLength(JSON.stringify(await all.client.listTools()))).toBeLessThan(30_000);

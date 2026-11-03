@@ -75,6 +75,7 @@ import {
   obj,
   plainAgentId,
   query,
+  quietWarnings,
   READ,
   requireSecret,
   S,
@@ -1126,11 +1127,14 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
     if (!validate(args)) throw new McpToolError("INVALID_ARGUMENT", "argumen tidak sah menurut skema alat", { details: argIssues(validate.errors) });
     const out = await tool.run(args, ctx);
     ctx.session.noteOutcome(null);
-    const warnings = [...prepared, ...(out.warnings ?? [])];
+    const writeCompact = (name === "studio_write" || name === "studio_edit") && !(isRecord(args) && args.detail === true);
+    const allWarnings = [...prepared, ...(out.warnings ?? [])];
+    // IMPL-W6: hasil ringkas studio_write/studio_edit menyembunyikan peringatan informasional (mesin sudah menanganinya).
+    const warnings = writeCompact ? quietWarnings(allWarnings, false) : allWarnings;
     const lines = [out.text.replace(/\n$/, "")];
     for (const w of warnings) lines.push(`peringatan ${w.code}: ${w.message}`);
     // IMPL-W4 butir 5: studio_write/studio_edit ringkas bawaan: cid terakhir + jumlah (daftar penuh dengan detail: true).
-    const compact = (name === "studio_write" || name === "studio_edit") && !(isRecord(args) && args.detail === true) && cids.length > 1;
+    const compact = writeCompact && cids.length > 1;
     lines.push(compact ? `correlationId: ${cids[cids.length - 1]} (+${cids.length - 1} panggilan server lain; daftar dengan detail: true)` : cidLine(cids, callId));
     const cidData = compact ? { correlationIds: [cids[cids.length - 1]], correlationCount: cids.length } : { correlationIds: [...cids] };
     return { ok: true, text: lines.join("\n"), data: { ok: true, tool: name, ...out.data, ...(warnings.length > 0 ? { warnings } : {}), ...cidData, mcpCallId: callId } };
