@@ -107,7 +107,9 @@ describe('studio_write lewat MCP', () => {
     expect(p.every((c) => c.body.agentId === AGENT)).toBe(true);
     expect(r.data).toMatchObject({ documentId: DOC, state: 'diperbarui', completeness: { status: 'COMPLETE' } });
     expect(r.data.render.verified).toBe(true);
-    expect(r.data.nextSteps[0]).toContain('studio_edit');
+    // IMPL-W4 butir 5: nextSteps hanya dengan detail: true; ringkasan verifikasi (butir 3) selalu ada.
+    expect(r.data.nextSteps).toBeUndefined();
+    expect(r.data.verify).toBeDefined();
     expect(r.data.warnings.map((w: any) => w.code)).toEqual(expect.arrayContaining(['ITEM_KEY_GENERATED', 'HEADING_MAPPED', 'STATUS_DEFAULTED']));
     expect(r.bytes).toBeLessThan(4000);
   });

@@ -47,6 +47,11 @@ export type ParsedAddress =
 const POS = "[1-9][0-9]*";
 const NONNEG = "(?:0|[1-9][0-9]*)";
 const CHAP = `(${POS}|[A-Z])`;
+/**
+ * IMPL-W4 (review 15 F11, D-551): bab label artefak juga boleh label penomoran sumber outline (`^[A-Za-z0-9]{1,8}$`,
+ * mis. "Tabel FM.1", "Gambar 6.1"). Hanya bentuk label artefak; alamat posisi tetap memakai kunci bab internal.
+ */
+const ART_CHAP = `(${POS}|[A-Za-z][A-Za-z0-9]{0,7})`;
 
 // slotKey = C18 SLOT_KEY_PATTERN tanpa jangkar (empat kunci lama ikut cocok).
 const RE_FRONT = new RegExp(`^F:([a-z][a-zA-Z0-9]{0,31})(?:/(${POS}))?$`);
@@ -55,9 +60,9 @@ const RE_CHAPTER = new RegExp(`^${CHAP}$`);
 const RE_SECTION = new RegExp(`^${CHAP}\\.(${POS})$`);
 const RE_BLOCK = new RegExp(`^${CHAP}\\.(${NONNEG})\\.(${POS})$`);
 const RE_ITEM = new RegExp(`^${CHAP}\\.(${NONNEG})\\.(${POS})/(${POS})$`);
-const RE_TG = new RegExp(`^(Tabel|Gambar) ${CHAP}\\.(${POS})(?:/(caption|source|key))?$`);
-const RE_TURUNAN = new RegExp(`^Turunan D-${CHAP}\\.(${POS})([a-z])?(?:/(caption|source|key))?$`);
-const RE_CELL = new RegExp(`^Tabel ${CHAP}\\.(${POS})/(${POS})\\.(${POS})$`);
+const RE_TG = new RegExp(`^(Tabel|Gambar) ${ART_CHAP}\\.(${POS})(?:/(caption|source|key))?$`);
+const RE_TURUNAN = new RegExp(`^Turunan D-${ART_CHAP}\\.(${POS})([a-z])?(?:/(caption|source|key))?$`);
+const RE_CELL = new RegExp(`^Tabel ${ART_CHAP}\\.(${POS})/(${POS})\\.(${POS})$`);
 
 /** Mengurai alamat; null bila tidak sesuai EBNF (route -> 400 ADDRESS_INVALID). */
 export function parseAddress(input: string): ParsedAddress | null {

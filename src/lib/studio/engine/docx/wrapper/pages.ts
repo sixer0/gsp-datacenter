@@ -49,6 +49,7 @@ import {
   controlSheetBlockHeading,
   controlSheetKickerText,
   defaultPartLabelText,
+  kickerSuppressed,
   tocKickerText,
   type ControlSheetBlockKind,
 } from "../../front/texts";
@@ -136,6 +137,8 @@ function findChapter(doc: StudioDocV1, key: string): { ch: Chapter; appendix: bo
 }
 
 function chapterLabel(b: WrapperBuilder, ch: Chapter, key: string, appendix: boolean): string {
+  // IMPL-W4: kicker kosong eksplisit (penomoran sumber; nomor ada di judul bab) = label kosong.
+  if (kickerSuppressed(ch.kicker)) return "";
   if (hasText(ch.kicker)) return inlinePlain(ch.kicker);
   return chapterLabelText(key, appendix, b.lang);
 }

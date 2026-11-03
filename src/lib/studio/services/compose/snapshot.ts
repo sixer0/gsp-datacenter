@@ -294,7 +294,13 @@ export function composeV2(input: ComposeInput): ComposeResult {
   };
 
   // ── Bab dan lampiran ──────────────────────────────────────────────────
-  const emitChapter = (slot: TemplateSlotDef, c: ChapterV2, kind: "chapter" | "appendix"): Chapter => {
+  // IMPL-W4: penghitung label Tabel/Gambar/Turunan per label sumber (bab berlabel sama, mis. FM.1..FM.3 = "FM", berbagi).
+  const sourceCounters = new Map<string, { t: number; g: number; d: number }>();
+  /**
+   * `sourceLabel` (IMPL-W4, outline `label`): penomoran sumber. Judul bab dan section dicetak apa adanya (kicker kosong
+   * eksplisit, nomor section kosong eksplisit), label artefak = `Tabel <label>.n`. Absen = perilaku lama (byte-identik).
+   */
+  const emitChapter = (slot: TemplateSlotDef, c: ChapterV2, kind: "chapter" | "appendix", sourceLabel?: string): Chapter => {
     const slotKey = slot.slotKey;
     const key = c.key;
     const cpid = requirePid(c.id, `Bab ${key}`);
@@ -304,11 +310,17 @@ export function composeV2(input: ComposeInput): ComposeResult {
     const head: Chapter = { key, blockId: cpid, title: mapInline(c.title, inlineCtx), sections: [] };
     if (c.partId !== undefined) head.partId = c.partId;
     if (c.shortTitle !== undefined) head.runningHeadTitle = c.shortTitle;
+    if (sourceLabel !== undefined) head.kicker = { text: "" };
     const headContent: Partial<Chapter> = { ...head };
     delete headContent.sections;
     pushBlock({ blockId: cpid, pid: cpid, slotKey, address: key, unitKey: key, type: kind, content: headContent });
 
-    const counters = { t: 0, g: 0, d: 0 };
+    const lk = sourceLabel ?? key;
+    let counters = { t: 0, g: 0, d: 0 };
+    if (sourceLabel !== undefined) {
+      counters = sourceCounters.get(sourceLabel) ?? counters;
+      sourceCounters.set(sourceLabel, counters);
+    }
     const flow = (items: readonly BlockV2[] | undefined, sectionNo: number): FlowItem[] => {
       const out: FlowItem[] = [];
       (items ?? []).forEach((b, k) => {
@@ -317,9 +329,9 @@ export function composeV2(input: ComposeInput): ComposeResult {
         claimPid(pid, `chapter:${key}`);
         let label: string | undefined;
         const hasCaption = (b as { caption?: unknown }).caption !== undefined;
-        if (TABLE_TYPES.has(b.type) && hasCaption) label = `Tabel ${key}.${++counters.t}`;
-        else if (FIGURE_TYPES.has(b.type) && hasCaption) label = `Gambar ${key}.${++counters.g}`;
-        else if (b.type === "derivation") label = `Turunan D-${key}.${++counters.d}`;
+        if (TABLE_TYPES.has(b.type) && hasCaption) label = `Tabel ${lk}.${++counters.t}`;
+        else if (FIGURE_TYPES.has(b.type) && hasCaption) label = `Gambar ${lk}.${++counters.g}`;
+        else if (b.type === "derivation") label = `Turunan D-${lk}.${++counters.d}`;
         if (label !== undefined) e.numbering[pid] = label;
         const internal: Block = mapBlock(b, pid, { ...bctx, artifactLabel: label });
         out.push(internal);
@@ -336,7 +348,8 @@ export function composeV2(input: ComposeInput): ComposeResult {
       const sectionNo = j + 1;
       const spid = requirePid(s.id, `Section ${key}.${sectionNo}`);
       claimPid(spid, `chapter:${key}`);
-      const sHead = { blockId: spid, title: mapInline(s.title, inlineCtx) };
+      const sHead: { blockId: string; title: ReturnType<typeof mapInline>; number?: string } = { blockId: spid, title: mapInline(s.title, inlineCtx) };
+      if (sourceLabel !== undefined) sHead.number = "";
       pushBlock({ blockId: spid, pid: spid, slotKey, address: `${key}.${sectionNo}`, unitKey: key, type: "section", content: sHead });
       return { ...sHead, blocks: flow(s.blocks, sectionNo) };
     });
@@ -346,6 +359,9 @@ export function composeV2(input: ComposeInput): ComposeResult {
   const emitContentSlot = (slot: TemplateSlotDef, payload: ContentSlotPayloadV2 | AppendixSlotPayloadV2 | undefined) => {
     const chapters = [...(payload?.chapters ?? [])].sort((a, b) => compareChapterKeys(a.key, b.key));
     if (slot.sectionType === "appendix") {
+      // Review 15 F10: label penomoran sumber hanya berlaku di slot bab; di lampiran diabaikan dengan peringatan.
+      const ignored = ((payload as AppendixSlotPayloadV2 | undefined)?.outline ?? []).filter((o) => typeof o.label === "string" && o.label !== "").map((o) => o.key);
+      if (ignored.length > 0) e.warnings.push({ code: "OUTLINE_LABEL_IGNORED", message: `label penomoran sumber di outline lampiran ${slot.slotKey} diabaikan (hanya slot bab): ${ignored.join(", ")}` });
       chapters.forEach((c) => docV1.appendices?.push(emitChapter(slot, c, "appendix")));
       return;
     }
@@ -355,7 +371,12 @@ export function composeV2(input: ComposeInput): ComposeResult {
     const firstParted = chapters.findIndex((c) => partOf(c) !== null);
     const leading = chapters.filter((c, i) => partOf(c) === null && (firstParted === -1 || i < firstParted));
     const trailing = chapters.filter((c, i) => partOf(c) === null && firstParted !== -1 && i > firstParted);
-    const push = (c: ChapterV2) => docV1.chapters.push(emitChapter(slot, c, "chapter"));
+    const sourceLabels = new Map<string, string>();
+    for (const o of (payload as ContentSlotPayloadV2 | undefined)?.outline ?? []) if (typeof o.label === "string" && o.label !== "") sourceLabels.set(o.key, o.label);
+    // Review 15 F10: label yatim (kunci outline tanpa bab) tidak boleh diam-diam diwarisi bab baru tanpa jejak.
+    const orphans = [...sourceLabels.keys()].filter((k) => !chapters.some((c) => c.key === k));
+    if (orphans.length > 0) e.warnings.push({ code: "OUTLINE_LABEL_ORPHAN", message: `label penomoran sumber di outline ${slot.slotKey} tanpa bab: ${orphans.join(", ")}` });
+    const push = (c: ChapterV2) => docV1.chapters.push(emitChapter(slot, c, "chapter", sourceLabels.get(c.key)));
     leading.forEach(push);
     parts.forEach((p, pi) => {
       if (partIdx.get(p.id) !== pi) return;
@@ -512,6 +533,16 @@ export function composeV2(input: ComposeInput): ComposeResult {
     slots,
   };
 
+  // Review 15 F1: label artefak wajib unik (FigureStore DOCX dan alamat label memakai label sebagai kunci). Hanya bisa
+  // bertabrakan bila penomoran sumber dipakai (bab berlabel L + bab/lampiran tanpa label berkunci L).
+  if (sourceCounters.size > 0) {
+    const seen = new Map<string, string>();
+    for (const [pid, label] of Object.entries(e.numbering)) {
+      const prior = seen.get(label);
+      if (prior !== undefined) composeFail("BY_CONSTRUCTION_FAILED", `Label artefak "${label}" ganda (blok ${prior} dan ${pid}): label penomoran sumber outline bertabrakan dengan kunci bab/lampiran tanpa label; beri label pada semua bab atau pilih label lain`, { label, pids: [prior, pid] });
+      seen.set(label, pid);
+    }
+  }
   const register: Record<string, RegisterEntry> = { ...(src.register ?? {}) };
   const snapshot: ComposedSnapshotV2 = {
     schema: "studio.norm/v2",

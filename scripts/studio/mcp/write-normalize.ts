@@ -170,6 +170,16 @@ export function normalizeWriteArgs(a: Args): ToolWarning[] {
   alias(a, ["missionFolder", "mission_folder", "folder"], "mission", n, "args");
   alias(a, ["chapters", "content", "bab"], "sections", n, "args");
   alias(a, ["templateSlug", "template_slug"], "template", n, "args");
+  normalizeMetaArg(a, n);
+  if (typeof a.title === "string" && a.title.trim() === "") delete a.title;
+  if (Array.isArray(a.sections)) a.sections = a.sections.map((s, i) => normalizeSection(s, i, n));
+  prune(a, ["mission", "docKey", "template", "title", "meta", "sections", "agentId", "detail"], n, "args");
+  return n.done();
+}
+
+/** Prapemrosesan `studio_edit`. */
+/** meta datar: angka/boolean -> teks, nilai lain dibuang, panjang dibatasi (studio_write dan saluran meta studio_edit). */
+function normalizeMetaArg(a: Args, n: Notes): void {
   if (isRecord(a.meta)) {
     const meta: Rec = {};
     for (const [k, v] of Object.entries(a.meta)) {
@@ -184,15 +194,12 @@ export function normalizeWriteArgs(a: Args): ToolWarning[] {
     delete a.meta;
     n.ignore("args", "meta");
   }
-  if (typeof a.title === "string" && a.title.trim() === "") delete a.title;
-  if (Array.isArray(a.sections)) a.sections = a.sections.map((s, i) => normalizeSection(s, i, n));
-  prune(a, ["mission", "docKey", "template", "title", "meta", "sections", "agentId"], n, "args");
-  return n.done();
 }
 
-/** Prapemrosesan `studio_edit`. */
 export function normalizeEditArgs(a: Args): ToolWarning[] {
   const n = new Notes();
+  // IMPL-W4 butir 2: saluran meta (status/verdict/... laporan kerja; title/number/rev/date/... dokumen klien).
+  normalizeMetaArg(a, n);
   alias(a, ["changes", "patches", "patch", "edit"], "edits", n, "args");
   alias(a, ["doc_key", "key"], "docKey", n, "args");
   if (isRecord(a.edits)) a.edits = [a.edits];
@@ -255,6 +262,6 @@ export function normalizeEditArgs(a: Args): ToolWarning[] {
       return o;
     });
   }
-  prune(a, ["documentId", "mission", "docKey", "edits", "agentId", "adoptExisting"], n, "args");
+  prune(a, ["documentId", "mission", "docKey", "edits", "meta", "agentId", "adoptExisting", "detail"], n, "args");
   return n.done();
 }

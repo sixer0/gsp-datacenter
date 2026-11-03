@@ -16,7 +16,8 @@
  * Modul ini khusus server (playwright-core, node:fs). `serverExternalPackages`
  * di next.config.ts milik S69.
  */
-import type { BrowserHandle, LayoutMetrics } from "../../contract";
+import type { BrowserHandle, LayoutMetrics, ResolvedTemplate } from "../../contract";
+import { StudioEngineError } from "../../contract/errors";
 import { getStudioEnv } from "../../contract/env";
 import {
   DOC_SIZE_SCRIPT,
@@ -25,6 +26,7 @@ import {
   PAGE_RECTS_SCRIPT,
 } from "./measure";
 import { readPngSize, withPngDpi } from "./png";
+import { rasterFontCss } from "./raster-fonts";
 import {
   ensureBrowser,
   shutdownBrowser,
@@ -237,7 +239,7 @@ export async function getBrowser(): Promise<BrowserHandle> {
  * #FFFFFF, svg `display:block` langsung di body (sama dengan acuan); lebar dan
  * tinggi svg diset ke px CSS geometri di atas. pHYs 300 dpi tetap ditanam.
  */
-export async function rasterizeSvg(svg: string, i: { widthMm: number; heightMm: number; dpi: 300 }): Promise<Uint8Array> {
+export async function rasterizeSvg(svg: string, i: { widthMm: number; heightMm: number; dpi: 300; tpl?: ResolvedTemplate }): Promise<Uint8Array> {
   const op = "rasterizeSvg";
   assertSize(op, svg, BROWSER_MAX_SVG_BYTES);
   const widthMm = assertMm(op, "widthMm", i?.widthMm);
@@ -248,8 +250,12 @@ export async function rasterizeSvg(svg: string, i: { widthMm: number; heightMm: 
   if (geo.approxPxW > BROWSER_MAX_BITMAP_PX || geo.approxPxH > BROWSER_MAX_BITMAP_PX) {
     fail(op, `bitmap ${geo.approxPxW}x${geo.approxPxH} px outside 1..${BROWSER_MAX_BITMAP_PX}`);
   }
+  // IMPL-W4 butir 4: keluarga templat yang dirujuk SVG ditanam (fon pengukuran chart), bukan fon sistem host.
+  const fonts = rasterFontCss(inline, i.tpl);
+  let fontMissing: string[] = [];
   const html =
     `<!doctype html><html><head><meta charset="utf-8"><style>` +
+    fonts.css +
     `html,body{margin:0;padding:0;background:#FFFFFF}` +
     `svg{display:block}` +
     `body>svg{width:${geo.cssW}px;height:${geo.cssH}px}` +
@@ -258,6 +264,33 @@ export async function rasterizeSvg(svg: string, i: { widthMm: number; heightMm: 
   const png = await withSandboxedPage(op, { viewport: geo.viewport, deviceScaleFactor: geo.scale }, async ({ page }) => {
     await page.setContent(html, { waitUntil: "load" });
     await page.evaluate(FONTS_READY_SCRIPT);
+    if (fonts.families.length > 0) {
+      // Review 15 F2: hanya wajah yang BENAR-BENAR membentuk glif diperiksa: keluarga pertama terhitung pada teks
+      // bertubuh tak kosong, per berat/gaya, dimuat dengan contoh teksnya. Teks kosong, keluarga cadangan di daftar,
+      // dan aturan gaya tak terpakai tidak memicu penolakan.
+      fontMissing = await page.evaluate(async (fams: string[]) => {
+        const norm = (s: string) => s.replace(/^["']|["']$/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+        const embedded = new Set(fams.map(norm));
+        const want = new Map<string, string>();
+        for (const el of Array.from(document.querySelectorAll("text, tspan"))) {
+          const t = (el.textContent ?? "").trim();
+          if (t === "") continue;
+          const cs = getComputedStyle(el);
+          const first = cs.fontFamily.split(",")[0] ?? "";
+          if (!embedded.has(norm(first))) continue;
+          const font = `${cs.fontStyle} ${cs.fontWeight} 12px "${norm(first)}"`;
+          if (!want.has(font)) want.set(font, t.slice(0, 64));
+        }
+        const bad: string[] = [];
+        for (const [font, sample] of want) {
+          // Berkas fon rusak -> load() menolak (NetworkError): itu juga "tidak termuat", bukan galat browser.
+          const faces = await document.fonts.load(font, sample).catch(() => [] as FontFace[]);
+          if (!faces.some((f) => f.status === "loaded")) bad.push(font);
+        }
+        return bad;
+      }, fonts.families);
+      if (fontMissing.length > 0) return Buffer.alloc(0);
+    }
     const shot = () =>
       page.screenshot({
         type: "png",
@@ -279,6 +312,8 @@ export async function rasterizeSvg(svg: string, i: { widthMm: number; heightMm: 
     }
     throw new StudioBrowserError("RENDER_FAILED", op, `raster did not settle after ${RASTER_SETTLE_MAX_SHOTS} captures (non-deterministic bitmap)`);
   });
+  // Review 15 F3: penolakan karena isi/aset = deterministik -> 422 BY_CONSTRUCTION_FAILED (bukan 503 sementara).
+  if (fontMissing.length > 0) throw new StudioEngineError("BY_CONSTRUCTION_FAILED", `rasterizeSvg: fon tertanam tidak termuat untuk teks yang dicetak: ${fontMissing.join(", ")}`, { fonts: fontMissing });
   const size = readPngSize(png);
   // Toleransi satu px CSS (= skala + 1 px device) terhadap ukuran matematis.
   const tol = Math.ceil(geo.scale) + 1;

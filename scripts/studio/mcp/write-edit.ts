@@ -300,7 +300,9 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       // paragraf ber-pid; find hanya dicari di dalam satuan itu. Tidak ketemu -> POSITION_MISMATCH (0 tulis).
       const units = unitsOf(parts);
       const want = exactView(e.target.plain).text;
-      const cands = units.filter((u) => u.kind === "paragraph" && !isFence(u) && parts[u.part].part === e.section && exactView(plainOf(u.text)).text === want);
+      // IMPL-W4 W3-L1r: satuan daftar/kutipan ("- x", "1. x", "> x") bukan paragraf server (paragraphsOf hanya menghitung
+      // blok paragraph), jadi tidak ikut dihitung agar nth tidak bergeser oleh butir daftar berteks sama.
+      const cands = units.filter((u) => u.kind === "paragraph" && !isFence(u) && !LIST_MARKER_RE.test(u.text.trimStart()) && parts[u.part].part === e.section && exactView(plainOf(u.text)).text === want);
       const u = e.target.nth >= 0 ? cands[e.target.nth] : undefined;
       if (u === undefined) throw new McpToolError("POSITION_MISMATCH", `${label}: paragraf ber-pid itu tidak dapat dipetakan tepat ke teks bab (${cands.length} kandidat); tidak ada yang ditulis. Pakai { find, replace, section }`);
       const { hits } = findText(e.find, matchUnitsOf([u], parts), {}, label);

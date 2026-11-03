@@ -47,6 +47,15 @@ const META_ALIASES: Readonly<Record<string, MetaField>> = {
 export type ClientMeta = Partial<Record<MetaField, string>>;
 const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
+/** Kunci meta agen -> medan kanonik (alias, camelCase, _ dan -); undefined = tidak dikenal. */
+export function metaFieldOf(k: string): MetaField | undefined {
+  const key = k.trim().replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  return META_ALIASES[k.trim().toLowerCase()] ?? META_ALIASES[key] ?? META_ALIASES[key.replace(/ /g, "")];
+}
+
+/** IMPL-W4 W4-I1: nomor meta = nomor TAMPILAN (sampul/lembar kendali), bukan nomor dokumen server (D-527). */
+export const NUMBER_DISPLAY_ONLY: ToolWarning = { code: "NUMBER_DISPLAY_ONLY", message: "meta.number/docNumber = nomor tampilan di sampul dan lembar kendali; nomor dokumen server tidak berubah" };
+
 /** Meta datar agen -> medan kanonik; kunci tak dikenal = peringatan. title + author wajib (tidak dikarang). */
 export function normalizeMeta(raw: Record<string, string>, title: string | null, today: string, warn: (w: ToolWarning) => void): ClientMeta {
   const m: ClientMeta = {};
@@ -60,6 +69,7 @@ export function normalizeMeta(raw: Record<string, string>, title: string | null,
     else if (val !== "") m[f] = val;
   }
   if (title !== null && title.trim() !== "") m.title = title.replace(/\s+/g, " ").trim();
+  if (Object.keys(raw).some((k) => metaFieldOf(k) === "number")) warn(NUMBER_DISPLAY_ONLY);
   if (unknown.length > 0) warn({ code: "META_IGNORED", message: `meta tidak dikenal: ${unknown.slice(0, 8).join(", ")} (dikenal: title, number, rev, date, author, checker, approver, classification, audience, custodian, subject, basis, language, standfirst, method, distribution, source)` });
   const missing = (["title", "author"] as const).filter((f) => m[f] === undefined);
   if (missing.length > 0) {
@@ -334,6 +344,60 @@ export interface ChapterPlan {
   key: string;
   title: string;
   section: ClientSection;
+  /** IMPL-W4 butir 1: label penomoran sumber (hanya mode sumber): "6", "FM", "IV". */
+  label?: string;
+}
+
+// ── IMPL-W4 butir 1: penomoran sumber ──────────────────────────────────
+// Judul yang membawa nomornya sendiri ("Chapter 1. Introduction", "1.1 Product concept", "FM.1 Document control
+// block") dicetak PERSIS: tanpa menomori ulang, tanpa menyarangkan, tanpa nomor ganda. Label Tabel/Gambar = nomor bab
+// sumber ("Tabel 6.1"); bagian depan FM.x tetap bagian sendiri (label "FM": "Tabel FM.1").
+const SRC_WORD = /^\s*(?:bab|chapter|bagian|part)\s+(\d{1,3}|[A-Z]{1,2}|[IVXLC]{1,6})(?=[\s.:)\-–]|$)/i;
+const SRC_ALPHA = /^\s*([A-Z]{1,4})\.\d{1,3}(?:\.\d{1,3})*\.?\s+(?=\S)/;
+const SRC_NUM = /^\s*(\d{1,3})(?:\.\d{1,3})*[.)]?\s+(?=\S)/;
+const SUB_SRC = /^\s*(\d{1,3}|[A-Z]{1,4})\.\d{1,3}(?:\.\d{1,3})*\.?\s+(?=\S)/;
+
+/** Label penomoran dari nomor sumber di judul bab; null = judul tanpa nomor. */
+export function sourceLabelOf(heading: string): string | null {
+  const w = SRC_WORD.exec(heading);
+  if (w) return w[1].toUpperCase();
+  const a = SRC_ALPHA.exec(heading);
+  if (a) return a[1];
+  const n = SRC_NUM.exec(heading);
+  return n ? n[1] : null;
+}
+
+const subheadingOf = (b: ClientBlock): string | null =>
+  typeof b === "object" && b !== null && !Array.isArray(b) && typeof (b as Rec).subheading === "string" ? ((b as Rec).subheading as string) : null;
+
+/** Mode sumber: ada judul bab atau sub-judul yang membawa nomornya sendiri. */
+export function usesSourceNumbering(sections: readonly ClientSection[]): boolean {
+  return sections.some((s) => sourceLabelOf(s.heading) !== null || s.blocks.some((b) => SUB_SRC.test(subheadingOf(b) ?? "")));
+}
+
+/**
+ * Rencana mode sumber: kunci internal berurutan 1..n (urutan agen), judul apa adanya, label = nomor sumber judul bab,
+ * atau komponen pertama nomor sub-judul pertama, atau label bab sebelumnya/berikutnya (penghitung Tabel/Gambar
+ * bersama). Tidak ada penyarangan dan tidak ada penomoran ulang.
+ */
+function planSource(sections: readonly ClientSection[]): ChapterPlan[] {
+  const own = sections.map((s) => {
+    const l = sourceLabelOf(s.heading);
+    if (l !== null) return l;
+    for (const b of s.blocks) {
+      const m = SUB_SRC.exec(subheadingOf(b) ?? "");
+      if (m) return m[1];
+    }
+    return null;
+  });
+  const firstKnown = own.find((l): l is string => l !== null) ?? "1";
+  let last: string | null = null;
+  return sections.map((s, i) => {
+    const label = own[i] ?? last ?? firstKnown;
+    last = label;
+    const title = s.heading.replace(/\s+/g, " ").trim();
+    return { key: String(i + 1), title: title === "" ? label : title, section: { heading: s.heading, blocks: [...s.blocks] }, label };
+  });
 }
 
 /**
@@ -342,8 +406,11 @@ export interface ChapterPlan {
  * nomor bebas (mis. "Ringkasan" sebelum "1. Pendahuluan"), bagian itu menjadi sub-bagian bab bernomor di sebelahnya
  * (bab sebelumnya; bila di depan, bab berikutnya sesudah pembukanya) dengan peringatan SECTION_NESTED. Hanya nomor
  * eksplisit yang tidak naik/ganda yang diberi nomor lain (CHAPTER_RENUMBERED).
+ * IMPL-W4 butir 1: bila ada judul/sub-judul bernomor sumber, rencana mode sumber (`planSource`) yang dipakai: judul
+ * dicetak persis, tanpa penyarangan dan penomoran ulang (D-544/D-547, UD-2).
  */
 export function planChapters(sections: readonly ClientSection[], warn: (w: ToolWarning) => void): ChapterPlan[] {
+  if (usesSourceNumbering(sections)) return planSource(sections);
   const parsed = sections.map((s) => {
     const m = HEADING_NUM.exec(s.heading);
     return { s, num: m ? Number(m[1]) : null, title: (m ? m[2] : s.heading).replace(/\s+/g, " ").trim() };
@@ -412,7 +479,7 @@ export function chapterKeys(sections: readonly ClientSection[], warn: (w: ToolWa
  * Satu bagian -> ChapterV2 (blok sebelum subheading pertama = intro; setiap subheading = section). null = tanpa isi
  * (dilewati dengan peringatan; IMPL-W3 butir 6).
  */
-export function chapterOf(sec: ClientSection, key: string, title: string, metaSource: string | null, warn: (w: ToolWarning) => void, where: string, issue: IssueSink = THROW): Rec | null {
+export function chapterOf(sec: ClientSection, key: string, title: string, metaSource: string | null, warn: (w: ToolWarning) => void, where: string, issue: IssueSink = THROW, keepNumbers = false): Rec | null {
   const intro: Rec[] = [];
   const sections: Array<{ title: InlineV2; blocks: Rec[] }> = [];
   const push = (b: Rec) => {
@@ -432,7 +499,8 @@ export function chapterOf(sec: ClientSection, key: string, title: string, metaSo
     }
     const o = b as unknown as Rec;
     if (typeof o.subheading === "string") {
-      const t = o.subheading.replace(SUB_NUM, "");
+      // IMPL-W4 butir 1: mode sumber = sub-judul apa adanya (nomor sumber dicetak; mesin tidak menomori section).
+      const t = keepNumbers ? o.subheading.replace(/\s+/g, " ").trim() : o.subheading.replace(SUB_NUM, "");
       if (t !== o.subheading) stripped++;
       sections.push({ title: inl(t), blocks: [] });
     } else if (isRows(o.table)) push(tableBlock(o.table, o.caption as string | undefined, o.source as string | undefined, metaSource, warn, w, title, issue, o.unit as string | undefined));
@@ -457,6 +525,8 @@ export interface BuiltClient {
   warnings: ToolWarning[];
   /** IMPL-W3 butir 6: judul bagian tanpa isi yang dilewati (tidak dikirim). */
   emptySections: string[];
+  /** IMPL-W4 butir 1: outline penomoran sumber ({ key, title, label }); null = penomoran mesin. */
+  outline: Array<{ key: string; title: InlineV2; label: string }> | null;
 }
 
 /**
@@ -475,10 +545,15 @@ export function buildClient(input: { meta: Record<string, string>; title: string
   const plan = planChapters(input.sections, warn);
   const emptySections: string[] = [];
   const chapters: Rec[] = [];
+  const source = plan.some((p) => p.label !== undefined);
+  const outline: Array<{ key: string; title: InlineV2; label: string }> = [];
   plan.forEach((p, i) => {
-    const ch = chapterOf(p.section, p.key, p.title, metaSource, warn, `bagian ${i + 1}`, issue);
+    const ch = chapterOf(p.section, p.key, p.title, metaSource, warn, `bagian ${i + 1}`, issue, source);
     if (ch === null) emptySections.push(p.title);
-    else chapters.push(ch);
+    else {
+      chapters.push(ch);
+      if (p.label !== undefined) outline.push({ key: p.key, title: ch.title as InlineV2, label: p.label });
+    }
   });
   if (emptySections.length > 0) warn({ code: "SECTION_EMPTY_SKIPPED", message: `bagian tanpa isi tidak dikirim: ${emptySections.slice(0, 5).join("; ")}` });
   if (chapters.length === 0 && issues.length === 0) issue({ where: "sections", code: "SECTION_MISSING", message: "tidak ada bagian berisi; tambahkan paragraf/tabel/grafik" });
@@ -492,5 +567,5 @@ export function buildClient(input: { meta: Record<string, string>; title: string
   const merged = new Map<string, ToolWarning[]>();
   for (const w of warnings) merged.set(w.code, [...(merged.get(w.code) ?? []), w]);
   const compact = [...merged.values()].map((ws) => (ws.length === 1 ? ws[0] : { code: ws[0].code, message: `${ws.length}x: ${ws.slice(0, 3).map((w) => w.message).join(" | ")}${ws.length > 3 ? " | ..." : ""}` }));
-  return { meta, docMeta, slots, chapters, warnings: compact, emptySections };
+  return { meta, docMeta, slots, chapters, warnings: compact, emptySections, outline: source ? outline : null };
 }

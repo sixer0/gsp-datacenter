@@ -536,3 +536,68 @@ Skenario: agen yang terkena prompt injection dari bahan kerja (atau agen yang se
 | 18 | 2026-11-03 14:25 | `npx vitest run tests/unit/studio/mcp` | L3 | 267/267 lulus | - | security-review |
 | 19 | 2026-11-03 14:25-14:50 | Baca `write-parts.ts`, `rewriteOwnReport`, pemetaan pid, perbandingan jenis blok, `noteOutcome`; probe p17, p18 baru; ulang p6-p16 | L3 | Semua temuan IMPL-W3 tertutup; sisa S2-2r, W3-L1r (Low) | - | security-review |
 | 20 | 2026-11-03 | Vonis IMPL-W3 siklus 1 | L3 | **PASS** (0 High, 0 Medium, 2 Low sisa) | Low ke controller untuk keputusan pengguna | security-review |
+
+---
+
+## IMPL-W4: perbaikan ronde 6 (verifikasi tercetak, saluran meta, aturan sesi, fon raster, label outline), 2026-11-03
+
+### W4.1 Ringkasan
+
+| Butir | Nilai |
+|---|---|
+| Vonis IMPL-W4 | **CAUTION**: 0 High, 1 Medium (W4-M1), 2 Low (W4-L1, W4-L2), 2 Info |
+| 1. `write-verify.ts` | **PASS dengan Low**: tanpa tulis disk; teks dokumen di blok/bertanda; tanpa batas ukuran unduhan/dekompresi (W4-L2) |
+| 2. Saluran meta `studio_edit` | Laporan kerja: **PASS**. Klien: **W4-M1** (slot depan disusun ulang secara lossy, entri yang tidak dikenal hilang) |
+| 3. Aturan sesi S2-2r | **PASS dengan Low**: terisolasi per sesi dan per dokumen; tanpa ikatan revisi (W4-L1) |
+| 4. Fon raster | **PASS** |
+| 5. `label` outline + penghapusan kicker | **PASS** |
+| 6. Regresi p6-p18 | **PASS**. S2-2r (P2, C2) dan W3-L1r (Q1) kini tertutup untuk sesi lain/pemetaan pid |
+| Uji segar | `npx vitest run tests/unit/studio/mcp` -> `Tests 289 passed (289)` (mulai 22:15:50) |
+| Tingkat | **L3**. `write-verify.ts`, `write-meta.ts`, `raster-fonts.ts` dibaca utuh; diff `browser/index.ts`, skema `OutlineEntryV2`, `compose/snapshot.ts`; `McpSession.noteParts/wrotePart`, `requireOwnParts(present)`, `patchRecordHeader`, jalur `studio_edit` meta. Probe baru: p19 (fungsi langsung: zip bom, entri traversal, entitas, regex, fon), p20 (meta laporan/klien), p21 (aturan sesi, gema verifikasi berpenanda). Ulang p6-p18. Tanpa DEV, DB, port 9011, maupun rahasia |
+
+### W4.2 Hasil per butir
+
+| Butir | Status | Bukti |
+|---|---|---|
+| 1a Parsing aman | PASS (W4-L2) | Tidak ada parser XML (regex atas `word/document.xml`/`docProps/app.xml`); entitas hanya 5 entitas baku + numerik. DOCTYPE/entitas bertingkat tidak diurai. Numerik di luar Unicode -> `RangeError` -> ditangkap `verifySummary` (`VERIFY_INCOMPLETE`, tulis tetap sukses) (p19 V3). Entri zip lain (mis. `../../../evil.txt`) tidak dibaca: `unzipSync` hanya memfilter dua nama (V2). Batas: lihat W4-L2 |
+| 1b Tulis disk | PASS | Semua di memori; tidak ada `fs`/path di `write-verify.ts` |
+| 1c Bungkus tak tepercaya | PASS | Judul/keterangan/gema record-meta hanya di `untrustedBlock` (`write-verify.ts:149,165-166,182`); baris `verifikasi:` hanya `tok()`/angka/sha hitungan lokal. structuredContent dinetralkan; `untrustedFields`: ringkas = `verify.record` (judul/keterangan hanya hitungan), `detail: true` = `verify.headings/captions/record`. p21 V1: judul + keterangan HTML berpenanda -> 0 penanda di luar blok, 0 di structuredContent (keduanya mode). Klien: `verify.meta` bertanda (p20 K1: `verifyMetaFlagged: true`, nilai dinetralkan) |
+| 2a Meta laporan: pemilik/basis | PASS | `targetDoc` (F-2) sebelum baca isi: pemilik lain -> `DOCUMENT_OWNED_BY_OTHER`, 0 baca R20, 0 tulis (p20 M2). Baris kepala record ditambal pada salinan Markdown yang sama lalu lewat jalur update ber-basis + `assertEditShape` (`plan.fields` = medan meta saja) (`write-tools.ts:539-572`) |
+| 2b Meta laporan: penyelundupan | PASS | p20 M1: `status: "complete\nOwner: mallory"` -> tidak diterapkan (status tetap); `owner: "mallory\nStatus: draft"` -> tidak sah, owner tetap; `taskRef: "T-1\n## X"` -> `T-1-X`; `initiator: "Bad Actor"` -> `bad-actor`; `agentId`/`createdBy`/`items` di meta -> diabaikan; POST tetap `agentId` pemanggil; butir record tetap. Nilai dirapatkan ke satu baris dan dipersempit `recordMetaFields`/`normalizeOptionalFields` |
+| 2c Meta klien: pemilik/basis | PASS | `targetDoc` F-2 + setMeta/slot dengan `baseRevisionNo` = revisi yang dibaca. `docNumber` server tidak pernah dikirim (`docMetaOf`); `meta.docNumber` agen = alias nomor TAMPILAN (sampul), bukan nomor server (p20 K1: `docNumber` server tetap `018/GSP/KT/XI/2026`) |
+| 2d Meta klien: struktur | **W4-M1** | Slot payload JSON (bukan Markdown), jadi tidak ada injeksi struktur; nilai multiline dirapatkan (`N-2\n## Palsu` tidak tersimpan mentah). Tetapi penyusunan ulang slot menghapus entri di luar model, lihat W4-M1 |
+| 2e Gema meta | PASS | Hasil klien: `meta` gema lewat `tok(..., "(teks)")` (`write-client-run.ts:421`); nilai bebas -> `(teks)`; `verify.meta` di blok + bertanda |
+| 3 Aturan sesi | PASS (W4-L1) | Status per `McpSession` (satu per proses/klien MCP) dan per `documentId` (`tool-kit.ts:31-40`); dicatat hanya SESUDAH tulis sukses (`write-tools.ts:204,283,608`; `write-client-run.ts:325,419`). Sesi lain: p20/p21 sesi B -> `PART_CHANGED_BY_OTHER`; p17 P2/C2 (penulis null) kini ditolak. Sesi tidak dapat mengklaim bagian yang tidak ditulisnya. Kelemahan: tanpa revisi, lihat W4-L1 |
+| 4 Fon raster | PASS | Keluarga diambil dari SVG lalu dicocokkan ke daftar putih 4 keluarga Plex (`raster-fonts.ts:20-47`); path berkas tetap (nama keluarga tidak pernah dipakai di path). p19 F1: `font-family="IBM Plex Mono, \"x\");}</style><script>..."`, `../../etc/passwd` -> hanya `IBM Plex Mono` dan `IBM   PLEX  sans` ditanam; CSS tanpa `</style`/`<script`; nama di CSS dibuang `"`/`\`. Fon = `data:` dari aset repo; halaman raster tetap offline + `route **/*` abort + JS mati (`runtime.ts:433-456`). Penolakan "embedded font not loaded" hanya bila berkas aset repo ada tetapi gagal dimuat; agen tidak dapat memengaruhi aset (DoS hanya bila aset repo rusak = masalah deploy) |
+| 5 Label outline | PASS | Skema `^[A-Za-z0-9]{1,8}$` (`common.schema.ts`); MCP menurunkan label hanya dari regex digit/huruf (`write-client.ts:345-358`). Label dipakai di `Tabel <label>.n`/`Gambar <label>.n`; tanpa karakter markah. Kicker kosong `{text:""}` dan nomor section `""`; teks judul tetap lewat escape perender yang ada |
+| 6 Regresi | PASS | p6 B2/B3/B4, p7 C1-C7, p8, p9, p10 (D1 `CONTENT_INJECTION`, D7 `BASIS_MISSING`, D8 kini `PART_CHANGED_BY_OTHER`), p11 R1/R2, p12, p13 O1/L1, p14 Q1-Q7, p15 K2, p16, p17 (M1: `RECORD_KEPT` + `RECORD_META_APPLIED`, status diterapkan, butir 2 -> 2; M2/M3 ditolak; P1-P4; Q1 kini paragraf pid; C1/C2 ditolak), p18 |
+
+### W4.3 Temuan
+
+| ID | Severity | Jenis | Lokasi | Deskripsi | Remediasi |
+|---|---|---|---|---|---|
+| W4-M1 | Medium | Integritas: penghapusan diam-diam (operasi destruktif) | `write-meta.ts:63-107` (`applyClientMeta`), `serverClientMeta:18-57`; `write-client-run.ts:355` | `studio_edit { meta: {...} }` pada dokumen klien menyusun ulang `cover`/`controlSheet`/`signature` dari rekonstruksi meta (`serverClientMeta` -> `frontSlots`). Rekonstruksi hanya mengenal pasangan berlabel baku, rantai verifikasi lapis penyusun/pemeriksa/penyetuju, dan peran tanda tangan baku, sehingga entri lain DITIMPA HILANG: `cover.control` = hasil `frontSlots` (menggantikan larik lama), `verificationChain` dan `signature.roles` disusun ulang. p20 K1: `meta: { rev: "B" }` menghapus baris sampul kustom `Proyek | Alpha-Kustom`, lapis verifikasi `QA Eksternal / Auditor X`, dan peran tanda tangan `Saksi / Pak Saksi` (`ok: true`, tanpa peringatan). Entri itu dapat ditulis penulis lain; jalur meta klien tidak memakai cek penulis per bagian. Data kendali dokumen (siapa memverifikasi/menandatangani) hilang lewat saluran yang dimaksudkan sebagai tambalan kecil | Tambal hanya sel/entri yang dimaksud (nilai pasangan berlabel, baris riwayat terakhir/baru, lapis rantai yang dikenal) dan pertahankan entri lain apa adanya; atau tolak (`EDIT_UNSAFE`) bila penyusunan ulang akan membuang entri yang tidak dapat direkonstruksi. Terapkan juga `requireOwnParts` ke slot depan yang diubah |
+| W4-L1 | Low | Integritas: lost update (sisa S2-2r) | `tool-kit.ts:31-40`, `write-parts.ts:36-40` | `wrotePart` hanya mencatat "sesi ini pernah menulis bagian X", tanpa revisi. Bila penulis R15 null (mis. `cover` klien di DEV), tulisan pihak lain atas bagian itu SESUDAH tulisan sesi ini tetap tertimpa oleh tulis ulang utuh sesi ini (p21 S2: sesi A menyunting meta (cover dicatat), pihak lain mengubah cover, A menyunting bab 1, A `studio_write` -> sukses, cover pihak lain hilang). Sesi lain tetap ditolak | Simpan revisi tulisan per bagian (`noteParts(doc, part, rev)`) dan izinkan hanya bila revisi terakhir bagian di R15 (`lastFilledRevisionNo` / `present[].revisionNo`) tidak lebih baru dari revisi itu |
+| W4-L2 | Low | CWE-400/CWE-409 (pertahanan berlapis) | `write-verify.ts:38-41,45,66,139-143` | Unduhan R10 dan dekompresi `word/document.xml` tanpa batas ukuran. p19 V1: entri 200 MB (zip 204.797 B) -> +419 MB RSS, 379 ms; entri lebih besar dapat menghabiskan memori proses MCP. Regex `<w:p ...</w:p>` / `<p>...</p>` kuadratik pada tag tak tertutup (20.000 -> ~0,2 s). Sumber byte = render server Studio sendiri (agen tidak memasok DOCX/HTML), jadi kemungkinan rendah | Batasi ukuran unduhan (mis. 50 MB) dan `originalSize` entri lewat filter `unzipSync` (mis. 20 MB); lewati verifikasi tercetak (dengan kode aman) bila melampaui. Batasi jumlah paragraf yang dipindai |
+| W4-I1 | Info | Kejelasan | `write-client.ts` (alias `docnumber -> number`) | `meta.docNumber` agen dipetakan ke nomor TAMPILAN sampul (bukan nomor server). Disengaja (D-527), tetapi agen bisa mengira mengubah nomor server | Peringatan `ARG_MAPPED` khusus untuk `docNumber` |
+| W4-I2 | Info | Kegunaan | `tools.ts` (petunjuk ulang) | Tetap dari siklus sebelumnya: petunjuk "berhenti mengulang" juga untuk galat nyata identik | Tidak berubah |
+
+### W4.4 Gerbang (5 cek)
+
+| Cek | Hasil | Rincian |
+|---|---|---|
+| Kebocoran kredensial | PASS | Verifikasi memakai klien HTTP berpagar yang sama; tidak ada rahasia di ringkasan |
+| Operasi destruktif | CAUTION | W4-M1 (entri slot depan hilang lewat `studio_edit` meta); W4-L1 |
+| Panggilan eksternal | PASS | Tambahan GET R10/R20 dan POST pratinjau figur (baca saja) ke origin yang sama; halaman raster offline, fon `data:` dari aset repo |
+| Injeksi | PASS | Meta laporan dipersempit/satu baris; meta klien = JSON; label outline alfanumerik; nama keluarga fon daftar putih |
+| Eskalasi izin | PASS | `agentId`/`createdBy`/`items` di meta diabaikan; pemilik F-2 di kedua jalur; aturan sesi tidak lintas sesi |
+
+**Keseluruhan IMPL-W4: CAUTION** (1 Medium), dikembalikan ke controller. Opsi: perbaiki W4-M1 (dan Low) / terima risiko tercatat / ubah lingkup. CAUTION tidak dianggap sudah disetujui.
+
+### W4.5 Log
+
+| # | Waktu (WIB) | Lingkup | Level | Hasil | Keputusan | Peninjau |
+|---|---|---|---|---|---|---|
+| 21 | 2026-11-03 22:15 | `npx vitest run tests/unit/studio/mcp` | L3 | 289/289 lulus | - | security-review |
+| 22 | 2026-11-03 22:15-22:50 | Baca berkas IMPL-W4; probe p19-p21 baru; ulang p6-p18 | L3 | W4-M1, W4-L1, W4-L2, W4-I1/I2; S2-2r dan W3-L1r tertutup untuk kasus review | - | security-review |
+| 23 | 2026-11-03 | Vonis IMPL-W4 | L3 | **CAUTION** (0 High, 1 Medium, 2 Low) | Menunggu keputusan pengguna lewat controller | security-review |

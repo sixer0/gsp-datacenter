@@ -28,6 +28,20 @@ export class McpSession {
   private readonly adopted = new Set<string>();
   private lastOutcome: string | null = null;
   private repeats = 0;
+  private readonly parts = new Map<string, Map<string, number>>();
+  /**
+   * IMPL-W4 S2-2r + W4-L1: bagian (`record`, `slot <k>`, `bab <k>`) yang ditulis sesi ini per dokumen, beserta revisi
+   * hasil tulisan itu (revisi yang tidak diketahui tidak dicatat: tidak dapat dibuktikan).
+   */
+  noteParts(documentId: string, parts: Iterable<readonly [string, number | null]>): void {
+    const map = this.parts.get(documentId) ?? new Map<string, number>();
+    for (const [p, rev] of parts) if (typeof rev === "number") map.set(p, rev);
+    this.parts.set(documentId, map);
+  }
+  /** Revisi tulisan terakhir sesi ini atas bagian itu, atau null. */
+  wrotePart(documentId: string, part: string): number | null {
+    return this.parts.get(documentId)?.get(part) ?? null;
+  }
   /**
    * W3-I1: hitung hasil identik berturut-turut (alat + kode + sasaran). null = sukses (reset). Mengembalikan jumlah
    * berturut-turut untuk kunci ini (1 = pertama).

@@ -271,7 +271,10 @@ function chartPatch(block: Rec, edit: Partial<ClientChart>, warn: (w: ToolWarnin
     categories = Array.isArray(d.categories) ? (d.categories as string[]) : [];
     series = Array.isArray(d.series) ? (d.series as Array<{ name: string; values: Array<number | null> }>) : [];
   } else throw new McpToolError("INVALID_ARGUMENT", `${label}: grafik berbentuk ${tok(d.shape, "(tidak dikenal)")}; hanya kategori x seri yang dapat disunting lewat studio_edit`);
-  const keepCode = edit.type === undefined && edit.stacked === undefined && edit.series === undefined && typeof block.code === "string";
+  // IMPL-W4 (smoke r5b RV-4, research/28 T-8): data baru dengan jumlah seri sekelas (multi-seri tetap multi-seri) TIDAK
+  // memilih ulang kode grafik; batang bertumpuk K-01 tetap bertumpuk ("bentuk gambar tetap"), tidak jatuh ke P-03.
+  const nextSeries = edit.series ?? series;
+  const keepCode = edit.type === undefined && edit.stacked === undefined && typeof block.code === "string" && (edit.series === undefined || (d.shape === "series") === (nextSeries.length > 1));
   const merged: ClientChart = {
     categories: edit.categories ?? categories,
     series: edit.series ?? series,

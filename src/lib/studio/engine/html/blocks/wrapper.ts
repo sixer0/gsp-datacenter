@@ -38,6 +38,7 @@ import {
   controlSheetBlockHeading,
   controlSheetKickerText,
   defaultPartLabelText,
+  kickerSuppressed,
   tocKickerText,
   type ControlSheetBlockKind,
 } from "../../front/texts";
@@ -414,6 +415,8 @@ function plainKicker(k: Inline): string {
  * `chapterLabel` = teks kicker konten bila ada, selain itu "Bab n" / "Lampiran X" (engine/front/texts).
  */
 function chapterLabelOf(ctx: RenderContext, c: Chapter, key: string, appendix: boolean): string {
+  // IMPL-W4: kicker kosong eksplisit (penomoran sumber; nomor ada di judul) = label kosong (sama dengan DOCX).
+  if (kickerSuppressed(c.kicker)) return "";
   return hasText(c.kicker) ? plainKicker(c.kicker) : chapterLabelText(key, appendix, language(ctx));
 }
 
@@ -435,7 +438,7 @@ function chapterTitleEntries(ctx: RenderContext): TocRowHtml[] {
         return { level: "part", label: partLabelOf(ctx, p.label, p.id), title: p.title, page: "", anchor: typeof p.id === "string" ? tocAnchorId("st-part", p.id) : undefined };
       }
       case "section":
-        return { level: "section", label: { runs: [{ t: node.number }] }, title: node.section.title, page: "", anchor: tocAnchorId("st-sec", node.number.replace(/\./g, "-")) };
+        return { level: "section", label: { runs: [{ t: node.number }] }, title: node.section.title, page: "", anchor: tocAnchorId("st-sec", (node.number || node.address).replace(/\./g, "-")) };
       default: {
         const appendix = node.level === "appendix";
         return {

@@ -19,14 +19,15 @@ describe('butir 8: penomoran bab dan sub-judul', () => {
       { heading: '4. Konsep Produk', blocks: [{ subheading: '1.1 Product concept' }, 'isi'] },
       { heading: '5. Analisis', blocks: ['analisis'] },
     ]);
-    const keys = b.chapters.map((c: any) => c.key);
-    expect(keys).toContain('4');
-    expect(keys).toContain('5');
+    // IMPL-W4 butir 1 (mengganti IMPL-W3 butir 8): judul dan sub-judul bernomor sumber dicetak PERSIS; tidak ada
+    // penomoran ulang, penyarangan, atau nomor ganda; label Tabel/Gambar di outline.
+    expect(b.chapters.map((c: any) => text(c.title))).toEqual(['Ringkasan Eksekutif', '4. Konsep Produk', '5. Analisis']);
     expect(codes(b)).not.toContain('CHAPTER_RENUMBERED');
-    const ch4 = b.chapters.find((c: any) => c.key === '4') as any;
-    expect(ch4.sections.map((s: any) => text(s.title))).toContain('Product concept');
-    expect(JSON.stringify(b.chapters)).not.toContain('1.1 Product');
-    expect(codes(b)).toContain('SUBHEADING_NUMBER_STRIPPED');
+    expect(codes(b)).not.toContain('SECTION_NESTED');
+    const ch4 = b.chapters[1] as any;
+    expect(ch4.sections.map((s: any) => text(s.title))).toEqual(['1.1 Product concept']);
+    expect(codes(b)).not.toContain('SUBHEADING_NUMBER_STRIPPED');
+    expect(b.outline?.map((o) => o.label)).toEqual(['4', '4', '5']);
   });
 });
 

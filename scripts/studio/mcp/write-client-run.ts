@@ -10,10 +10,12 @@ import { studioRoutePath } from "../../../src/lib/studio/contract/env";
 import { safeFinalName, sameContent } from "../studio-report";
 import { checkOwnership, findMissionDoc, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError } from "./safety";
-import { headWithRetry, http, isRecord, str, tok, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
+import { bool, headWithRetry, http, isRecord, str, tok, untrustedFields, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
 import { buildClient, type ClientSection } from "./write-client";
 import { requireOwnParts } from "./write-parts";
-import { applyClientEdits, type ClientEditOp } from "./write-client-edit";
+import { applyClientEdits, type ClientEditOp, type Scope } from "./write-client-edit";
+import { applyClientMeta } from "./write-meta";
+import { compactRender, compactVerify, titlesOf, verifySummary, type Verified } from "./write-verify";
 import { wibDate } from "./write-content";
 
 type Rec = Record<string, unknown>;
@@ -147,21 +149,41 @@ export async function finishDoc(ctx: ToolContext, id: string, agentId: string | 
   };
 }
 
-/** Hasil ringkas bersama write/edit dokumen klien (hanya token aman di teks). */
-export function clientOutput(tool: string, id: string, docNumber: string | null, rev: number | null, state: string, f: Finished, warnings: ToolWarning[], extra: Rec = {}): ToolOutput {
+/** IMPL-W4 butir 3: ringkasan verifikasi dokumen klien (berkas DOCX + judul/keterangan tercetak + lint figur + meta). */
+export function verifyClient(ctx: ToolContext, id: string, f: Finished, o: { priorTitles?: string; detail?: boolean } = {}): Promise<Verified> {
+  return verifySummary(ctx, { documentId: id, kind: "client", render: f.render ? { fileId: f.render.fileId, sha256: f.render.sha256, format: f.render.format, bytes: f.render.bytes } : null, ...o });
+}
+
+/**
+ * Hasil bersama write/edit dokumen klien (hanya token aman di teks; isi dokumen hanya di blok tak tepercaya).
+ * IMPL-W4 butir 5: bawaan RINGKAS (tanpa nextSteps; ringkasan verifikasi menggantikan pemeriksaan sendiri);
+ * `detail: true` menambah nextSteps.
+ */
+export function clientOutput(tool: string, id: string, docNumber: string | null, rev: number | null, state: string, f: Finished, warnings: ToolWarning[], extra: Rec = {}, verify: Verified | null = null, detail = true): ToolOutput {
   const nextSteps = [
     `studio_edit { documentId: "${tok(id)}", edits: [{ find, replace }] } untuk teks; { figure: "<teks keterangan>", chart: { categories?, series? } } untuk data grafik`,
     ...(f.render ? [`studio_file_verify { fileId: "${tok(f.render.fileId)}", downloadDir } untuk mengunduh DOCX`] : ["lengkapi isi lalu studio_write lagi (render penuh hanya bila COMPLETE)"]),
   ];
   const lines = [
-    `${tool}: dokumen klien ${tok(docNumber)} (documentId ${tok(id)}) rev ${tok(rev)} ${state}`,
-    `kelengkapan: ${f.completeness.status}${f.completeness.missingRequired > 0 ? ` (kurang ${f.completeness.missingRequired})` : ""}`,
-    f.render ? `berkas: ${tok(f.render.fileId)} DOCX sha256 ${f.render.sha256.slice(0, 16)} ${f.render.verified ? "terverifikasi" : "BELUM terverifikasi"}` : `berkas: tidak dirender${f.renderError ? ` (galat ${f.renderError})` : ""}`,
-    ...nextSteps.map((s) => `lanjut: ${s}`),
+    `${tool}: dokumen klien ${tok(docNumber)} (documentId ${tok(id)}) rev ${tok(rev)} ${state}; kelengkapan ${f.completeness.status}${f.completeness.missingRequired > 0 ? ` (kurang ${f.completeness.missingRequired})` : ""}`,
+    ...(f.render && verify !== null && !detail ? [] : [f.render ? `berkas: ${tok(f.render.fileId)} DOCX sha256 ${f.render.sha256.slice(0, 16)} ${f.render.verified ? "terverifikasi server" : "BELUM terverifikasi"}` : `berkas: tidak dirender${f.renderError ? ` (galat ${f.renderError})` : ""}`]),
+    ...(verify !== null ? [verify.line, ...(verify.block !== null ? [verify.block] : [])] : []),
+    ...(detail ? nextSteps.map((s) => `lanjut: ${s}`) : []),
   ];
   return {
     text: lines.join("\n"),
-    data: { documentId: id, docNumber: tok(docNumber, ""), revisionNo: rev, state, completeness: f.completeness, render: f.render, ...(f.renderError ? { renderError: f.renderError } : {}), nextSteps, ...extra },
+    data: {
+      documentId: id,
+      docNumber: tok(docNumber, ""),
+      revisionNo: rev,
+      state,
+      completeness: f.completeness,
+      render: compactRender(f.render, detail),
+      ...(f.renderError ? { renderError: f.renderError } : {}),
+      ...(detail ? { nextSteps } : {}),
+      ...extra,
+      ...(verify !== null ? { verify: compactVerify(verify.data, detail), ...untrustedFields(detail ? ["verify.headings", "verify.captions", "verify.meta"] : ["verify.meta"]) } : {}),
+    },
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
@@ -196,11 +218,15 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   const written: string[] = [];
   const skipped: string[] = [];
   let server: Rec = {};
+  const partRev = new Map<string, number | null>();
   const note = (r: Sent, label?: string) => {
     if (!r.unchanged) sentParts++;
     rebased ||= r.rebased;
     if (r.rev !== null && r.rev > lastRev) lastRev = r.rev;
-    if (label !== undefined) written.push(label);
+    if (label !== undefined) {
+      written.push(label);
+      partRev.set(label, r.rev);
+    }
   };
   if (existing === null) {
     const slug = await resolveTemplate(ctx, template);
@@ -250,7 +276,8 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
       ...Object.entries(built.slots).filter(([slot, payload]) => !sameContent(sections[slot], payload)).map(([slot]) => `slot ${slot}`),
       ...built.chapters.filter((c) => !sameContent(srvChapters.find((x) => String(x.key) === String(c.key)), c)).map((c) => `bab ${String(c.key)}`),
     ];
-    await requireOwnParts(ctx, id, toWrite, me);
+    const onServer = (p: string) => (p.startsWith("slot ") ? sections[p.slice(5)] !== undefined && sections[p.slice(5)] !== null : srvChapters.some((x) => `bab ${String(x.key)}` === p));
+    await requireOwnParts(ctx, id, toWrite, me, onServer);
     const cur = isRecord(content.meta) ? content.meta : {};
     const diff = Object.fromEntries(Object.entries(built.docMeta).filter(([k, v]) => cur[k] !== v));
     if (Object.keys(diff).length > 0) {
@@ -280,15 +307,16 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
     note(await send(ctx, "POST", studioRoutePath("R12"), "POST /api/studio/chapters", { $schema: "studio.chapter/v2", ...agentPart(agentId), target: { documentId: id }, chapter, baseRevisionNo: base, ...change }), `bab ${String(chapter.key)}`);
   }
   const keys = built.chapters.map((c) => Number(c.key));
-  const outline = built.chapters.map((c) => ({ key: c.key, title: c.title }));
-  if (keys.some((k, i) => k !== i + 1) && !(isRecord(server.content) && sameContent(server.content.outline, outline))) {
+  // IMPL-W4 butir 1: mode sumber = outline berlabel (judul dicetak persis, Tabel/Gambar = nomor bab sumber), selalu.
+  const outline = built.outline ?? built.chapters.map((c) => ({ key: c.key, title: c.title }));
+  if ((built.outline !== null || keys.some((k, i) => k !== i + 1)) && !(isRecord(server.content) && sameContent(server.content.outline, outline))) {
     // Nomor bab dari judul tidak berurutan dari 1 (mis. "6. Analisis"): daftar bab direncanakan = kunci yang ditulis,
     // agar kelengkapan tidak menuntut bab 3..5 dan penomoran Tabel/Gambar tetap N = nomor bab di judul.
     note(await send(ctx, "PATCH", studioRoutePath("R14", { id }), "PATCH /api/studio/documents/{id}/structure", {
       op: "setOutline", slot: "content", baseRevisionNo: base, change: change.change ?? CHANGE("studio_write: daftar bab"), ...agentPart(agentId),
       outline,
     }), "outline");
-    warnings.push({ code: "OUTLINE_SET", message: `nomor bab tidak berurutan dari 1; daftar bab direncanakan ditetapkan ke ${keys.join(", ")}` });
+    if (built.outline === null) warnings.push({ code: "OUTLINE_SET", message: `nomor bab tidak berurutan dari 1; daftar bab direncanakan ditetapkan ke ${keys.join(", ")}` });
   }
   // Kiriman berbasis revisi awal dijawab rebased karena kiriman sendiri sebelumnya; pihak lain = revisi melompat lebih jauh.
   if (rebased && lastRev > base + sentParts) {
@@ -298,9 +326,12 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   } catch (e) {
     throw withProgress(e, progressOf(), "ulangi studio_write yang sama: bagian yang sudah tersimpan dilewati, sisanya dikirim");
   }
+  // W4-L1: revisi hasil tulisan per bagian (dokumen baru: semua bagian ditulis sesi ini).
+  ctx.session.noteParts(id, [...partRev].filter(([w]) => w.startsWith("slot ") || w.startsWith("bab ")));
   const f = await finishDoc(ctx, id, agentId);
   const state = created ? "dibuat" : sentParts > 0 ? "diperbarui" : "tidak berubah";
-  const out = clientOutput("studio_write", id, docNumber, lastRev, state, f, warnings, { chapters: built.chapters.map((c) => c.key), displayNumber: built.meta.number ?? null, ...(skipped.length > 0 ? { skipped } : {}), ...(built.emptySections.length > 0 ? { emptySections: built.emptySections } : {}) });
+  const detail = bool(a, "detail");
+  const out = clientOutput("studio_write", id, docNumber, lastRev, state, f, warnings, { ...(detail ? { chapters: built.chapters.map((c) => c.key) } : {}), displayNumber: built.meta.number ?? null, ...(built.outline !== null ? { numbering: "source" } : {}), ...(skipped.length > 0 ? { skipped } : {}), ...(built.emptySections.length > 0 ? { emptySections: built.emptySections } : {}) }, await verifyClient(ctx, id, f), detail);
   // IMPL-W3 butir 6: dokumen belum lengkap = hasil normal INCOMPLETE (tanpa render), bukan galat.
   if (f.completeness.status !== "COMPLETE") {
     const hint = "lengkapi bab/slot yang kurang lewat studio_write (bagian lengkap) atau studio_edit { after, insert }; isi tidak dikarang mesin";
@@ -317,9 +348,24 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
  */
 export async function editClient(a: Args, ctx: ToolContext, id: string, docNumber: string | null, agentId: string | null, rev: number, content: Rec): Promise<ToolOutput> {
   const before = JSON.stringify(content);
+  const priorTitles = titlesOf(content);
   const metaBefore = isRecord(content.meta) ? { ...content.meta } : {};
   const warnings: ToolWarning[] = [];
-  const { touched, charts } = applyClientEdits(content, a.edits as ClientEditOp[], (w) => warnings.push(w));
+  const res = applyClientEdits(content, (Array.isArray(a.edits) ? a.edits : []) as ClientEditOp[], (w) => warnings.push(w));
+  const charts = res.charts;
+  const touched: Scope[] = [...res.touched];
+  // IMPL-W4 butir 2: saluran meta dokumen klien (nomor, revisi, tanggal, judul, penyusun, ...): slot depan + setMeta.
+  let applied: Record<string, string> | null = null;
+  if (isRecord(a.meta) && Object.keys(a.meta).length > 0) {
+    const m = applyClientMeta(content, a.meta as Record<string, string>, wibDate(ctx.now()), (w) => warnings.push(w));
+    applied = m.applied;
+    const name = (s: Scope) => (s.kind === "chapter" ? `c:${s.key}` : s.kind === "slot" ? `s:${s.slot}` : "m");
+    for (const s of m.touched) if (!touched.some((t) => name(t) === name(s))) touched.push(s);
+    // W4-M1: slot depan yang ditambal meta harus terakhir ditulis pemanggil (sama dengan tulis ulang utuh), kecuali
+    // dokumen diadopsi eksplisit; penulis tak tercatat ditolak kecuali sesi ini yang menulisnya pada revisi terkini.
+    const front = m.touched.filter((t): t is { kind: "slot"; slot: string } => t.kind === "slot").map((t) => `slot ${t.slot}`);
+    if (front.length > 0 && !ctx.session.isAdopted(id)) await requireOwnParts(ctx, id, front, requesterOf(agentId));
+  }
   if (JSON.stringify(content) === before) {
     return { text: `studio_edit: dokumen ${tok(id)} rev ${rev} tidak berubah; tidak ada yang ditulis`, data: { documentId: id, revisionNo: rev, state: "tidak berubah", edited: [] }, ...(warnings.length > 0 ? { warnings } : {}) };
   }
@@ -331,10 +377,13 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
   let lastRev = rev;
   let mine = 0;
   let rebased = false;
+  const editRev = new Map<string, number | null>();
+  let lastSent: number | null = null;
   const note = (s: Sent) => {
     if (!s.unchanged) mine++;
     rebased ||= s.rebased;
     if (s.rev !== null && s.rev > lastRev) lastRev = s.rev;
+    lastSent = s.rev;
   };
   // Dry-run R08 untuk setiap slot/bab yang akan dikirim (tidak ada sunting setengah jadi bila satu bagian ditolak).
   await preflightBodies(ctx, [
@@ -358,12 +407,14 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
     if (s.kind !== "slot") continue;
     note(await send(ctx, "POST", studioRoutePath("R13"), "POST /api/studio/slots", { $schema: "studio.slot/v2", ...agentPart(agentId), target: { documentId: id }, slot: s.slot, payload: sections[s.slot], baseRevisionNo: rev, change }));
     edited.push(`slot ${s.slot}`);
+    editRev.set(`slot ${s.slot}`, lastSent);
   }
   for (const c of charts) if (!chapterKeysTouched.has(c.key) && typeof c.block.id !== "string") chapterKeysTouched.add(c.key);
   for (const ch of chapters) {
     if (!chapterKeysTouched.has(String(ch.key))) continue;
     note(await send(ctx, "POST", studioRoutePath("R12"), "POST /api/studio/chapters", { $schema: "studio.chapter/v2", ...agentPart(agentId), target: { documentId: id }, chapter: ch, baseRevisionNo: rev, change }));
     edited.push(`bab ${String(ch.key)}`);
+    editRev.set(`bab ${String(ch.key)}`, lastSent);
   }
   for (const c of charts) {
     if (chapterKeysTouched.has(c.key)) continue;
@@ -379,6 +430,8 @@ export async function editClient(a: Args, ctx: ToolContext, id: string, docNumbe
     // N-1 (siklus 2): sunting sebagian -> progress; ulangi hanya suntingan untuk bagian di notWritten (yang lain sudah tersimpan).
     throw withProgress(e, { documentId: id, written: [...edited], notWritten: planned.filter((x) => !edited.includes(x)), revisionNo: lastRev }, "baca ulang lalu ulangi hanya suntingan untuk bagian di notWritten");
   }
+  ctx.session.noteParts(id, edited.filter((w) => w.startsWith("slot ") || w.startsWith("bab ")).map((w) => [w, editRev.get(w) ?? null] as const));
   const f = await finishDoc(ctx, id, agentId);
-  return clientOutput("studio_edit", id, docNumber, lastRev, mine > 0 ? "diperbarui" : "tidak berubah", f, warnings, { edited, basisRevisionNo: rev });
+  const metaEcho = applied !== null ? { meta: Object.fromEntries(["title", "number", "rev", "date", "author"].filter((k) => applied?.[k] !== undefined).map((k) => [k, tok(applied?.[k] ?? "", "(teks)")])) } : {};
+  return clientOutput("studio_edit", id, docNumber, lastRev, mine > 0 ? "diperbarui" : "tidak berubah", f, warnings, { edited, basisRevisionNo: rev, ...metaEcho }, await verifyClient(ctx, id, f, { priorTitles, detail: bool(a, "detail") }), bool(a, "detail"));
 }

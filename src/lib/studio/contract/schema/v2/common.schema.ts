@@ -422,7 +422,8 @@ export const commonV2Schema = {
       figures: { type: "array", uniqueItems: true, items: { enum: ["svg", "png"] } },
       revisionNo: { type: "integer", minimum: 1 },
     }),
-    OutlineEntryV2: obj({ key: { type: "string", minLength: 1, maxLength: 16 }, title: inline }, ["key"]),
+    // IMPL-W4: `label` = penomoran sumber (judul dicetak apa adanya, label Tabel/Gambar = label.n).
+    OutlineEntryV2: obj({ key: { type: "string", minLength: 1, maxLength: 16 }, title: inline, label: { type: "string", pattern: "^[A-Za-z0-9]{1,8}$" } }, ["key"]),
     PartV2: obj({ id: { type: "string", pattern: "^P[1-9][0-9]?$" }, title: inline, lede: inline }, ["id", "title"]),
 
     // ── Blok (T2-13..T2-30) ──

@@ -293,6 +293,7 @@ export async function assembleDocxDetailed(ctx: RenderContext, opts: AssembleDoc
     const prepared = await prepareFigureStore(snapshot, {
       svgFor: opts.svgFor,
       rasterize: opts.rasterize,
+      tpl: ctx.tpl,
       types: opts.figureTypes,
       log: ctx.log,
       fixedDate: ctx.fixedDate,

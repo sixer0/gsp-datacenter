@@ -331,6 +331,11 @@ export interface BuiltReport {
   itemKeys: Set<string>;
   /** M-1: medan record kepala yang ditulis mesin (nama medan kontrak -> nilai). */
   recordFields: Record<string, string>;
+  /**
+   * IMPL-W4 butir 2: medan kepala record yang DIBERI agen di meta dan sah (nama kontrak -> nilai baris MD). Medan bawaan
+   * mesin (status draft, ReportedAt hari ini, Owner = agentId) tidak termasuk. Selalu diterapkan, juga pada tulis parsial.
+   */
+  givenFields: Record<string, string>;
   /** IMPL-W3 butir 6: judul bab wajib yang belum berisi (kosong = lengkap). */
   missing: string[];
 }
@@ -385,7 +390,7 @@ function normalizeOptionalFields(v: Partial<Record<string, string>>, warn: (w: T
   }
 }
 
-function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { header: string[]; title: string | null } {
+function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { header: string[]; title: string | null; given: Record<string, string> } {
   const v: Partial<Record<string, string>> = {};
   const unknown: string[] = [];
   for (const [k, raw] of Object.entries(input.meta)) {
@@ -398,6 +403,8 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
   const def = getContractKindDef(MD_REPORT_DEFAULT_KIND);
   const statuses = { ...RECORD_STATUS_EXTRA, ...(def?.aliases.statuses ?? {}) } as Record<string, string>;
   let status = v.status !== undefined ? lookupStatus(statuses, v.status) : undefined;
+  const given: Record<string, string> = {};
+  if (status !== undefined) given.status = status;
   if (status === undefined) {
     warn({ code: "STATUS_DEFAULTED", message: v.status !== undefined ? `meta.status "${v.status}" tidak dikenal; dipakai draft (pilihan: draft, complete, partial, blocked, needs-review)` : "meta.status tidak diisi; dipakai draft (isi meta.status: complete bila pekerjaan selesai)" });
     status = "draft";
@@ -407,6 +414,7 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
     warn({ code: "OWNER_INVALID", message: `meta.owner "${v.owner}" bukan id agen (huruf kecil, angka, . _ -); diganti agentId` });
     owner = null;
   }
+  if (owner !== null) given.owner = owner;
   if (owner === null && input.agentId !== null) {
     const a = input.agentId.trim().toLowerCase();
     if (ACTOR_RE.test(a)) owner = a;
@@ -416,10 +424,28 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
     warn({ code: "REPORTED_AT_DEFAULTED", message: `meta.reportedAt "${reportedAt}" bukan YYYY-MM-DD; dipakai tanggal hari ini` });
     reportedAt = null;
   }
+  if (reportedAt !== null) given.reportedAt = reportedAt;
   normalizeOptionalFields(v, warn);
+  for (const f of ["verdict", "initiator", "taskRef", "cardIds"] as const) if (v[f] !== undefined) given[f] = v[f] as string;
   const header = [`Status: ${status}`, ...(owner !== null ? [`Owner: ${owner}`] : []), `ReportedAt: ${reportedAt ?? wibDate(input.now)}`];
   for (const [f, label] of [["verdict", "Verdict"], ["initiator", "Initiator"], ["taskRef", "TaskRef"], ["cardIds", "CardIds"]] as const) if (v[f] !== undefined) header.push(`${label}: ${v[f]}`);
-  return { header, title: v.title ?? null };
+  return { header, title: v.title ?? null, given };
+}
+
+/**
+ * IMPL-W4 butir 2 (saluran meta `studio_edit`): medan kepala record yang diberi agen dan sah (nama kontrak -> nilai
+ * baris MD). Medan yang tidak diberi TIDAK dibangkitkan (tanpa status draft / tanggal / owner bawaan).
+ */
+export function recordMetaFields(meta: Record<string, string>, agentId: string | null, now: number, warn: (w: ToolWarning) => void): Record<string, string> {
+  const ws: ToolWarning[] = [];
+  const { given } = recordLines({ mission: "", docKey: "", title: null, meta, sections: [], agentId, now }, (w) => ws.push(w));
+  for (const w of ws) {
+    if (w.code === "STATUS_DEFAULTED") {
+      if (given.status === undefined && Object.keys(meta).some((k) => k.trim().toLowerCase() === "status")) warn({ code: "STATUS_NOT_APPLIED", message: "meta.status tidak dikenal; status tidak diubah (pilihan: draft, complete, partial, blocked, needs-review)" });
+    } else if (w.code === "REPORTED_AT_DEFAULTED") warn({ code: "REPORTED_AT_NOT_APPLIED", message: "meta.reportedAt bukan YYYY-MM-DD; tidak diubah" });
+    else warn(w);
+  }
+  return given;
 }
 
 /** Paragraf yang dihasilkan satu blok (string dipecah baris kosong; keterangan tabel/grafik = satu paragraf). */
@@ -475,7 +501,7 @@ export function buildWorkReport(input: WorkReportInput): BuiltReport {
   const warnings: ToolWarning[] = [];
   const warn = (w: ToolWarning) => warnings.push(w);
   const m = workReportChapters();
-  const { header, title: metaTitle } = recordLines(input, warn);
+  const { header, title: metaTitle, given } = recordLines(input, warn);
   const used = new Set<string>();
   const filled = new Set<string>();
   const chapters: Array<string | null> = [];
@@ -508,7 +534,7 @@ export function buildWorkReport(input: WorkReportInput): BuiltReport {
   const missing = m.required.filter((k) => !filled.has(k)).map((k) => m.titles.get(k) ?? k);
   const title = (input.title ?? metaTitle ?? `Laporan kerja ${input.docKey}`).replace(/\s+/g, " ").trim();
   const markdown = [`# ${title.replace(/^#+\s*/, "")}`, "", `mission: ${input.mission}`, `docKey: ${input.docKey}`, ...header, "", ...body].join("\n").replace(/\n{3,}/g, "\n\n");
-  return { markdown: `${markdown.trimEnd()}\n`, warnings, chapters, headings, paragraphs, itemKeys: used, recordFields: fieldsOf(header), missing };
+  return { markdown: `${markdown.trimEnd()}\n`, warnings, chapters, headings, paragraphs, itemKeys: used, recordFields: fieldsOf(header), givenFields: given, missing };
 }
 
 // ── Rujukan (IMPL-W3 butir 7) ───────────────────────────────────────────

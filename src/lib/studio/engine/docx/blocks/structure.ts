@@ -18,7 +18,7 @@
 import type { Chapter, Inline, ParaFormat, Section } from "../../../contract";
 import type { BlockEnv } from "./env";
 import { createHash } from "node:crypto";
-import { chapterKickerText } from "../../front/texts";
+import { chapterKickerText, kickerSuppressed } from "../../front/texts";
 import { palette } from "../wrapper/formats";
 import { datumRulePng } from "../wrapper/media";
 import { bookmarkWrap, chapterTocTarget, chapterTocTargetOf, sectionTocTarget, type TocTarget } from "../wrapper/toc-refs";
@@ -127,7 +127,8 @@ export function renderChapter(env: BlockEnv): string {
   const kickerRole = env.role("chapter.kicker", structuralFor("chapter.kicker"));
   const kicker: Inline = isInline(c.kicker) ? c.kicker : { text: kickerText(env, key) };
   const titleRole = env.role("chapter.title", structuralFor("chapter.title"));
-  let xml = env.para(kickerRole.para ?? {}, env.inline(kicker, kickerRole.run ?? {}, false));
+  // IMPL-W4: kicker kosong eksplisit = judul bab memuat nomor sumber; paragraf kicker tidak ditulis.
+  let xml = kickerSuppressed(c.kicker) ? "" : env.para(kickerRole.para ?? {}, env.inline(kicker, kickerRole.run ?? {}, false));
   if (datumRuleEnabled(env)) xml += datumRuleXml(env);
   xml += env.para(titleRole.para ?? {}, bookmarkWrap(tocTarget(env, c, key), env.inline(c.title, titleRole.run ?? {}, false)));
   return xml;

@@ -16,6 +16,7 @@
  */
 import type { NormBlock, NormUnit } from "../../../contract";
 import { FIGURE_BLOCK_TYPES, TABLE_BLOCK_TYPES } from "../../../contract/enums";
+import { kickerSuppressed } from "../../front/texts";
 
 const TABLE_TYPES: ReadonlySet<string> = new Set<string>(TABLE_BLOCK_TYPES);
 const FIGURE_TYPES: ReadonlySet<string> = new Set<string>(FIGURE_BLOCK_TYPES);
@@ -97,6 +98,9 @@ export function computeNumbering(
   for (const unit of units) {
     const blocks = blocksByUnit.get(unit.key) ?? [];
     const chap = chapterKeys.get(unit.key);
+    // IMPL-W4: bab berpenomoran sumber (kicker kosong eksplisit) memakai label sumber dari snapshot ("Tabel 6.1",
+    // "Tabel FM.1"); selisih dengan hitungan kunci internal adalah disengaja, bukan NUMBERING_MISMATCH.
+    const sourceNumbered = blocks.some((b) => b.type === "chapter" && b.content !== null && typeof b.content === "object" && kickerSuppressed((b.content as { kicker?: unknown }).kicker));
     let t = 0;
     let g = 0;
     let d = 0;
@@ -114,7 +118,7 @@ export function computeNumbering(
       const prior = b.artifactLabel ?? existing[b.blockId];
       if (prior !== undefined && prior !== "") {
         labels.set(b.blockId, prior);
-        if (computed !== undefined && computed !== prior) {
+        if (computed !== undefined && computed !== prior && !sourceNumbered) {
           mismatches.push({ blockId: b.blockId, address: b.address, computed, existing: prior });
         }
       } else if (computed !== undefined) {

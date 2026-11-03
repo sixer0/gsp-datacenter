@@ -24,13 +24,14 @@ import { partsOf, partsOfValues, remapExtraChapters, ReportError, runReport, saf
 import { MAX_INPUT_BYTES } from "./config";
 import { checkOwnership, findMissionDoc, guardReportSubmit, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError, virtualFs } from "./safety";
-import { http, isRecord, obj, plainAgentId, requireSecret, S, str, tok, VIRTUAL_FILE, type Args, type ToolContext, type ToolDef, type ToolOutput, type ToolWarning } from "./tool-kit";
-import { buildWorkReport, workReportChapters, type SectionInput } from "./write-content";
+import { bool, http, isRecord, obj, plainAgentId, requireSecret, S, str, tok, VIRTUAL_FILE, type Args, type ToolContext, type ToolDef, type ToolOutput, type ToolWarning } from "./tool-kit";
+import { buildWorkReport, recordMetaFields, workReportChapters, type SectionInput } from "./write-content";
 import { requireOwnParts } from "./write-parts";
 import { normalizeEditArgs, normalizeWriteArgs } from "./write-normalize";
 import { isPositionEdit, paragraphsOf, positionToFind } from "./write-position";
 import { applyEdits, type EditOp, type EditPart, type EditPlan } from "./write-edit";
 import { editClient, writeClient } from "./write-client-run";
+import { titlesOf, withVerify } from "./write-verify";
 
 // ── Skema ───────────────────────────────────────────────────────────────
 
@@ -74,6 +75,10 @@ const SECTIONS = {
   description: "Bagian: heading + blocks (string=paragraf, [[header],[baris]...]=tabel, {table,caption,source}, {chart:{categories,series:[{name,values}],caption,source,stacked?}}, {list}, {subheading}).",
 } as const;
 const META = { type: "object", maxProperties: 40, additionalProperties: { type: "string", maxLength: 2000 }, description: "Kunci-nilai datar. Laporan: status, owner, taskRef. Klien: title, number (nomor tampilan), author, checker, approver, rev, date, classification, source." } as const;
+/** IMPL-W4 butir 2: saluran meta studio_edit. */
+const META_EDIT = { ...META, description: "Kepala tanpa tulis ulang: status, verdict (laporan); number, rev, date, title (klien)." } as const;
+/** IMPL-W4 butir 5: hasil rinci (peringatan penuh, nextSteps, daftar judul penuh) hanya bila diminta. */
+const DETAIL = { type: "boolean", description: "Hasil rinci." } as const;
 const TEMPLATE = { type: "string", pattern: "^(latest|[a-z0-9][a-z0-9-]{0,63})$", description: "Dokumen klien: slug templat DATUM atau latest; kosong = laporan kerja." } as const;
 
 // ── Bersama ─────────────────────────────────────────────────────────────
@@ -174,7 +179,7 @@ const WRITE_EXAMPLE = `{"mission":"2026-11-03_x","docKey":"lap-1","sections":[{"
 const writeTool: ToolDef = {
   name: "studio_write",
   description: `Tulis/ganti dokumen dari isi saja; mesin memformat, menomori, cek, render, sha. Laporan: bab Ringkasan, Rincian kerja, Bukti, Isu terbuka, Langkah berikut. Klien: template "latest" + meta {title,author,number}. Contoh: ${WRITE_EXAMPLE}`,
-  inputSchema: obj({ mission: S.mission, docKey: S.docKey, template: TEMPLATE, title: { type: "string", minLength: 1, maxLength: 200 }, meta: META, sections: SECTIONS, agentId: S.agentId }, ["mission", "docKey", "sections"]),
+  inputSchema: obj({ mission: S.mission, docKey: S.docKey, template: TEMPLATE, title: { type: "string", minLength: 1, maxLength: 200 }, meta: META, sections: SECTIONS, agentId: S.agentId, detail: DETAIL }, ["mission", "docKey", "sections"]),
   annotations: { title: "Tulis dokumen (isi saja)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   toolsets: ["write"],
   prepare: normalizeWriteArgs,
@@ -196,7 +201,8 @@ const writeTool: ToolDef = {
       // Pagar yang sama dengan studio_report_submit: pemilik, laporan kerja, penulis terakhir (0 tulis bila ditolak).
       const r = await runReport(args, reportIo(ctx, md, (plan) => guardReportSubmit(a, ctx, plan)));
       rememberNext(ctx, r, "studio_write");
-      const out = resultOutput("studio_write", r, [...built.warnings, ...conversionWarnings(r)]);
+      ctx.session.noteParts(r.documentId, ["record", ...built.chapters.filter((k): k is string => k !== null).map((k) => `bab ${k}`)].map((p) => [p, r.revisionNo] as const));
+      const out = await withVerify(ctx, resultOutput("studio_write", r, [...built.warnings, ...conversionWarnings(r)]), "report", bool(a, "detail"));
       return built.missing.length > 0 ? incomplete(out, built.missing) : out;
     } catch (e) {
       // I-1: di toolset write alat refresh/update tidak dimuat; arahkan ke studio_edit (membaca revisi terkini).
@@ -233,12 +239,24 @@ async function rewriteOwnReport(a: Args, ctx: ToolContext, agentId: string | nul
   const warnings: ToolWarning[] = [...built.warnings];
   const hasItems = built.chapters.includes("2");
   let changed = [...mine.keys()].filter((p) => !sameContent(mine.get(p), server.get(p))).sort((x, y) => PART_ORDER(x) - PART_ORDER(y));
+  // IMPL-W4 butir 2 (D-545): tanpa Rincian kerja, butir/bukti record tidak dikirim (RECORD_KEPT), TETAPI medan kepala
+  // yang diberi agen di meta (status, verdict, reportedAt, owner, initiator, taskRef, cardIds) SELALU diterapkan ke
+  // record server lewat jalur sunting medan (butir record tidak disentuh).
+  const headerOnly = !hasItems && Object.keys(built.givenFields).length > 0;
   if (!hasItems && changed.includes("record")) {
     changed = changed.filter((p) => p !== "record");
-    warnings.push({ code: "RECORD_KEPT", message: "Rincian kerja tidak ada di masukan: record (status, butir, bukti) di dokumen tidak dikirim agar butir dan bukti tidak terhapus; tulis Rincian kerja untuk memperbarui record" });
+    warnings.push({ code: "RECORD_KEPT", message: `Rincian kerja tidak ada di masukan: butir/bukti record tidak dikirim${headerOnly ? `; medan kepala dari meta diterapkan (${Object.keys(built.givenFields).join(", ")})` : "; tulis Rincian kerja untuk memperbarui butir"}` });
   }
   const me = requesterOf(agentId);
-  await requireOwnParts(ctx, doc.id, changed, me);
+  await requireOwnParts(ctx, doc.id, headerOnly ? ["record", ...changed] : changed, me, (p) => server.has(p));
+  let ro: ToolOutput | null = null;
+  if (headerOnly) {
+    const o = await editWorkReport({ edits: [] }, ctx, doc, agentId, rev, content, built.givenFields, "studio_write");
+    if (Array.isArray(o.data.edited) && o.data.edited.length > 0) {
+      ro = o;
+      warnings.push({ code: "RECORD_META_APPLIED", message: `medan kepala record diterapkan: ${Object.keys(built.givenFields).join(", ")}` });
+    }
+  }
   const title = /^# (.+)$/m.exec(built.markdown)?.[1]?.trim() ?? "";
   const curTitle = isRecord(content.meta) && typeof content.meta.title === "string" ? content.meta.title : "";
   // Judul hanya diganti bila agen memberinya (title / meta.title / meta.judul); judul bawaan mesin tidak menimpa.
@@ -262,15 +280,19 @@ async function rewriteOwnReport(a: Args, ctx: ToolContext, agentId: string | nul
     const args: CliArgs = { ...baseArgs("update", agentId), documentId: doc.id, remote: ctx.deps.config.baseUrl, sections: changed.map((p) => (p.startsWith("bab ") ? p.slice(4) : p)), baseRev: rev };
     r = await runReport(args, reportIo(ctx, Buffer.from(md, "utf8")));
     rememberNext(ctx, r, "studio_write");
+    ctx.session.noteParts(doc.id, changed.map((p) => [p, r?.revisionNo ?? null] as const));
   } else if (titleChanged) ctx.session.remember(doc.id, metaRev, "studio_write", ctx.now());
-  const out =
+  const out0 =
     r !== null
       ? resultOutput("studio_write", r, [...warnings, ...conversionWarnings(r)], { written: changed, basisRevisionNo: rev })
-      : {
+      : ro !== null
+        ? { ...ro, data: { ...ro.data, written: ["record"], basisRevisionNo: rev }, warnings: [...warnings, ...(ro.warnings ?? [])] }
+        : {
           text: `studio_write: laporan kerja ${tok(doc.docNumber)} (documentId ${tok(doc.id)}) rev ${metaRev} ${titleChanged ? "judul diperbarui" : "tidak berubah"}; bab lain tidak disentuh`,
           data: { documentId: doc.id, docNumber: tok(doc.docNumber, ""), revisionNo: metaRev, state: titleChanged ? "diperbarui" : "tidak berubah", written: [], basisRevisionNo: rev },
           ...(warnings.length > 0 ? { warnings } : {}),
         };
+  const out = await withVerify(ctx, out0, "report", bool(a, "detail"));
   return missing.length > 0 ? incomplete(out, missing) : out;
 }
 
@@ -510,7 +532,28 @@ export function assertEditShape(before: Map<string, unknown>, after: Map<string,
   }
 }
 
-async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agentId: string | null, rev: number, content: Record<string, unknown>): Promise<ToolOutput> {
+/** IMPL-W4 butir 2: label baris kepala record MD per medan kontrak (urutan serializer `recordToReportMarkdown`). */
+const RECORD_LABEL: Readonly<Record<string, string>> = { status: "Status", verdict: "Verdict", owner: "Owner", initiator: "Initiator", taskRef: "TaskRef", reportedAt: "ReportedAt", cardIds: "CardIds" };
+
+/** Medan kepala record dari meta -> baris kepala bagian record; medan masuk `plan.fields` (pagar bentuk tetap berlaku). */
+function patchRecordHeader(parts: EditPart[], fields: Record<string, string>, plan: EditPlan, warn: (w: ToolWarning) => void): void {
+  if (Object.keys(fields).length === 0) return;
+  const rec = parts.find((p) => p.part === "record");
+  if (rec === undefined) {
+    warn({ code: "META_IGNORED", message: "dokumen tanpa record; meta laporan tidak diterapkan" });
+    return;
+  }
+  for (const [f, v] of Object.entries(fields)) {
+    const label = RECORD_LABEL[f];
+    if (label === undefined) continue;
+    const i = rec.md.header.findIndex((l) => l.startsWith(`${label}:`));
+    if (i >= 0) rec.md.header[i] = `${label}: ${v}`;
+    else rec.md.header.push(`${label}: ${v}`);
+    plan.fields.add(f);
+  }
+}
+
+async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agentId: string | null, rev: number, content: Record<string, unknown>, metaFields: Record<string, string> = {}, tool = "studio_edit"): Promise<ToolOutput> {
   const title = isRecord(content.meta) && typeof content.meta.title === "string" ? content.meta.title : "Laporan kerja";
   const { parts } = serializeParts(content);
   const server = partsOf(content);
@@ -520,19 +563,20 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
   const warnings: ToolWarning[] = [];
   // IMPL-W3 butir 14c: suntingan posisi (pid + offset teks polos) -> cari-ganti jendela di bab paragraf itu.
   const paras = paragraphsOf(content);
-  const ops = (a.edits as unknown[]).flatMap((e, i): EditOp[] => {
+  const ops = ((Array.isArray(a.edits) ? a.edits : []) as unknown[]).flatMap((e, i): EditOp[] => {
     if (!isPositionEdit(e)) return [e as EditOp];
     const f = positionToFind(e, paras, `edit ${i + 1}`);
     return f === null ? [] : [f];
   });
   const { plan } = applyEdits(edited, ops, (w) => warnings.push(w));
+  patchRecordHeader(edited, metaFields, plan, (w) => warnings.push(w));
   const md = assemble(edited, title, doc.id, rev);
   const after = reparseOrThrow(md, doc.id, content, "sunting");
   assertEditShape(before, after, plan);
   const changed = [...new Set([...before.keys(), ...after.keys()])].filter((p) => !sameContent(before.get(p), after.get(p))).sort((x, y) => PART_ORDER(x) - PART_ORDER(y));
   if (changed.length === 0) {
     return {
-      text: `studio_edit: dokumen ${tok(doc.id)} rev ${rev} tidak berubah (teks pengganti sama dengan isi sekarang); tidak ada yang ditulis`,
+      text: `${tool}: dokumen ${tok(doc.id)} rev ${rev} tidak berubah (teks pengganti sama dengan isi sekarang); tidak ada yang ditulis`,
       data: { documentId: doc.id, revisionNo: rev, state: "tidak berubah", edited: [] },
       ...(warnings.length > 0 ? { warnings } : {}),
     };
@@ -560,20 +604,24 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
     }
     throw e;
   }
-  rememberNext(ctx, r, "studio_edit");
-  return resultOutput("studio_edit", r, warnings, { edited: changed, basisRevisionNo: rev });
+  rememberNext(ctx, r, tool);
+  ctx.session.noteParts(doc.id, changed.map((p) => [p, r.revisionNo] as const));
+  return resultOutput(tool, r, warnings, { edited: changed, basisRevisionNo: rev });
 }
 
 const editTool: ToolDef = {
   name: "studio_edit",
   description:
-    "Sunting seperti patch; mesin membaca revisi terkini (tanpa basis). find = frasa >= 3 kata, atau jangkar pendek bertanda baca (cocok persis); section?, occurrence:\"all\"; {cell:{row,column},value} sel tabel; {pid,at,length,replace,expect} posisi (pid: studio_document_get view=paragraphs); {after,insert}; {figure,chart}. Ambigu -> ok:false + kandidat siap salin.",
-  inputSchema: obj({ documentId: S.documentId, mission: S.mission, docKey: S.docKey, edits: EDITS, agentId: S.agentId, adoptExisting: { type: "boolean", description: "Sunting dokumen buatan agentId lain (eksplisit)." } }, ["edits"]),
+    "Sunting seperti patch; mesin membaca revisi terkini (tanpa basis). find = frasa >= 3 kata, atau jangkar pendek bertanda baca (cocok persis); section?, occurrence:\"all\"; {cell:{row,column},value} sel tabel; {pid,at,length,replace,expect} posisi (pid: studio_document_get view=paragraphs); {after,insert}; {figure,chart}; meta {status|rev|number} kepala. Ambigu -> ok:false + kandidat.",
+  inputSchema: obj({ documentId: S.documentId, mission: S.mission, docKey: S.docKey, edits: EDITS, meta: META_EDIT, agentId: S.agentId, adoptExisting: { type: "boolean", description: "Sunting dokumen buatan agentId lain (eksplisit)." }, detail: DETAIL }, []),
   annotations: { title: "Sunting teks dokumen", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   toolsets: ["write"],
   prepare: normalizeEditArgs,
   async run(a, ctx) {
     const agentId = plainAgentId(a, ctx);
+    const edits = Array.isArray(a.edits) ? (a.edits as Args[]) : [];
+    const meta = isRecord(a.meta) ? (a.meta as Record<string, string>) : {};
+    if (edits.length === 0 && Object.keys(meta).length === 0) throw new McpToolError("INVALID_ARGUMENT", "berikan edits (suntingan teks) dan/atau meta (mis. { status: \"complete\" }); tidak ada yang ditulis");
     const doc = await targetDoc(a, ctx, agentId);
     const reply = await http(ctx, "GET", studioRoutePath("R20", { id: doc.id }), "GET /api/studio/documents/{id}/content");
     const body = isRecord(reply.body) ? reply.body : {};
@@ -581,8 +629,12 @@ const editTool: ToolDef = {
     const content = body.content;
     const sections = isRecord(content.sections) ? content.sections : {};
     if (isRecord(sections.record) && sections.record.type === "contractRecord") {
-      if ((a.edits as Args[]).some((e) => "figure" in e)) throw new McpToolError("INVALID_ARGUMENT", "laporan kerja tidak memuat figur; {figure, chart} hanya untuk dokumen klien. Tidak ada yang ditulis");
-      return editWorkReport(a, ctx, doc, agentId, body.revisionNo, content);
+      if (edits.some((e) => "figure" in e)) throw new McpToolError("INVALID_ARGUMENT", "laporan kerja tidak memuat figur; {figure, chart} hanya untuk dokumen klien. Tidak ada yang ditulis");
+      const warns: ToolWarning[] = [];
+      const fields = recordMetaFields(meta, agentId, ctx.now(), (w) => warns.push(w));
+      const out = await editWorkReport(a, ctx, doc, agentId, body.revisionNo, content, fields);
+      const merged = warns.length > 0 ? { ...out, warnings: [...warns, ...(out.warnings ?? [])] } : out;
+      return Array.isArray(out.data.edited) && out.data.edited.length > 0 ? withVerify(ctx, merged, "report", bool(a, "detail"), titlesOf(content)) : merged;
     }
     return editClient(a, ctx, doc.id, doc.docNumber, agentId, body.revisionNo, content);
   },

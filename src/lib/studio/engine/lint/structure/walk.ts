@@ -89,6 +89,10 @@ export function walkDoc(snap: Pick<NormDocSnapshot, "doc" | "blocks">): DocWalk 
 
   const snapAddr = new Map<string, string>();
   for (const b of snap.blocks ?? []) if (b.blockId && b.address) snapAddr.set(b.blockId, b.address);
+  // IMPL-W4 (review 15 F5): label artefak tersimpan snapshot (compose; mode sumber "Tabel 6.1"/"Tabel FM.1") menang
+  // atas hitungan kunci bab internal, sama dengan DOCX `numbering.ts`; hitungan hanya cadangan.
+  const snapLabel = new Map<string, string>();
+  for (const b of snap.blocks ?? []) if (b.blockId && typeof b.artifactLabel === "string" && b.artifactLabel !== "") snapLabel.set(b.blockId, b.artifactLabel);
   const pick = (block: Record<string, unknown>, computed: string | undefined): string | undefined => {
     const id = typeof block.blockId === "string" ? block.blockId : undefined;
     return (id && snapAddr.get(id)) ?? computed;
@@ -136,6 +140,8 @@ export function walkDoc(snap: Pick<NormDocSnapshot, "doc" | "blocks">): DocWalk 
         if (isTableType(block.type) && hasCaption) artifactLabel = `Tabel ${key}.${++n.table}`;
         else if (isFigureType(block.type) && hasCaption) artifactLabel = `Gambar ${key}.${++n.figure}`;
         else if (block.type === "derivation") artifactLabel = `Turunan D-${key}.${++n.derivation}`;
+        const bid = typeof block.blockId === "string" ? block.blockId : undefined;
+        if (artifactLabel !== undefined && bid !== undefined && snapLabel.has(bid)) artifactLabel = snapLabel.get(bid);
         if (artifactLabel) artifacts.add(artifactLabel);
         items.push({
           block,

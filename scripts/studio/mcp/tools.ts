@@ -51,7 +51,7 @@ import {
   type ReportResult,
 } from "../studio-report";
 import { mcpText, mcpTextDeep } from "./cli-text";
-import { hintFor, isGenuineFailure, REPEAT_HINT, REPEAT_LIMIT } from "./outcome";
+import { hintFor, isGenuineFailure, REPEAT_HINT, REPEAT_HINT_SERVER, REPEAT_LIMIT } from "./outcome";
 import { paragraphsOf } from "./write-position";
 import { templateText } from "./resources";
 import { DOCUMENT_TOOLS, guardReportSubmit } from "./doc-tools";
@@ -1129,8 +1129,11 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
     const warnings = [...prepared, ...(out.warnings ?? [])];
     const lines = [out.text.replace(/\n$/, "")];
     for (const w of warnings) lines.push(`peringatan ${w.code}: ${w.message}`);
-    lines.push(cidLine(cids, callId));
-    return { ok: true, text: lines.join("\n"), data: { ok: true, tool: name, ...out.data, ...(warnings.length > 0 ? { warnings } : {}), correlationIds: [...cids], mcpCallId: callId } };
+    // IMPL-W4 butir 5: studio_write/studio_edit ringkas bawaan: cid terakhir + jumlah (daftar penuh dengan detail: true).
+    const compact = (name === "studio_write" || name === "studio_edit") && !(isRecord(args) && args.detail === true) && cids.length > 1;
+    lines.push(compact ? `correlationId: ${cids[cids.length - 1]} (+${cids.length - 1} panggilan server lain; daftar dengan detail: true)` : cidLine(cids, callId));
+    const cidData = compact ? { correlationIds: [cids[cids.length - 1]], correlationCount: cids.length } : { correlationIds: [...cids] };
+    return { ok: true, text: lines.join("\n"), data: { ok: true, tool: name, ...out.data, ...(warnings.length > 0 ? { warnings } : {}), ...cidData, mcpCallId: callId } };
   } catch (e) {
     const err = toToolError(e);
     const internalDetail = internalDetailOf(e);
@@ -1165,7 +1168,7 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
     // W3-I1: penolakan identik berulang (alat + kode + sasaran) di sesi ini -> petunjuk berhenti mengulang.
     const target = [str(args, "documentId"), str(args, "mission"), str(args, "docKey"), str(args, "fileId")].filter((x) => x !== null).join("/");
     const repeats = ctx.session.noteOutcome(`${name}|${error.code}|${target}`);
-    const hint = repeats >= REPEAT_LIMIT ? REPEAT_HINT : hintFor(codeSafe ? error.code : "");
+    const hint = repeats >= REPEAT_LIMIT ? (genuine ? REPEAT_HINT_SERVER : REPEAT_HINT) : hintFor(codeSafe ? error.code : "");
     const ra = error.code === "RATE_LIMITED" ? /dalam (\d{1,6}) detik/.exec(error.message) : null;
     const retryAfterSec = error.code === "RATE_LIMITED" ? (ra !== null ? Number(ra[1]) : 30) : null;
     // IMPL-W3: penolakan yang dapat diperbaiki = hasil normal ok:false (bukan galat alat); baris petunjuk disusun MCP.

@@ -61,6 +61,8 @@ const HINTS: Readonly<Record<string, string>> = {
 
 /** W3-I1: petunjuk sesudah penolakan identik berulang di satu sesi. */
 export const REPEAT_HINT = "berhenti mengulang; ubah isi atau tanya controller";
+/** IMPL-W4 (review 13 Low): galat nyata server berulang -> penyebabnya server, bukan isi agen. */
+export const REPEAT_HINT_SERVER = "server bermasalah; tunggu lalu coba lagi (isi Anda bukan penyebabnya); bila tetap gagal, laporkan correlationId ke controller";
 /** W3-I1: ambang penolakan identik berturut-turut. */
 export const REPEAT_LIMIT = 3;
 

@@ -173,7 +173,7 @@ export function tocSectionSize(szHalfPt: number | undefined): number | undefined
 export type TocNode =
   | { level: "part"; part: PartSpec; target: TocTarget }
   | { level: "chapter" | "appendix"; chapter: Chapter; key: string; target: TocTarget }
-  | { level: "section"; chapter: Chapter; key: string; appendix: boolean; section: Section; number: string; target: TocTarget };
+  | { level: "section"; chapter: Chapter; key: string; appendix: boolean; section: Section; number: string; address: string; target: TocTarget };
 
 interface TocIndex {
   nodes: TocNode[];
@@ -224,12 +224,13 @@ function buildIndex(snapshot: NormDocSnapshot, levels: TocLevels): TocIndex {
     (Array.isArray(ch.sections) ? ch.sections : []).forEach((s, j) => {
       if (!isObj(s)) return;
       const target = next();
-      // Nomor sama dengan kepala section (renderSection: `number` konten, selain itu alamat C.S).
+      // Nomor sama dengan kepala section (renderSection: `number` konten, selain itu alamat C.S). IMPL-W4: nomor
+      // kosong eksplisit (penomoran sumber, nomor ada di judul) = label kosong.
       const address = `${key}.${j + 1}`;
-      const number = typeof s.number === "string" && s.number ? s.number : address;
+      const number = typeof s.number === "string" ? s.number : address;
       if (s.blockId) idx.sections.set(`id:${s.blockId}`, target);
       idx.sections.set(sectionAddrKey(appendix, address), target);
-      idx.nodes.push({ level: "section", chapter: ch, key, appendix, section: s, number, target });
+      idx.nodes.push({ level: "section", chapter: ch, key, appendix, section: s, number, address, target });
     });
   };
   const chapters = doc?.chapters ?? [];

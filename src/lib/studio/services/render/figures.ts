@@ -229,6 +229,7 @@ export async function buildFigures(i: {
 
   const store = await prepareFigureStore(i.snapshot, {
     svgFor,
+    tpl: i.tpl,
     log: i.job.log.renderLog,
     fixedDate: i.snapshot.doc.meta.issueDate,
     types: FIGURE_TYPES,

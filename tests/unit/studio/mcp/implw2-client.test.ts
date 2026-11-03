@@ -58,15 +58,16 @@ describe('builder dokumen klien (murni)', () => {
     expect(chartCodeOf({ categories: ['a', 'b'], series: s(1), type: 'k-02' }, (x) => w.push(x), 'x')).toBe('K-02');
   });
 
-  it('kunci bab = nomor di judul bila naik (Bab 6 -> Tabel/Gambar 6.x), selain itu urutan; judul tanpa nomor', () => {
+  it('IMPL-W4 butir 1: judul bernomor sumber = kunci internal berurutan + judul apa adanya (label di outline)', () => {
     const w: any[] = [];
     expect(chapterKeys([{ heading: '1. Pendahuluan', blocks: [] }, { heading: 'Bab 6 Analisis', blocks: [] }, { heading: 'Penutup', blocks: [] }], (x) => w.push(x))).toEqual([
-      { key: '1', title: 'Pendahuluan' },
-      { key: '6', title: 'Analisis' },
-      { key: '7', title: 'Penutup' },
+      { key: '1', title: '1. Pendahuluan' },
+      { key: '2', title: 'Bab 6 Analisis' },
+      { key: '3', title: 'Penutup' },
     ]);
-    expect(chapterKeys([{ heading: '3. A', blocks: [] }, { heading: '2. B', blocks: [] }], (x) => w.push(x)).map((c) => c.key)).toEqual(['3', '4']);
-    expect(w.map((x) => x.code)).toContain('CHAPTER_RENUMBERED');
+    // Nomor sumber tidak naik dicetak apa adanya (tidak dinomori ulang).
+    expect(chapterKeys([{ heading: '3. A', blocks: [] }, { heading: '2. B', blocks: [] }], (x) => w.push(x))).toEqual([{ key: '1', title: '3. A' }, { key: '2', title: '2. B' }]);
+    expect(w.map((x) => x.code)).not.toContain('CHAPTER_RENUMBERED');
   });
 
   it('subheading memulai section; paragraf ganda dipisah baris kosong', () => {
@@ -189,7 +190,11 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
     if (init.method === 'GET' && p === `/api/studio/documents/${DOCID}/content`) return ok({ document: { id: DOCID }, revisionNo: rev, content: structuredClone(content) });
     if (p === `/api/studio/documents/${DOCID}/completeness`) {
       const complete = ['cover', 'controlSheet', 'signature'].every((k) => content.sections[k]) && content.sections.content.chapters.length > 0;
-      return ok({ completeness: { status: complete ? 'COMPLETE' : 'INCOMPLETE', revisionNo: rev, missingRequired: complete ? [] : ['controlSheet'] } });
+      // IMPL-W4 S2-2r: penulis per bagian (R15) = pemanggil, agar tulis ulang dokumen sendiri tidak dianggap penulis tak tercatat.
+      const me = `agent:${AGENT}`;
+      const slots = ['cover', 'controlSheet', 'signature'].map((k) => ({ slotKey: k, lastFilledBy: content.sections[k] ? me : null }));
+      const present = (content.sections.content?.chapters ?? []).map((c: any) => ({ key: String(c.key), by: me }));
+      return ok({ completeness: { status: complete ? 'COMPLETE' : 'INCOMPLETE', revisionNo: rev, missingRequired: complete ? [] : ['controlSheet'], slots, chapters: { content: { present } } } });
     }
     if (p === `/api/studio/documents/${DOCID}/render`) return ok({ outputs: [{ id: 'cmwfiledocx000000000000w2a', format: 'DOCX', sha256: 'b'.repeat(64), byteSize: 1000 }] });
     if (init.method === 'HEAD') return reply({ status: 200, headers: { 'x-studio-sha256-verified': 'true', 'x-studio-sha256': 'b'.repeat(64), 'x-studio-final-filename': `018-GSP-KT-XI-2026_rev${rev}_20261103T030000Z_bbbbbbbb.docx` } });
@@ -223,8 +228,9 @@ describe('studio_write dokumen klien lewat MCP', () => {
     const { call } = await connect({ fetch: m.f as any, env });
     const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp', sections: [SECTIONS[0], { ...SECTIONS[2], heading: 'Bab 6 Analisis' }] });
     expect(r.isError, r.text).toBeFalsy();
-    expect(m.content().sections.content.chapters.map((c: any) => c.key)).toEqual(['1', '6']);
-    expect(m.content().sections.content.outline.map((x: any) => x.key)).toEqual(['1', '6']);
+    // IMPL-W4 butir 1: kunci internal berurutan; label outline = nomor sumber (Gambar 6.x), judul dicetak apa adanya.
+    expect(m.content().sections.content.chapters.map((c: any) => c.key)).toEqual(['1', '2']);
+    expect(m.content().sections.content.outline.map((x: any) => [x.key, x.label])).toEqual([['1', '6'], ['2', '6']]);
     expect(writes(m.calls)).toContain('PATCH /api/studio/documents/D/structure');
   });
 
@@ -263,9 +269,11 @@ describe('studio_write dokumen klien lewat MCP', () => {
     const { call } = await connect({ fetch: m.f as any, env });
     const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp' });
     expect(r.isError, r.text).toBeFalsy();
-    const sent = m.calls.filter((c) => c.method !== 'GET' && c.method !== 'HEAD' && !c.url.endsWith('/render') && !c.url.endsWith('/validate'));
+    // IMPL-W4 butir 3: ringkasan verifikasi memanggil route pratinjau figur (baca saja, tanpa basis); bukan kiriman.
+    const sent = m.calls.filter((c) => c.method !== 'GET' && c.method !== 'HEAD' && !c.url.endsWith('/render') && !c.url.endsWith('/validate') && !c.url.endsWith('/figures/preview'));
     expect(sent.every((c) => c.body.baseRevisionNo === 4)).toBe(true);
-    expect(sent[0].body).toMatchObject({ op: 'setMeta', meta: { title: META.title } });
+    expect(r.data.ok, r.text).toBe(true);
+    expect(sent[0].body, JSON.stringify(sent.map((c) => c.url))).toMatchObject({ op: 'setMeta', meta: { title: META.title } });
     expect(sent[0].body.meta).not.toHaveProperty('author');
   });
 

@@ -79,6 +79,12 @@ export interface RenderRequestV2 {
 export interface OutlineEntryV2 {
   key: string;
   title?: InlineV2;
+  /**
+   * IMPL-W4 (D-547) penomoran sumber: bab ini dicetak persis seperti judul sumbernya (tanpa kicker "Bab n", tanpa
+   * nomor section mesin; nomor ada di teks judul) dan label Tabel/Gambar memakai label ini ("Tabel 6.1", "Tabel FM.1";
+   * penghitung bersama untuk bab berlabel sama). Absen = penomoran mesin (perilaku lama).
+   */
+  label?: string;
 }
 
 /** T2-12 — `id` `^P[1-9][0-9]?$`; label "Bagian I" dibangkitkan mesin. */

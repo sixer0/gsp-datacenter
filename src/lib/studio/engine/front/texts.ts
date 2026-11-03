@@ -54,6 +54,18 @@ export function tocKickerText(lang: WrapperLang): string {
   return WRAPPER_TEXT.tocKicker[lang];
 }
 
+/**
+ * IMPL-W4 (D-547, penomoran sumber): kicker bab yang DIKIRIM sebagai teks kosong persis (`{ text: "" }`) berarti
+ * "tanpa kicker/label bab": judul bab sudah memuat nomor sumbernya ("Chapter 6. ...", "FM.1 ..."). Pembuka bab,
+ * daftar isi, daftar bab pembatas, dan kepala halaman lalu tidak mencetak "Bab n"/"Chapter n". Kicker absen tetap
+ * memakai pola bawaan (dokumen lama byte-identik).
+ */
+export function kickerSuppressed(kicker: unknown): boolean {
+  if (kicker === null || typeof kicker !== "object" || Array.isArray(kicker)) return false;
+  const k = kicker as { text?: unknown; runs?: unknown };
+  return k.text === "" && k.runs === undefined;
+}
+
 /** Label bab/lampiran bawaan di daftar isi dan daftar bab pembatas bagian: "Bab 1" / "Lampiran A". */
 export function chapterLabelText(key: string, appendix: boolean, lang: WrapperLang): string {
   return `${(appendix ? WRAPPER_TEXT.appendix : WRAPPER_TEXT.chapter)[lang]} ${key}`;

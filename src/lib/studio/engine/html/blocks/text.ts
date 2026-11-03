@@ -28,7 +28,7 @@ import {
 import { StudioEngineError } from "../../../contract/errors";
 import { railK2ReserveOf } from "../../docx/blocks/rail";
 import { datumRulePlaced } from "../../front/apparatus";
-import { appendixOpenerKickerText, chapterKickerText } from "../../front/texts";
+import { appendixOpenerKickerText, chapterKickerText, kickerSuppressed } from "../../front/texts";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
 import { contentOf, el, isObj, language, reportBad } from "./common";
 import { datumRuleHtml, isDevice, renderDevice } from "./device";
@@ -355,7 +355,8 @@ function chapterHead(block: NormBlock, ctx: RenderContext, kind: "chapter" | "ap
   if (!c) return "";
   if (!hasInline(c.title)) return reportBad(ctx, block, "tanpa title");
   const key = kind === "appendix" ? appendixKey(block, ctx, c) : chapterKey(block, c);
-  const kicker = el(
+  // IMPL-W4: kicker kosong eksplisit (penomoran sumber) = tanpa paragraf kicker, sama dengan DOCX structure.ts.
+  const kicker = kickerSuppressed(c.kicker) ? "" : el(
     ctx,
     "p",
     { classes: [C.chapterKicker], role: "chapter.kicker" },
@@ -380,7 +381,8 @@ export const renderSection: HtmlBlockRenderer = (block, ctx) => {
   const s = contentOf<Section>(ctx, block);
   if (!s) return "";
   if (!hasInline(s.title)) return reportBad(ctx, block, "tanpa title");
-  const number = typeof s.number === "string" && s.number ? s.number : (block.address ?? "");
+  // IMPL-W4: nomor kosong eksplisit (penomoran sumber; nomor ada di judul) = tanpa nomor, sama dengan DOCX.
+  const number = typeof s.number === "string" ? s.number : (block.address ?? "");
   const rf = roleFormat(ctx, "section.heading");
   const ns = runStyle(rf.numberRun, 0, ctx.tpl);
   const n = classStyle([C.sectionNumber, ...ns.classes], ns.decl);
@@ -394,7 +396,7 @@ export const renderSection: HtmlBlockRenderer = (block, ctx) => {
       format: s.headingFormat,
       address: block.address,
       blockId: block.blockId,
-      attrs: [["id", anchorId("st-sec", number.replace(/\./g, "-"))]],
+      attrs: [["id", anchorId("st-sec", (number || (block.address ?? "")).replace(/\./g, "-"))]],
     },
     `${numberHtml}<span class="${C.sectionTitle}">${inlineHtml(s.title, DEFAULT_MD_ROLES, semanticTransform(ctx, undefined, baseRun(ctx, "section.heading")))}</span>`,
   );

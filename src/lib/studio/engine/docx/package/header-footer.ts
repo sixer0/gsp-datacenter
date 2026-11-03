@@ -21,6 +21,7 @@ import type {
   TableBlock,
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
+import { kickerSuppressed } from "../../front/texts";
 import { REL, type Relationship } from "./parts";
 import { mmToTw, resolveUnitSetup, sectPrXml, textWidthTw, type ResolvedSectionSetup } from "./section";
 import {
@@ -91,7 +92,8 @@ function chapterTitleFor(ctx: RenderContext, unit: NormUnit): { label: string; t
     const idx = list.findIndex((c, i) => (c.key ?? (unit.kind === "chapter" ? String(i + 1) : String.fromCharCode(65 + i))) === unit.key);
     const ch = idx >= 0 ? list[idx] : undefined;
     const word = unit.kind === "chapter" ? (en ? "Chapter" : "Bab") : en ? "Appendix" : "Lampiran";
-    return { label: `${word} ${unit.key}`, title: ch ? (ch.runningHeadTitle ?? inlinePlain(ch.title)) : "" };
+    // IMPL-W4: kicker kosong eksplisit (penomoran sumber) = judul bab sudah memuat nomornya; tanpa "Bab n".
+    return { label: ch && kickerSuppressed(ch.kicker) ? "" : `${word} ${unit.key}`, title: ch ? (ch.runningHeadTitle ?? inlinePlain(ch.title)) : "" };
   }
   if (unit.kind === "part") {
     const part = (doc.parts ?? []).find((p) => p.id === unit.key);

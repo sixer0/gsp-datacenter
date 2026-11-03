@@ -12,7 +12,7 @@
  * (semafor browser = 1). Kunci = label artefak ("Gambar n.m"), lalu blockId;
  * lembar ke-n >= 2 berkunci `<kunci>#<n>`.
  */
-import type { FigureStore, NormBlock, NormDocSnapshot, RenderLogEntry } from "../../../contract";
+import type { FigureStore, NormBlock, NormDocSnapshot, RenderLogEntry, ResolvedTemplate } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { rasterizeSvg } from "../../browser";
 import { FIGURES_MODULE } from "./log";
@@ -35,7 +35,9 @@ export interface PrepareFigureStoreOptions {
   /** SVG per blok figur (`chart`, `diagram`, `symbolSheet`; `image` opsional). undefined = lewati. */
   svgFor: (block: NormBlock) => FigureSvgSheet | readonly FigureSvgSheet[] | undefined | Promise<FigureSvgSheet | readonly FigureSvgSheet[] | undefined>;
   /** Default: `rasterizeSvg` engine/browser (S25). */
-  rasterize?: (svg: string, i: { widthMm: number; heightMm: number; dpi: 300 }) => Promise<Uint8Array>;
+  rasterize?: (svg: string, i: { widthMm: number; heightMm: number; dpi: 300; tpl?: ResolvedTemplate }) => Promise<Uint8Array>;
+  /** IMPL-W4 (review 15 F4): templat dokumen; aset fon templat dipakai untuk fon tertanam raster. */
+  tpl?: ResolvedTemplate;
   log: (e: RenderLogEntry) => void;
   /** Cap waktu deterministik log (meta.issueDate). */
   fixedDate?: string;
@@ -84,7 +86,7 @@ export async function prepareFigureStore(snapshot: NormDocSnapshot, opts: Prepar
         const s = sheets[i];
         const widthMm = placedW ?? s.widthMm;
         const heightMm = (s.heightMm * widthMm) / s.widthMm;
-        const png = await rasterize(s.svg, { widthMm, heightMm, dpi: 300 });
+        const png = await rasterize(s.svg, { widthMm, heightMm, dpi: 300, ...(opts.tpl ? { tpl: opts.tpl } : {}) });
         map.set(sheetKey(key, i + 1), { svg: s.svg, png, widthMm, heightMm });
       }
     } catch (e) {

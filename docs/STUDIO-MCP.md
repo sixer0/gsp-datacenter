@@ -621,6 +621,52 @@ tabel/gambar bercaption tanpa sumber, dan dokumen agen tidak boleh menurunkan pe
 itu "terima tanpa sumber/satuan" tidak dapat dicapai di lapisan MCP tanpa perubahan mesin/kontrak; MCP melaporkan semua
 tabel/gambar yang kurang dalam satu hasil normal dan tidak mengarang isi.
 
+### 5.z Ronde 6 (IMPL-W4, D-544..D-547)
+
+- **Penomoran sumber (dokumen klien).** Bila judul bagian atau sub-judul membawa nomornya sendiri ("Chapter 1.
+  Introduction", "1.1 Product concept", "FM.1 Document control block", "4. Konsep"), dokumen mencetak judul itu PERSIS
+  dan berurutan: tanpa kicker "BAB n"/"CHAPTER n", tanpa nomor section mesin, tanpa penyarangan, tanpa nomor ganda. Label
+  Tabel/Gambar mengikuti nomor bab sumber ("Tabel 6.1", "Gambar 6.1"); bagian depan FM.x tetap bagian sendiri dengan label
+  "FM" ("Tabel FM.1"). Bagian tanpa nomor di dokumen bernomor memakai label bab sebelumnya (atau berikutnya). Mesin:
+  outline slot konten membawa `label` per bab (`OutlineEntryV2.label`, pola `^[A-Za-z0-9]{1,8}$`); tanpa label = penomoran
+  mesin lama (byte-identik). Hasil `studio_write` memuat `numbering: "source"`.
+- **Status/meta selalu diterapkan.** Medan kepala record laporan kerja yang DIBERI di `meta` (status, verdict, reportedAt,
+  owner, initiator, taskRef, cardIds) diterapkan juga pada tulis parsial tanpa Rincian kerja (butir/bukti record tidak
+  disentuh; `RECORD_KEPT` + `RECORD_META_APPLIED`). Medan yang tidak diberi tidak diubah ke bawaan.
+- **Saluran meta `studio_edit`.** `{ documentId, meta: { status: "complete", verdict: "pass" } }` (laporan) atau
+  `{ documentId, meta: { rev: "Rev 1, ...", number, date, title, author, checker, approver, revisionNote } }` (klien;
+  sampul + lembar kendali + setMeta; revisi baru MENAMBAH baris riwayat). `edits` dan `meta` boleh bersama; keduanya kosong
+  -> `INVALID_ARGUMENT`. Status tak dikenal -> `STATUS_NOT_APPLIED`, tanpa tulis.
+- **Ringkasan verifikasi di setiap hasil tulis/sunting** (`verify`): revisi tersimpan; sha256 berkas render DIHITUNG
+  ULANG dari unduhan (`shaMatch`); judul dan keterangan Tabel/Gambar dibaca dari byte berkas itu (DOCX: paragraf
+  ber-`outlineLvl`, kicker bila ada); jumlah halaman bila berkas memuatnya; lint tata letak per figur (`figures:
+  [{pid, layoutIssues}]`, dari route pratinjau figur); gema medan record (laporan) atau meta tampilan (klien). Teks dokumen
+  hanya di blok `<data-tak-tepercaya>`. Agen tidak perlu membuka zip, crop, atau memeriksa gambar sendiri kecuali
+  `shaMatch` false atau `layoutIssues` > 0.
+- **Hasil ringkas (bawaan).** Tanpa `nextSteps`; `render` = fileId + format + sha256 + verified; `verify` di
+  structuredContent memuat jumlah judul/keterangan (daftar ada di blok teks); suntingan yang tidak mengubah judul mencetak
+  jumlah judul saja; satu correlationId terakhir + `correlationCount`. `detail: true` mengembalikan semuanya.
+- **Grafik di DOCX.** PNG dirasterisasi dengan fon Plex yang dirujuk SVG ditanam di halaman raster (sebelumnya fon sistem
+  host: Plex Condensed jatuh ke Plex Sans yang lebih lebar dan Plex Mono ke serif, sehingga label kategori panjang
+  meluber ke tepi kiri). Fon tertanam yang gagal dimuat -> render ditolak, bukan diam-diam diganti. Suntingan data grafik
+  tanpa `type`/`stacked` mempertahankan bentuk grafik (batang bertumpuk tetap bertumpuk).
+- **Siklus perbaikan 1 (review 13 + review 15).** Saluran meta klien MENAMBAL entri yang dimaksud (baris sampul, lapis
+  verifikasi, peran tanda tangan lain tetap identik); `language` berbeda atau `distribution` atas daftar berisi ->
+  `META_UNSAFE` (ok:false, 0 tulis); slot depan yang ditambal memakai cek penulis per bagian. `meta.number`/`docNumber`
+  memberi peringatan `NUMBER_DISPLAY_ONLY`. Aturan sesi terikat revisi (tulisan pihak lain sesudah tulisan sesi -> ditolak).
+  Ringkasan verifikasi tidak mengunduh berkas > 25 MB dan tidak mendekompresi entri > 20 MB (`verify.error =
+  VERIFY_TOO_LARGE`, tulisan tetap sukses). Mesin: label artefak ganda di compose -> `BY_CONSTRUCTION_FAILED`; label
+  outline yatim/di lampiran -> peringatan; alamat label menerima label sumber ("Tabel FM.1"); lint struktur memakai label
+  snapshot; fon raster dari satu sumber (`engine/html/base/fonts.ts`, sha256, aset templat), wajah simbol DejaVu
+  komposit untuk ≤ ≥ →, penolakan hanya bila wajah yang benar-benar dipakai gagal dimuat (422 `BY_CONSTRUCTION_FAILED`).
+- **Catatan deploy.** Rasterisasi DOCX dan HTML mandiri membaca fon dari `src/lib/studio/assets/**` (manifest S13,
+  relatif cwd). Deploy standalone/serverless (`output: "standalone"`, fungsi serverless) WAJIB memasukkan
+  `src/lib/studio/assets/**` ke file tracing (mis. `outputFileTracingIncludes`); tanpa itu render ditolak keras
+  (`FILE_MISSING_ON_DISK` / `BY_CONSTRUCTION_FAILED`), bukan diam-diam memakai fon sistem. Konfigurasi build tidak diubah.
+- **Sisa Low review 13.** Bagian yang sudah ada di server dengan penulis R15 tidak tercatat dan isi berbeda ->
+  `PART_CHANGED_BY_OTHER`, kecuali sesi MCP ini yang menulisnya. Pemetaan pid tidak menghitung butir daftar. Galat nyata
+  server yang berulang memberi petunjuk "server bermasalah; tunggu lalu coba lagi".
+
 ## 6. Keamanan
 
 - Tujuan jaringan dibatasi ke asal `STUDIO_BASE_URL`; pengalihan 3xx tidak pernah diikuti, termasuk
