@@ -97,7 +97,7 @@ async function main(): Promise<number> {
       return { isError: r.isError === true, data, bytes: Buffer.byteLength(raw), ms: Date.now() - t0 };
     }
   };
-  const note = (r: { isError: boolean; data: any; bytes: number; ms: number }, s: string) => `${s} [${r.bytes} B, ${r.ms} ms]${r.isError ? ` galat ${r.data.error?.code}: ${String(r.data.error?.message ?? "").slice(0, 200)}` : ""}`;
+  const note = (r: { isError: boolean; data: any; bytes: number; ms: number }, s: string) => `${s} [${r.bytes} B, ${r.ms} ms]${r.isError || r.data.ok === false ? ` ${r.isError ? "galat" : "ok:false"} ${r.data.error?.code}: ${String(r.data.error?.message ?? "").slice(0, 200)} ${JSON.stringify(r.data.error?.details ?? null).slice(0, 300)}` : ""}`;
 
   const w = await call("studio_write", {
     mission,

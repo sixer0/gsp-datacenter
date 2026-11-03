@@ -68,9 +68,9 @@ describe('builder (murni): isi minimal -> laporan kerja MD', () => {
     expect(w.map((x) => x.code)).toEqual(expect.arrayContaining(['ITEM_COLUMNS_RENAMED', 'ITEM_KEY_REPAIRED']));
   });
 
-  it('bab wajib tanpa isi -> SECTION_MISSING (satu-satunya penolakan), dengan petunjuk satu baris', () => {
-    expect(() => buildWorkReport({ mission: MISSION, docKey: 'lap-1', title: null, meta: {}, sections: SECTIONS.slice(0, 3), agentId: AGENT, now: NOW })).toThrow(/Isu terbuka, Langkah berikut/);
-    expect(() => buildWorkReport({ mission: MISSION, docKey: 'lap-1', title: null, meta: {}, sections: [...SECTIONS.slice(0, 4), { heading: 'Langkah berikut', blocks: ['  '] }], agentId: AGENT, now: NOW })).toThrow(/Langkah berikut/);
+  it('bab wajib tanpa isi -> IMPL-W3 butir 6: tidak menolak, missing berisi semua bab yang kurang', () => {
+    expect(buildWorkReport({ mission: MISSION, docKey: 'lap-1', title: null, meta: {}, sections: SECTIONS.slice(0, 3), agentId: AGENT, now: NOW }).missing).toEqual(['Isu terbuka', 'Langkah berikut']);
+    expect(buildWorkReport({ mission: MISSION, docKey: 'lap-1', title: null, meta: {}, sections: [...SECTIONS.slice(0, 4), { heading: 'Langkah berikut', blocks: ['  '] }], agentId: AGENT, now: NOW }).missing).toEqual(['Langkah berikut']);
   });
 });
 
@@ -112,24 +112,32 @@ describe('studio_write lewat MCP', () => {
     expect(r.bytes).toBeLessThan(4000);
   });
 
-  it('bab wajib kosong -> SECTION_MISSING tanpa jaringan', async () => {
+  it('bab wajib kosong -> IMPL-W3 butir 6: disimpan INCOMPLETE (ok, tanpa render), missing menyebut semua bab', async () => {
     const m = studioMock();
     const { call } = await connect({ fetch: m.f, env });
     const r = await call('studio_write', { mission: MISSION, docKey: 'lap-implw', sections: SECTIONS.slice(0, 2) });
-    expect(r.data.error.code).toBe('SECTION_MISSING');
-    expect(r.data.error.message).toContain('"heading": "Bukti"');
-    expect(m.calls).toEqual([]);
+    expect(r.isError).toBeFalsy();
+    // Server tiruan selalu menjawab COMPLETE; tanpa render pada server nyata dibuktikan di smoke DEV.
+    expect(r.data).toMatchObject({ ok: true, state: 'INCOMPLETE', missing: ['Bukti', 'Isu terbuka', 'Langkah berikut'] });
+    expect(typeof r.data.hint).toBe('string');
+    expect(posts(m.calls).length).toBeGreaterThan(0);
   });
 
   it('tulis kedua atas laporan sendiri (penulis terakhir = pemanggil): hanya bagian berubah yang mengubah revisi', async () => {
-    const m = ownRoutes(`agent:${AGENT}`, `agent:${AGENT}`);
-    const { call } = await connect({ fetch: m.f, env });
-    const first = await call('studio_write', { mission: MISSION, docKey: 'lap-implw', sections: SECTIONS });
+    // IMPL-W3 siklus 1 (W3-L4): penulis per bagian diperiksa; server tiruan mencatat bagian awal atas nama cod-r3-f2,
+    // jadi pemanggil = agen itu; jalur update memeriksa mission + docKey terhadap dokumen, jadi target = dokumen seed.
+    // Butir record di dokumen (R3F2-1/2) dijaga pagar jalur update (penghapusan hanya lewat ~~hapus~~), jadi tabel
+    // butir masukan memakai kunci yang sama.
+    const SEED = 'cod-r3-f2';
+    const OWN = SECTIONS.map((x) => (x.heading === 'Rincian Pekerjaan' ? { heading: 'Rincian kerja', blocks: [[['key', 'judul', 'status', 'bukti'], ['R3F2-1', 'Reproduksi temuan', 'running', 'out/probe.txt 120 B sha 55d324b1'], ['R3F2-2', 'Uji refresh', 'done', 'out/uji.txt 64 B sha 0a1b2c3d']]] } : x));
+    const m = ownRoutes(`agent:${SEED}`, `agent:${SEED}`);
+    const { call } = await connect({ fetch: m.f, env: { ...env, STUDIO_AGENT_ID: SEED } });
+    const first = await call('studio_write', { mission: '2026-11-01_r3f2', docKey: 'lapkerja-r3f2-uji', sections: OWN });
     expect(first.isError).toBeFalsy();
     const rev = m.s.rev();
     m.calls.length = 0;
-    const next = SECTIONS.map((s) => (s.heading === 'Langkah berikut' ? { ...s, blocks: ['Uji ronde 5 hari ini.'] } : s));
-    const second = await call('studio_write', { mission: MISSION, docKey: 'lap-implw', sections: next });
+    const next = OWN.map((s) => (s.heading === 'Langkah berikut' ? { ...s, blocks: ['Uji ronde 5 hari ini.'] } : s));
+    const second = await call('studio_write', { mission: '2026-11-01_r3f2', docKey: 'lapkerja-r3f2-uji', sections: next });
     expect(second.isError).toBeFalsy();
     expect(m.s.rev()).toBe(rev + 1);
     expect(JSON.stringify(m.s.chapter('5'))).toContain('hari ini');
@@ -208,7 +216,7 @@ describe('studio_edit lewat MCP (laporan kerja)', () => {
     expect(outside(nf.text)).not.toContain('Ringkasan awal');
     const amb = await call('studio_edit', { documentId: DOC, edits: [{ find: 'R3F2', replace: 'x' }] });
     expect(amb.data.error.code).toBe('TEXT_AMBIGUOUS');
-    expect(amb.data.error.details.matches.length).toBeGreaterThan(1);
+    expect(amb.data.error.details.candidates.length).toBeGreaterThan(1); // IMPL-W3: matches -> candidates (+ find jendela)
     expect(posts(m.calls)).toEqual([]);
   });
 

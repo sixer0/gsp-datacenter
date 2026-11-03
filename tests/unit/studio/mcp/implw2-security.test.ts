@@ -145,7 +145,7 @@ describe('L-1, L-2, L-3, L-4, I-1, I-4', () => {
 
   it('L-4: isu skema dibatasi 20 + satu entri hitungan', async () => {
     const { call } = await connect({ env });
-    const rows = Array.from({ length: 300 }, () => [true, true]);
+    const rows = Array.from({ length: 300 }, () => []); // IMPL-W3: sel boolean kini dikonversi (butir 3); baris kosong tetap tidak sah
     const r = await call('studio_write', { mission: MISSION, docKey: 'k', sections: [{ heading: 'x', blocks: [rows] }] });
     expect(r.data.error.code).toBe('INVALID_ARGUMENT');
     expect(r.data.error.details.length).toBe(21);

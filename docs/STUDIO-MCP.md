@@ -219,7 +219,9 @@ bawaan templat yang dapat memuat pdf. Bila mesin PDF belum siap, R17 menjawab `5
 Setiap hasil berisi satu blok teks untuk manusia dan `structuredContent` JSON (`ok`, `tool`, data
 alat). Setiap hasil, sukses maupun galat, membawa `correlationIds` (semua cid server panggilan itu,
 berurutan; `[]` bila tanpa server) dan `mcpCallId` (`mcp-<uuid>`, sama dengan id di log stderr).
-Baris terakhir teks memuat `correlationIds: ...`. Peringatan non-galat ada di `warnings`
+Baris terakhir teks memuat `correlationIds: ...`. IMPL-W3: galat yang dapat diperbaiki agen adalah hasil normal
+(`isError` absen, `ok: false`, `code`, `hint`, baris teks `petunjuk:`); `isError: true` hanya untuk kegagalan nyata
+(lihat 5.y). Peringatan non-galat ada di `warnings`
 (`OWNER_AGENT_MISMATCH`, sekali per dokumen per proses) dan di baris `peringatan ...` pada teks.
 
 **Teks netral-MCP.** Teks hasil dan pesan galat tidak memakai istilah CLI. Petunjuk dari logika bersama
@@ -487,9 +489,8 @@ Mesin: `meta.number` = nomor TAMPILAN (blok kendali sampul + judul lembar kendal
 `custodian`, `basis`, `method`, `distribution`, `source`). Satu bagian = satu bab; kunci bab = nomor di judul bila naik
 (`6. Analisis` -> bab 6; kunci tidak berurutan -> `setOutline`), selain itu urutan; label BAB, "Tabel N.M", dan
 "Gambar N.M" dihitung server dari kunci bab. Setiap tabel dan grafik berketerangan (dibangkitkan dari judul bab + judul
-kolom / nama seri bila kosong: `CAPTION_GENERATED`) dan bersumber (`meta.source` atau "Diolah oleh <author>":
-`SOURCE_DEFAULTED`). Tabel angka tanpa satuan di judul kolom -> `TABLE_UNIT_MISSING` (gerbang DATUM-09; satuan tidak
-ditebak). Kode grafik dipilih mesin: 1 seri -> P-02 (kolom) atau P-01 (bar urut, label > 14 atau > 8 kategori);
+kolom / nama seri bila kosong: `CAPTION_GENERATED`) dan bersumber (IMPL-W3: `source` blok atau `meta.source` dari agen; sumber tidak dikarang, lihat 5.y). Tabel angka tanpa
+satuan dari agen -> isu `TABLE_UNIT_MISSING` (gerbang DATUM-09; satuan tidak ditebak; lihat 5.y). Kode grafik dipilih mesin: 1 seri -> P-02 (kolom) atau P-01 (bar urut, label > 14 atau > 8 kategori);
 2..3 seri -> P-03; `stacked: true` -> K-01; 4..6 seri -> P-12; > 6 seri tanpa `stacked` -> `CHART_TOO_MANY_SERIES`;
 `type` (kode atau nama: bar, column, line, stacked, area, ...) menang. Semua slot/bab diuji dry-run R08 sebelum
 dokumen dibuat (`CONTENT_INVALID`, isu server di blok): tidak ada dokumen setengah jadi KARENA PENOLAKAN VALIDASI. Galat lain di
@@ -516,6 +517,109 @@ studio_write { "mission": "2026-11-03_implw", "docKey": "lap-1", "meta": { "stat
 studio_edit { "documentId": "<id>", "edits": [ { "find": "Uji ronde 5.", "replace": "Uji ronde 5 hari ini." } ] }
 studio_file_verify { "fileId": "<render.fileId>", "downloadDir": "<akar>" }
 ```
+
+### 5.y Mesin menyerap masalah (IMPL-W3, D-534)
+
+Prinsip D-521/D-523: agen hanya memikirkan isi; mesin memformat dan menyerap masalah, tanpa mengubah isi tanpa maksud
+penulis. Aturan yang berlaku untuk toolset `write`:
+
+**Hasil normal vs galat.** Penolakan yang dapat diperbaiki agen (validasi, tidak ketemu, ganda, konflik, bagian kurang,
+penolakan pemilik, kapasitas termasuk 429) dikirim sebagai hasil NORMAL: `isError` absen, `structuredContent.ok: false`,
+`code`, `hint` satu baris, `error` (pembungkus data tak tepercaya tetap). `isError: true` hanya untuk kegagalan nyata:
+server tak terjangkau, 5xx, `INTERNAL_ERROR`, `SECRET_MISSING`, `REMOTE_UNAUTHORIZED`/`REMOTE_REDIRECT`/`REMOTE_BAD_RESPONSE`
+(`scripts/studio/mcp/outcome.ts`). Alasannya: klien MCP Hermes menghitung setiap `isError` sebagai kegagalan server dan
+mengunci server 60 s sesudah 3 berturut-turut. Log stderr tetap `ok:false` + `code`. Berlaku untuk semua alat.
+
+**Kelonggaran skema (`write-normalize.ts`).** Sebelum validasi: `{paragraph|text|p: "..."}` -> paragraf, `{rows}` /
+`{table: {rows, header}}` -> tabel, `{items|bullets}` -> daftar, `{heading}` (atau `{heading, blocks}` bersarang) ->
+`{subheading}`, larik teks -> daftar, sel boolean/null -> teks, nilai meta angka -> teks, `title|name` -> `heading`,
+`content|paragraphs` -> `blocks`. Properti tak dikenal dibuang dengan peringatan `ARG_IGNORED` (pemetaan: `ARG_MAPPED`).
+Kunci meta dinormalkan (camelCase, `_`, `-`) lalu dicari aliasnya (`tanggal` -> date, `nomor` -> number, `revisi`/`revision`
+-> rev); kunci tak dikenal = peringatan, tidak pernah ditolak. Batas ukuran skema tetap ditegakkan.
+
+**Laporan kerja.** Medan kepala dinormalkan sebelum konversi (vonis `lulus` -> PASS, `lulus dengan catatan` -> CAUTION;
+`taskRef`/`initiator` berspasi -> berpisah tanda hubung; `cardIds` selain `t_xxxxxxxx` dibuang dengan peringatan), urutan
+bagian bebas (konverter mengurutkan bab 1..5 lalu bab tambahan; `assertShape` membandingkan dengan urutan yang sama).
+Ini menutup positif palsu `CONTENT_INJECTION` "pembuka bab 1 di luar section"; deteksi injeksi nyata tidak berubah.
+Bab wajib yang kurang tidak menolak: laporan disimpan `state: "INCOMPLETE"` (tanpa render), `missing` menyebut semua bab
+sekaligus, `hint` menyarankan `studio_write` lagi atau `studio_edit {after, insert}`; isi tidak dikarang. Status Indonesia
+(`terblokir`, `selesai`, `perlu-tinjauan`, `belum mulai`, `dalam proses`, ...) dipetakan untuk laporan dan butir. Blok
+`{ref: {rel, documentId, pid?, revision?}}` di bagian mana pun -> tabel Rujukan; teks di bagian Rujukan dipindah ke
+"Catatan rujukan" (tidak lagi `MD_REPORT_INVALID`). `studio_write` atas laporan SENDIRI dengan judul baru: `META_CONFLICT`
+diserap (setMeta judul lalu kirim ulang sekali, `META_UPDATED`). Wrap keras di paragraf digabung.
+
+**Dokumen klien.**
+- Penomoran bab: nomor eksplisit di judul ("4. Konsep", "Bab 4 Konsep", "Chapter 4 ...") selalu dihormati. Bagian tanpa
+  nomor memakai nomor bebas berikutnya; bila tidak ada nomor bebas sebelum bab bernomor berikutnya (mis. "Ringkasan"
+  sebelum "1. Pendahuluan"), bagian itu menjadi sub-bagian bab di sebelahnya (`SECTION_NESTED`; beri nomor bila harus menjadi
+  bab sendiri). `CHAPTER_RENUMBERED` hanya untuk nomor eksplisit ganda atau tidak naik.
+- Sub-judul: mesin menomori sub-bagian mengikuti bab (4.1, 4.2, ...). Nomor sumber bertingkat di awal sub-judul ("1.1 ",
+  "4.2.3. ") dibuang (`SUBHEADING_NUMBER_STRIPPED`), jadi daftar isi tidak mencetak "4.1 1.1 ...".
+- Caption: prefiks "Gambar 6.1", "Tabel 2.1:", "Figure 3 -", "Table 4 –" dibuang (`CAPTION_PREFIX_STRIPPED`); mesin
+  mencetak nomornya sendiri.
+- Sumber TIDAK dikarang (D-530(2) dibalik): tanpa `source` pada blok, `meta.source` yang diberi agen dipakai
+  (`SOURCE_FROM_META`); tanpa keduanya tidak ada baris sumber dan isu `SOURCE_MISSING` dilaporkan, karena gerbang DATUM-10
+  server menolak tabel/gambar bercaption tanpa sumber.
+- Satuan (DT-17): tidak ada kolom yang ditambahkan; struktur tabel sumber tetap verbatim. Satuan hanya dari agen: judul kolom
+  ("Daya (MW)"), `unit` pada blok tabel, atau caption ("... (MW)", "satuan: MW", "dalam MW") -> metadata `unit` kolom angka
+  (`UNIT_FROM_CAPTION`/`UNIT_FROM_BLOCK`). Tanpa satuan sama sekali -> isu `TABLE_UNIT_MISSING` (gerbang DATUM-09).
+- Revisi: kode pendek di `revisionHistory.rev` (<= 16 karakter, "Rev 0"), teks penuh ("Rev 0, terbitan pertama") di catatan
+  revisi (`REV_SPLIT`); tidak ada yang hilang. Medan lembar kendali disesuaikan batas skema.
+- Semua isu yang tidak dapat diperbaiki mesin dikumpulkan dan dikirim SEKALI (`CONTENT_INVALID`, `details.issues[]` dengan
+  `where`, `code`, `message`; 0 jaringan); bagian tanpa isi dilewati (`SECTION_EMPTY_SKIPPED`); dokumen belum lengkap =
+  `state: "INCOMPLETE"`.
+- Paragraf: wrap keras digabung, baris kosong = paragraf baru, backtick inline -> run kode (juga untuk `studio_edit {after, insert}`).
+
+**Alamat suntingan (`studio_edit`).**
+- Kata/teks: `find` sebaiknya frasa >= 3 kata (sasaran + tetangganya); hanya bagian yang berbeda antara `find` dan `replace`
+  yang berubah. Pencocokan bertingkat: persis (spasi dinormalkan, escape Markdown diabaikan) -> tanpa markah inline ->
+  samar (huruf besar/kecil, spasi, kutip/tanda pisah pintar vs lurus, markah emphasis, angka `1,000` = `1.000` = `1000`;
+  satu kecocokan samar diterapkan dengan `FUZZY_MATCH`).
+- Tanda baca: `find` yang memuat tanda baca dicocokkan PERSIS (tanpa normalisasi kutip/tanda pisah/angka) agar tanda yang
+  diperbaiki tidak terhapus; jangkar pendek cukup bila unik (`"kata ,"` -> `"kata,"`, `"kata.Kata"` -> `"kata. Kata"`).
+- Penargetan: `{find, replace, section}` membatasi ke satu bab/section (judul atau "bab 2"); `{cell: {section?, row, column},
+  value}` mengubah satu sel (row = teks sel mana pun di baris, mis. kunci; column = judul kolom); `occurrence: "all"`
+  mengganti semua kecocokan secara eksplisit. Tanpa `occurrence: "all"` tidak pernah lebih dari satu sasaran.
+- Ambigu/tidak ketemu: hasil normal `ok: false` dengan `TEXT_AMBIGUOUS`/`TEXT_NOT_FOUND`; `details.candidates` memuat
+  section, row, column, dan untuk teks `find` jendela unik >= 3 kata siap salin, untuk sel alamat `cell` siap salin.
+- Posisi (gerbang naturalisasi): `{pid, at, length?, replace, expect?}`. pid dan teks polos per paragraf dari
+  `studio_document_get { documentId, view: "paragraphs" }`; `at` = offset di teks polos; `expect` berbeda ->
+  `POSITION_MISMATCH` (hasil normal, 0 tulis).
+
+```text
+studio_edit { "documentId": "<id>", "edits": [
+  { "cell": { "row": "T-7", "column": "status" }, "value": "running" },
+  { "find": "proyek baik dan", "replace": "proyek sangat baik dan", "section": "Ringkasan" },
+  { "find": "kata ,lalu", "replace": "kata, lalu" },
+  { "pid": "p-ringkas-1", "at": 14, "length": 1, "replace": ";", "expect": "." } ] }
+```
+
+**Lain-lain.** `studio_file_verify` (dan render dokumen klien) mencoba ulang HEAD R10 yang menjawab 404 (3 percobaan,
+sekitar 1,5 s) sebelum melapor. `studio_document_get` menerima bentuk umum yang keliru: `id`/`docId` -> `documentId`,
+`view: text|pids` -> paragraphs, `chapter` tanpa `slot` -> slot content, argumen milik view lain dibuang dengan peringatan.
+
+**Siklus perbaikan 1 (D-539, review 13 IMPL-W3).**
+- Tulis ulang laporan kerja SENDIRI yang sudah ada: lewat jalur update ber-basis (basis = revisi yang dibaca), hanya bab di
+  masukan yang isinya berbeda dikirim; bab lain tidak disentuh. Record (status, butir, bukti) hanya dikirim bila bab
+  Rincian kerja ada di masukan (selain itu `RECORD_KEPT`), dan pagar record jalur update berlaku (butir/bukti/rujukan hanya
+  hilang lewat `~~hapus~~`). `missing` dihitung terhadap isi server. Laporan baru tetap boleh INCOMPLETE.
+- Penulis terakhir per bagian (R15 `lastFilledBy` / `present[].by`): bagian yang akan ditulis ulang utuh (laporan dan
+  dokumen klien) dan terakhir ditulis pemanggil lain -> `PART_CHANGED_BY_OTHER` (hasil normal, 0 tulis, bagian dan penulis
+  di blok rincian); ubah bagian itu lewat `studio_edit`. Judul baru laporan sendiri -> setMeta dengan basis = revisi yang
+  dibaca (tidak ada lagi kirim ulang sesudah META_CONFLICT).
+- Posisi: diterapkan pada paragraf ber-pid itu (bukan kembaran teks di bab yang sama); offset yang memotong pasangan
+  surrogate -> `POSITION_INVALID`.
+- `studio_edit` laporan: jenis blok selain paragraf per bab (daftar, kode, tabel, kutipan) harus sama sesudah sunting
+  (selain itu `CONTENT_INJECTION`); blok kode berpagar tidak pernah ditulis ulang sebagai paragraf.
+- Dokumen klien: salinan teks depan hanya diganti bersama bila cocok persis; kecocokan samar di > 1 medan depan perlu
+  `occurrence: "all"`.
+- Pembatas ulang: penolakan identik ke-3 berturut-turut (alat + kode + sasaran) di satu sesi memberi `hint`
+  "berhenti mengulang; ubah isi atau tanya controller" dan `repeated`; 429 membawa `retryAfterSec`. Tidak pernah `isError`.
+
+**Keterbatasan (perlu keputusan).** Gerbang by-construction DATUM-09/DATUM-10 server menolak tabel angka tanpa satuan dan
+tabel/gambar bercaption tanpa sumber, dan dokumen agen tidak boleh menurunkan penegakan (`x.lintEnforcement`, D-98). Karena
+itu "terima tanpa sumber/satuan" tidak dapat dicapai di lapisan MCP tanpa perubahan mesin/kontrak; MCP melaporkan semua
+tabel/gambar yang kurang dalam satu hasil normal dan tidak mengarang isi.
 
 ## 6. Keamanan
 

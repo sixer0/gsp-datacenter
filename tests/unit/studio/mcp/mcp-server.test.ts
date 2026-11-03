@@ -79,7 +79,8 @@ describe('validasi argumen (skema ketat)', () => {
   it('properti tak dikenal, required hilang, markdown+path bersamaan -> INVALID_ARGUMENT dengan correlationId mcp-', async () => {
     const { call } = await connect();
     const a = await call('studio_report_template', { mission: 'm', bocor: 1 });
-    expect(a.isError).toBe(true);
+    expect(a.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(a.data.ok).toBe(false);
     expect(a.data.error.code).toBe('INVALID_ARGUMENT');
     expect(a.data.error.correlationId).toMatch(/^mcp-[0-9a-f-]{36}$/);
     expect(a.data.error.correlationSource).toBe('mcp');
@@ -120,7 +121,8 @@ describe('alat laporan kerja (logika studio-report dipakai ulang)', () => {
     const m = studioMock();
     const { call } = await connect({ fetch: m.f });
     const r = await call('studio_report_check', { markdown: NEW_MD.replace(/^Status: .*$/m, '') });
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
     expect(r.data.error.code).toBe('MD2CONTRACT_REQUIRED_MISSING');
     expect(m.calls).toHaveLength(0);
   });
@@ -164,7 +166,8 @@ describe('alat laporan kerja (logika studio-report dipakai ulang)', () => {
     const tpl = await c1('studio_report_template', { mission: '2026-11-01_mcp01', docKey: 'lapkerja-mcp01-j', format: 'json' });
     const json = (tpl.data.template as string).replace(/<isi: [^>]*>/g, 'x');
     const r = await c1('studio_report_update', { documentId: DOC, markdown: json });
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
     expect(r.data.error.code).toBe('BASIS_MISSING');
     expect(m.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
@@ -381,7 +384,7 @@ describe('galat server, rahasia, pagar jaringan', () => {
     const validates = m.calls.filter((c) => c.url.endsWith('/validate'));
     expect(validates.every((c) => c.redirect === 'manual')).toBe(true);
     expect(m.calls.every((c) => new URL(c.url).origin === BASE)).toBe(true);
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBe(true); // REMOTE_REDIRECT = kegagalan nyata
     expect(r.data.error.code).toBe('REMOTE_ERROR');
     expect(validates).toHaveLength(1);
   });

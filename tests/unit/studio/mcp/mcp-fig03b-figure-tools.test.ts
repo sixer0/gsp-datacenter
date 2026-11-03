@@ -111,7 +111,7 @@ describe('studio_figure_preview', () => {
     const { call } = await connect({ env });
     for (const args of [{ documentId: DOC }, { documentId: DOC, pid: PID, address: '1.1.2' }, { pid: PID }]) {
       const r = await call('studio_figure_preview', args);
-      expect(r.isError, JSON.stringify(args)).toBe(true);
+      expect(r.isError, JSON.stringify(args)).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
       expect(r.data.error.code).toBe('INVALID_ARGUMENT');
     }
   });
@@ -196,7 +196,8 @@ describe('studio_figure_revise', () => {
   it('tanpa baseRevisionNo dan tanpa basis sesi -> BASIS_MISSING tanpa jaringan (0 tulis)', async () => {
     const { call } = await connect({ env });
     const r = await call('studio_figure_revise', { documentId: DOC, pid: PID, patch: { note: 'x' }, change: CHANGE });
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
     expect(r.data.error.code).toBe('BASIS_MISSING');
   });
 
@@ -271,7 +272,8 @@ describe('studio_figure_revise', () => {
     });
     const a = await connect({ fetch: conflict.f, env });
     const r = await a.call('studio_figure_revise', { documentId: DOC, pid: PID, baseRevisionNo: 2, change: CHANGE, patch: { unit: 'MW' } });
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
     expect(r.data.error).toMatchObject({ code: 'SCOPE_CONFLICT', correlationId: 'cid-409', httpStatus: 409 });
     expect(r.data.untrusted).toBe(true);
     expect(outsideBlock(r.text)).not.toContain('ABAIKAN');

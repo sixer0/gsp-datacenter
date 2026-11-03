@@ -399,3 +399,140 @@ Skenario: agen yang terkena prompt injection dari bahan kerja (atau agen yang se
 | 11 | 2026-11-03 10:41 | `npx vitest run tests/unit/studio/mcp` | L3 | 210/210 lulus | - | security-review |
 | 12 | 2026-11-03 10:42-11:00 | Probe ulang p6-p9 dan p7; probe baru p10-p12 (fetch tiruan) | L3 | R-1, N-1, I-6, I-7 tertutup; S2-1, S2-2 (Low), S2-I1 (Info) | - | security-review |
 | 13 | 2026-11-03 | Vonis siklus 2 | L3 | **PASS** (0 High, 0 Medium, 3 Low terbuka) | Low ke controller untuk keputusan pengguna | security-review |
+
+---
+
+## IMPL-W3: alat tulis menyerap masalah (outcome, pencocokan samar, posisi, argumen longgar), 2026-11-03
+
+### W3.1 Ringkasan
+
+| Butir | Nilai |
+|---|---|
+| Vonis IMPL-W3 | **CAUTION**: 0 High, 1 Medium (W3-M1), 4 Low baru (W3-L1..L4), 2 Info baru. Temuan lama yang masih terbuka: S2-1, S2-2, L-5 (Low) |
+| 1. Perubahan outcome (`isError`) | **PASS** |
+| 2. Pencocokan samar | **PASS** (W3-I2) |
+| 3. Suntingan posisi | **SEBAGIAN**: pagar escape, batas negatif/di luar panjang, dan cakupan pid benar; surrogate (W3-L2) dan paragraf salah (W3-L1) |
+| 4. Argumen longgar | **PASS** |
+| 5. Normalisasi medan meta | **PASS** |
+| 6. Simpan INCOMPLETE | Pemilik/basis tidak berubah (jalur `guardReportSubmit` sama). **W3-M1**: tulis ulang tak lengkap menghapus butir/bukti record |
+| 7. `applyOwnTitle` | Hanya dokumen sendiri: **PASS**. Basis: **W3-L4** (kelas L-5) |
+| 8. `studio_document_get view:"paragraphs"` | **PASS** |
+| 9. Regresi probe p6-p12 | **PASS** (tidak ada regresi; S2-1 dan S2-2 tetap seperti siklus 2) |
+| Uji segar | `npx vitest run tests/unit/studio/mcp` -> `Tests 255 passed (255)` (mulai 13:55:01) |
+| Tingkat | **L3**. `outcome.ts`, `write-match.ts`, `write-normalize.ts`, `write-position.ts` dibaca utuh. Perubahan `tools.ts` (`executeTool` 1108-1196, `paragraphsView` 804-819), `server.ts:125`, `write-tools.ts` (`applyOwnTitle`, `incomplete`, `editWorkReport`), `write-client-edit.ts` dibaca. Probe baru: p13 (outcome, INCOMPLETE, applyOwnTitle, argumen longgar), p14 (posisi), p15 (pagar kode), p16 (INCOMPLETE vs record). Ulang p6-p12. Fetch tiruan saja, tanpa DEV, DB, port 9011, maupun rahasia |
+
+### W3.2 Hasil per butir
+
+| Butir | Status | Bukti |
+|---|---|---|
+| 1 Outcome | PASS | `hintFor` hanya peta statis per kode bertoken aman; kode tak aman memakai petunjuk generik (`outcome.ts:32-61`, `tools.ts:1164`). Baris kepala/blok rincian tidak berubah: `moveMessage`/`serverContent` sama seperti sebelumnya (`tools.ts:1150-1186`). Probe O1 (`p13`): `DOCUMENT_OWNED_BY_OTHER` (label pemilik berpenanda) -> `isError` false, `ok:false`, tidak ada penanda di luar blok. 503 -> `isError: true`. 401 (`REMOTE_UNAUTHORIZED`) -> `isError: true`. `SECRET_MISSING` -> `isError: true`. 429 -> hasil normal. Log server tetap `ok: env.ok` + `code: env.error.code` (`server.ts:110-121`, tidak berubah). `data.code` = kode aman atau `SERVER_CODE` |
+| 2 Pencocokan samar | PASS (W3-I2) | `findText` (`write-match.ts:176-223`): tingkat pertama yang mengenai menang; lebih dari 1 kecocokan tanpa `all` -> `TEXT_AMBIGUOUS` (kecuali salinan teks depan klien `sameCopies`, perilaku lama). Satuan berasal dari R20 satu dokumen yang sudah lolos cek pemilik. Kandidat jendela (`uniqueWindow`, teks server) hanya di `details` + `untrusted: true` (probe C2 ulang: 0 penanda di luar blok). Normalisasi (`fold`, `exactView`) hanya untuk MENCARI; teks pengganti tetap lewat `guardFragment` + `reguard` + `assertEditShape` (B2/B3 ulang, Q4) |
+| 3 Posisi | SEBAGIAN | Laporan kerja: `positionToFind` -> cari-ganti jendela lewat `applyEdits` (pagar yang sama). Q4: pengganti `Initiator: mallory \|x\|` tersimpan sebagai teks, `initiator` null. Klien: `setInline` JSON (tanpa Markdown). Batas: Q2 `at: -1` -> `INVALID_ARGUMENT` (skema `minimum: 0`); Q3 di luar panjang -> `POSITION_MISMATCH`; Q6 pid di luar dokumen ini -> `TEXT_NOT_FOUND`. Gagal: W3-L2 (surrogate), W3-L1 (paragraf salah) |
+| 4 Argumen longgar | PASS | `normalizeWriteArgs` membuang semua kunci di luar `mission, docKey, template, title, meta, sections, agentId` (`write-normalize.ts:189`); `normalizeEditArgs` di luar `documentId, mission, docKey, edits, agentId, adoptExisting` (`:258`), dan kunci di dalam edit dipangkas per bentuk. Tidak ada alias ke `adoptExisting`/`agentId`/`documentId`/`baseRevisionNo`. L1 (`p13`): `studio_write` dengan `adoptExisting`, `adopt`, `baseRevisionNo`, `documentId`, `agent_id` atas dokumen milik pihak lain -> `DOCUMENT_OWNED_BY_OTHER`, 0 POST; `studio_edit` dengan `adopt` + kunci keamanan di dalam edit -> `DOCUMENT_OWNED_BY_OTHER`. Varian blok membuat tabel hanya dari larik baris eksplisit (`rows`/`table`/`header`), dan larik string menjadi `{list}`; string tidak pernah menjadi tabel/record/ref. `{ref}` -> tabel Rujukan dengan sel `cellText`; rel/documentId tak sah -> teks berjaga di "Catatan rujukan" (setara bagian Rujukan lama) |
+| 5 Normalisasi medan | PASS | `normalizeOptionalFields` (`write-content.ts:357-386`) mempersempit nilai meta (vonis = kode, taskRef = kunci, initiator = id pelaku, cardIds = `t_xxxxxxxx`) di baris kepala satu baris. Vektor `Kunci: nilai` review 13 berasal dari paragraf dan tetap tertutup (p6 B1-B4, p10 ulang) |
+| 6 INCOMPLETE | **W3-M1** | Pemilik/basis: tetap `guardReportSubmit` (milik sendiri + penulis terakhir = pemanggil; adopsi -> `BASIS_MISSING`). Tetapi lihat W3-M1 |
+| 7 `applyOwnTitle` | PASS (pemilik) / W3-L4 | Hanya bila konflik cuma `title`; `checkOwnership` atas dokumen misi+docKey. Dokumen adopsi tidak sampai ke sini karena guard pertama menolak (`BASIS_MISSING`). `studio_write` tidak punya `adoptExisting` (dipangkas). Basis: lihat W3-L4 |
+| 8 `view:"paragraphs"` | PASS | Baris `[pid] bab N: teks` seluruhnya di `untrustedBlock`; kepala hanya `documentId` (pola skema) + `tok(revisionNo)`; `paragraphs` di `neutralizeDeep` + `untrustedFields` (`tools.ts:804-819`). Aturan baca sama dengan `view:"content"` (R20; tanpa cek pemilik, sama seperti view lain) |
+| 9 Regresi | PASS | p6 B1-B5, p8 K1-K3, p9 H1/H2, p10 D1-D9, p11 F/R, p12: sama dengan siklus 2 (B2/B3/B4 tetap tak berdampak; H1 tanpa kehilangan; D2 `CONTENT_INJECTION`). p7 (sesudah fixture diberi `meta.source`, karena IMPL-W3 tidak lagi mengarang sumber): C1-C7 sama, C5 kini satu `CONTENT_INVALID` berisi semua isu (0 jaringan). D7 `BASIS_MISSING`. D8 dan S2-1 tetap terbuka |
+
+### W3.3 Temuan baru
+
+| ID | Severity | Jenis | Lokasi | Deskripsi | Remediasi |
+|---|---|---|---|---|---|
+| W3-M1 | Medium | Integritas: penghapusan data diam-diam (operasi destruktif) | `write-tools.ts:228-240` (`studio_write` INCOMPLETE), `write-content.ts` (`missing`) | Sebelum IMPL-W3 bab wajib yang kurang -> `SECTION_MISSING` (0 tulis). Kini `studio_write` atas laporan SENDIRI yang sudah lengkap, dengan bab tidak lengkap, tetap submit. Submit mengganti record UTUH, sehingga butir kerja dan bukti hilang, sementara bab 2 di server (tabel butirnya) tidak dihapus: dokumen menjadi tidak konsisten. Hasil `ok: true`, `state: "INCOMPLETE"`, tanpa peringatan kehilangan record. `missing` dihitung dari masukan, bukan server (bab yang ada di server dilaporkan "kurang"). Probe p16: N1 (hanya Ringkasan) dan N2 (semua kecuali Rincian kerja) -> butir 2 -> 0, bukti 2 -> 0, tabel bab 2 tetap memuat `R3F2-1` | Untuk dokumen yang SUDAH ADA: jangan kirim record bila bab sumber tabel butirnya tidak ada di masukan, atau terapkan pagar setara `assertRecordKeepsData`/`removalPolicyOf` (penghapusan hanya lewat `~~hapus~~`), atau kirim lewat jalur update ber-basis dengan `sections` = bab yang ditulis. Hitung `missing` terhadap isi server. INCOMPLETE tanpa tulis record hanya untuk dokumen baru |
+| W3-L1 | Low | Integritas: sasaran salah | `write-position.ts:79-95` (`positionToFind`), `write-tools.ts:473-479` | Posisi pada laporan kerja diterjemahkan ke `find` jendela teks POLOS di bab paragraf itu. Bila paragraf pid bermarkah dan ada paragraf lain di bab yang sama dengan teks polos identik, tingkat persis mengenai paragraf LAIN (count 1) dan suntingan diterapkan di sana; `expect` hanya diperiksa pada paragraf pid. Q5 (`p14`): pid `p-pos0` (`**lulus**`) dengan `expect: "lulus"` -> yang berubah paragraf kedua (`Hasil uji gagal semua kasus.`) | Batasi pencarian ke satuan yang sesuai paragraf pid (urutan paragraf di bab/serializer), atau verifikasi sesudah konversi bahwa yang berubah adalah blok ber-pid itu; selain itu `POSITION_MISMATCH` |
+| W3-L2 | Low | CWE-20 (validasi batas Unicode) | `write-position.ts:53-73` (`resolvePosition`) | `at`/`length` dalam unit UTF-16 tanpa cek pasangan surrogate. Q1 (laporan): emoji dipotong -> tersimpan `Bukti �X� awal sekali.` (dua U+FFFD, emoji hilang). Q7 (klien): tersimpan surrogate tunggal `\ud83dX\ude00` di payload | Tolak (`POSITION_MISMATCH`) bila `at` atau `at+length` jatuh di antara surrogate tinggi dan rendah, atau pakai offset code point |
+| W3-L3 | Low | Integritas struktur (blind spot `assertEditShape`) | `write-edit.ts` (cabang `span === null` -> `paragraphLines(plainReplaced(...))`), `write-match.ts:187-191` | `find` yang hanya cocok di tingkat tanpa markah (mis. memuat backtick) pada satuan pagar kode menulis ulang SELURUH blok kode menjadi satu paragraf (penanda pagar dibuang `plainOf`, baris digabung). `assertEditShape` lolos (jumlah blok sama). K2 (`p15`): `monoBlock` -> `paragraph:"text Keluaran uji Test Files 25 passed (25) baris kedua kode diubah"`, hanya `MARKUP_DROPPED`. Persis (K1) dan samar (K3) aman | Kecualikan satuan pagar dari tingkat polos (atau tolak `EDIT_UNSAFE`). Di `assertEditShape`, bandingkan jenis blok per bab (sekaligus menutup S2-1) |
+| W3-L4 | Low | Integritas: lost update (kelas L-5) | `write-tools.ts:170-184` (`applyOwnTitle`), `:222-231` | Sesudah 409 META_CONFLICT, `setMeta` memakai revisi terkini yang baru dibaca dan menjadikan pemanggil penulis terakhir, sehingga `guardReportSubmit` pada kiriman ulang tidak lagi melihat tulisan pihak lain yang masuk di sela itu. T1 (`p13`): pihak lain menulis bab 3 sesudah guard pertama -> `META_UPDATED`, kiriman ulang menimpa bab 3 (`otherKept: false`) | Sebelum `setMeta`, cek ulang penulis terakhir = pemanggil dengan revisi = revisi yang dilihat guard, dan pakai revisi itu sebagai `baseRevisionNo`; selain itu `REPORT_CHANGED_BY_OTHER` |
+| W3-I1 | Info | Ketersediaan / kontrol klien | `outcome.ts:11-29`, `server.ts:125` | Penolakan (termasuk `DOCUMENT_OWNED_BY_OTHER`) dan 429 tidak lagi `isError`, jadi pemutus sirkuit Hermes tidak lagi menahan pengulangan tulis yang ditolak atau badai ulang 429. Petunjuk 429 meminta tunggu; tidak ada pembatas di MCP | Bila perlu, pembatas laju kecil di MCP untuk penolakan berulang yang identik |
+| W3-I2 | Info | Integritas (klien) | `write-match.ts:213` (`sameCopies`) | Pada dokumen klien, kecocokan yang semuanya di teks depan dianggap salinan meta dan diganti bersama tanpa `occurrence: "all"`. Dengan tingkat samar (huruf kecil, kutip, angka), `find` pendek dapat mengenai medan depan yang bukan salinan | Batasi `sameCopies` ke tingkat persis, atau ke medan yang memang salinan meta (penyusun, nomor, judul) |
+
+### W3.4 Gerbang (5 cek), IMPL-W3
+
+| Cek | Hasil | Rincian |
+|---|---|---|
+| Kebocoran kredensial | PASS | O1 `SECRET_MISSING` tanpa rahasia; `redactSecret` di `server.ts` tetap |
+| Operasi destruktif | CAUTION | W3-M1: tulis ulang tak lengkap menghapus butir/bukti record (`ok: true`). Low: W3-L3, W3-L4, S2-2, L-5 |
+| Panggilan eksternal | PASS | Tetap `guardedFetch`; `headWithRetry` hanya HEAD R10 ke origin yang sama (3 percobaan) |
+| Injeksi | PASS | Escape/re-guard berlaku untuk pengganti samar dan posisi (Q4, B2/B3). `view:"paragraphs"` dibungkus. Sisa S2-1 (Low) |
+| Eskalasi izin | PASS | Argumen longgar tidak membuka `adoptExisting`/`agentId`/`documentId`/`baseRevisionNo`. Pemilik F-2 tetap. Toolset bawaan tidak berubah (probe T) |
+
+**Keseluruhan IMPL-W3: CAUTION** (1 Medium), dikembalikan ke controller. Opsi: perbaiki W3-M1 (dan Low) / terima risiko tercatat / ubah lingkup. CAUTION tidak dianggap sudah disetujui.
+
+### W3.5 Log IMPL-W3
+
+| # | Waktu (WIB) | Lingkup | Level | Hasil | Keputusan | Peninjau |
+|---|---|---|---|---|---|---|
+| 14 | 2026-11-03 13:50 | Baca laporan IMPL-W3, `outcome.ts`, `write-match.ts`, `write-normalize.ts`, `write-position.ts`, perubahan `tools.ts`/`server.ts`/`write-tools.ts` | L3 | - | - | security-review |
+| 15 | 2026-11-03 13:55 | `npx vitest run tests/unit/studio/mcp` | L3 | 255/255 lulus | - | security-review |
+| 16 | 2026-11-03 14:00-14:30 | Probe p13-p16 baru + ulang p6-p12 (fetch tiruan) | L3 | W3-M1, W3-L1..L4, W3-I1/I2; tanpa regresi | - | security-review |
+| 17 | 2026-11-03 | Vonis IMPL-W3 | L3 | **CAUTION** (0 High, 1 Medium, 4 Low baru) | Menunggu keputusan pengguna lewat controller | security-review |
+
+---
+
+## IMPL-W3 siklus 1: cek ulang perbaikan D-539, 2026-11-03
+
+### W3C1.1 Ringkasan
+
+| Butir | Nilai |
+|---|---|
+| Vonis | **PASS**: 0 High, 0 Medium. Tersisa 2 Low (S2-2r sisa penulis null, W3-L1r pemetaan pid ke butir daftar) dan 1 catatan Info. Identitas `agentId` dari pemanggil = L-4 yang sudah diterima (dicatat, tidak diangkat ulang) |
+| Status temuan | W3-M1 **TERTUTUP**. W3-L1 **TERTUTUP** untuk kasus review (sisa W3-L1r, Low). W3-L2 **TERTUTUP**. W3-L3 **TERTUTUP**. W3-L4 **TERTUTUP**. S2-1 **TERTUTUP**. S2-2 dan L-5 **TERTUTUP** untuk bagian berpenulis di R15 (sisa S2-2r untuk penulis null, Low). W3-I1 **TERTUTUP** (bersifat saran, tidak menekan galat nyata). W3-I2 **TERTUTUP** |
+| Uji segar | `npx vitest run tests/unit/studio/mcp` -> `Test Files 19 passed (19)`, `Tests 267 passed (267)` (mulai 14:25:46) |
+| Tingkat | **L3**. `write-parts.ts` dibaca utuh; `rewriteOwnReport`/`missingAgainstServer` (`write-tools.ts:208-282`), `positionToFind`/`resolvePosition` (`write-position.ts:53-115`), cabang `target` dan perbandingan jenis blok (`write-edit.ts:298-310`, `write-tools.ts:503`), `noteOutcome` (`tool-kit.ts:35-44`, `tools.ts:1165-1197`). Probe baru: p17 (record, penulis per bagian, balapan, pid, klien D8 dengan mock R15 berpenulis `tests/unit/studio/mcp/implw3-client-mock.ts`) dan p18 (pembatas ulang). Ulang p6-p16. Fetch tiruan saja, tanpa DEV, DB, port 9011, maupun rahasia |
+
+### W3C1.2 Status temuan
+
+| ID | Status | Bukti |
+|---|---|---|
+| W3-M1 | TERTUTUP | Laporan yang sudah ada -> `rewriteOwnReport` (jalur update ber-basis, hanya bab di masukan yang berbeda). p17 (agen = penulis bagian di mock): M1 hanya Ringkasan -> `writes: chapters:1`, `RECORD_KEPT`, butir 2 -> 2, bukti 2 -> 2, `missing` kosong (dihitung dari server). M2 Rincian kerja dengan baris lebih sedikit -> `RECORD_ELEMENTS_DROPPED`, 0 tulis. M3 Rincian kerja tanpa tabel -> `RECORD_FIELDS_DROPPED`, 0 tulis. M4 baris `~~hapus~~` eksplisit -> butir itu (dan buktinya) dihapus; ini penghapusan eksplisit yang disengaja (I-2). M5 tabel sama + `meta.status` baru -> record dikirim, butir tetap. p16 ulang (agen bukan penulis bagian) -> `PART_CHANGED_BY_OTHER`, butir tetap |
+| W3-L1 | TERTUTUP (sisa W3-L1r) | p14 Q5: pid `p-pos0` bermarkah -> yang berubah `p-pos0` (`Hasil uji gagal...`), kembar polos tetap. Agen tidak dapat memasok `target`: skema edit `additionalProperties: false`, dan `normalizeEditArgs` memangkas ke `find, replace, section, occurrence` |
+| W3-L2 | TERTUTUP | p14 Q1 (laporan) dan Q7 (klien) -> `POSITION_INVALID`, emoji utuh, tanpa surrogate yatim (`write-position.ts:66-72`) |
+| W3-L3 | TERTUTUP | p15 K2: find tingkat polos atas blok kode -> `TEXT_NOT_FOUND`, `monoBlock` utuh (`isFence` -> `noPlain`, `write-edit.ts:178-188,339`); K1/K3 tetap menyunting baris di dalam kode |
+| S2-1 | TERTUTUP | p10 D1 daftar/daftar bernomor -> `CONTENT_INJECTION` "jenis blok berubah (- -> list)" (`write-tools.ts:503`) |
+| W3-L4 | TERTUTUP | `applyOwnTitle` dihapus; judul -> `setMeta` dengan basis = revisi yang dibaca, sesudah cek per bagian. Balapan (p17): P3 pihak lain menulis bab 3 di sela R20 -> R15 -> `PART_CHANGED_BY_OTHER`, tulisan pihak lain tetap; P4 di sela R15 -> POST -> `BASE_CONFLICT`, tetap |
+| S2-2 / L-5 | TERTUTUP untuk bagian berpenulis (sisa S2-2r) | p17 C1 (klien D8, mock R15 berpenulis): `PART_CHANGED_BY_OTHER`, sel `99` milik pihak lain tetap. P1 (laporan): pihak lain menulis bab 3, lalu pemanggil menyunting bab 1 (penulis terakhir dokumen = pemanggil); tulis ulang yang mengubah bab 3 -> `PART_CHANGED_BY_OTHER`; tulis ulang tanpa bab 3 -> `written: ["bab 1"]`, bab 3 tetap. p10 D8 dengan mock lama (tanpa penulis R15) tetap tertimpa, sesuai catatan pelaksana |
+| W3-I1 | TERTUTUP | p18: 503 x4 -> `isError: true` keempatnya; sesudah ke-3 `repeated` + petunjuk "berhenti mengulang" (hanya teks petunjuk, `genuineFailure` tidak tersentuh). 429 + `Retry-After: 12` -> `retryAfterSec: 12`, hasil normal, teks server berpenanda tetap di blok; `Retry-After` tanggal -> 30 bawaan. Pembatas bersifat saran (tidak memblokir) |
+| W3-I2 | TERTUTUP | `sameCopies` hanya untuk kecocokan tingkat persis, di luar bab, satu rentang per satuan (`write-client-edit.ts:165`); uji pelaksana `implw3-cycle1` "W3-I2" lulus |
+
+### W3C1.3 Perburuan bypass
+
+| Arah | Hasil | Status |
+|---|---|---|
+| Penulis null/tidak diketahui | `requireOwnParts` tidak menolak penulis null/absen (`write-parts.ts:36-40`). P2 (laporan, R15 bab 3 null): tulisan pihak lain yang LEBIH LAMA dari tulisan terakhir pemanggil tertimpa. C2 (klien, `cover` null seperti di DEV): sampul pihak lain tertimpa. Tulisan sesudah pembacaan tetap dijaga basis (P4) | **S2-2r (Low)** |
+| Pemanggil penulis terakhir satu bagian tetapi bukan bagian lain | Dicek per bagian yang akan ditulis (P1): bagian milik pihak lain ditolak, bagian sendiri boleh | PASS |
+| Balapan baca R15 vs tulis | Urutan: guard dokumen -> R20 (basis) -> R15 -> tulis dengan basis R20. Sela R20->R15 terlihat di R15 (P3); sela R15->tulis -> 409 lingkup (P4). Klien: basis = revisi R05, lalu R20, lalu R15 (`write-client-run.ts:234-253`): pola sama | PASS |
+| Identitas dari `agentId` pemanggil | `me = requesterOf(agentId)`; tanpa `STUDIO_MCP_LOCK_AGENT_ID` pemanggil dapat mengaku agentId penulis bagian. Ini L-4 yang diterima; dicatat, tidak diangkat ulang | Dicatat |
+| `rewriteOwnReport` kehilangan butir | Baris lebih sedikit dan Rincian kerja tanpa tabel ditolak pagar record jalur update (M2, M3). `~~hapus~~` hanya bila agen menulisnya di sel (M4, eksplisit). Bab tanpa Rincian kerja tidak mengirim record (M1) | PASS |
+| `missing` dari server membocorkan teks | `missingAgainstServer` hanya menyaring daftar judul registri (`built.missing`) dengan kunci bagian server; teks `incomplete` memakai `tok()` atas judul registri | PASS |
+| Pemetaan pid diarahkan ke paragraf lain | Kandidat = satuan Markdown "paragraf" di bab yang `exactView(plainOf(...))`-nya sama dengan teks polos paragraf pid, termasuk satuan butir daftar. Q1 (p17): paragraf pid `p-map1` berteks `- abc def ghi` dan butir daftar `abc def ghi` sebelumnya -> suntingan `{pid: p-map1}` mengubah BUTIR DAFTAR (`list:["abc XYZ ghi"]`), paragraf pid tetap | **W3-L1r (Low)** |
+| Pembatas ulang menekan galat nyata | Tidak: hanya `hint`/`repeated` (p18 T1) | PASS |
+| Regresi p6-p16 | p6 B1-B5, p7 C1-C7 (fixture `meta.source`), p8, p9, p10 D1-D9/D7, p11 F/R, p12, p13 O1/L1, p14 Q2-Q6, p15: tidak ada regresi. p13 T1 kini `PART_CHANGED_BY_OTHER` sebelum POST apa pun (agen probe bukan penulis bagian) | PASS |
+
+### W3C1.4 Temuan sisa
+
+| ID | Severity | Jenis | Lokasi | Deskripsi | Remediasi |
+|---|---|---|---|---|---|
+| S2-2r | Low | Integritas: lost update (sisa S2-2/L-5) | `write-parts.ts:36-40` | Bagian dengan penulis R15 null/absen (data lama; `cover` dokumen klien di DEV) tidak ditolak. Tulisan pihak lain atas bagian itu yang lebih lama dari tulisan terakhir pemanggil masih tertimpa diam-diam oleh tulis ulang utuh (P2, C2). Tulisan sesudah pembacaan tetap dijaga basis server | Untuk bagian berpenulis null yang isinya BERBEDA dari server, tolak (atau minta konfirmasi eksplisit), atau perbaiki server agar R15 selalu mengisi `lastFilledBy` (termasuk `cover`) |
+| W3-L1r | Low | Integritas: sasaran salah (kasus tepi) | `write-edit.ts:298-306` (cabang `target`) | Kandidat pemetaan pid tidak dibatasi pada blok paragraf: satuan butir daftar/kutipan yang teks polosnya sama ikut dihitung, sehingga `nth` dapat menunjuk blok lain (Q1). Butuh paragraf berawalan `- `/`> ` yang kembar dengan butir daftar di bab yang sama | Batasi kandidat ke satuan yang dipetakan dari blok `paragraph` (mis. kecualikan satuan berawalan penanda daftar/kutipan tak ter-escape), atau cocokkan urutan blok R20 ke urutan satuan termasuk jenisnya |
+| (Info) | Info | Kegunaan | `tools.ts:1167-1168` | Sesudah 3 galat nyata identik (mis. 503), petunjuk berubah menjadi "berhenti mengulang; ubah isi atau tanya controller", padahal penyebabnya server. `isError` tetap benar | Pakai petunjuk pengulangan hanya untuk penolakan yang dapat diperbaiki |
+
+### W3C1.5 Gerbang (5 cek)
+
+| Cek | Hasil | Rincian |
+|---|---|---|
+| Kebocoran kredensial | PASS | Tidak berubah |
+| Operasi destruktif | PASS (catatan Low S2-2r) | W3-M1 tertutup. Penghapusan butir hanya lewat `~~hapus~~` eksplisit. Bagian berpenulis milik pihak lain ditolak |
+| Panggilan eksternal | PASS | Tambahan GET R15 ke origin yang sama |
+| Injeksi | PASS | S2-1 tertutup (jenis blok); escape/re-guard tidak berubah (p6, p10) |
+| Eskalasi izin | PASS | Tidak ada perubahan pemilik/toolset; identitas `agentId` = L-4 yang diterima |
+
+**Keseluruhan IMPL-W3 siklus 1: PASS** (0 High, 0 Medium). Dua Low (S2-2r, W3-L1r) dikembalikan ke controller sebagai risiko tercatat untuk keputusan pengguna (perbaiki / terima tercatat). Low tidak menahan.
+
+### W3C1.6 Log
+
+| # | Waktu (WIB) | Lingkup | Level | Hasil | Keputusan | Peninjau |
+|---|---|---|---|---|---|---|
+| 18 | 2026-11-03 14:25 | `npx vitest run tests/unit/studio/mcp` | L3 | 267/267 lulus | - | security-review |
+| 19 | 2026-11-03 14:25-14:50 | Baca `write-parts.ts`, `rewriteOwnReport`, pemetaan pid, perbandingan jenis blok, `noteOutcome`; probe p17, p18 baru; ulang p6-p16 | L3 | Semua temuan IMPL-W3 tertutup; sisa S2-2r, W3-L1r (Low) | - | security-review |
+| 20 | 2026-11-03 | Vonis IMPL-W3 siklus 1 | L3 | **PASS** (0 High, 0 Medium, 2 Low sisa) | Low ke controller untuk keputusan pengguna | security-review |

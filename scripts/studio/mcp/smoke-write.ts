@@ -70,7 +70,7 @@ async function main(): Promise<number> {
       return { isError: r.isError === true, data, text: String(r.content?.[0]?.text ?? ""), bytes: Buffer.byteLength(raw), ms: Date.now() - t0 };
     }
   };
-  const note = (r: { isError: boolean; data: any; bytes: number; ms: number }, s: string) => `${s} [${r.bytes} B, ${r.ms} ms]${r.isError ? ` galat ${r.data.error?.code}` : ""}`;
+  const note = (r: { isError: boolean; data: any; bytes: number; ms: number }, s: string) => `${s} [${r.bytes} B, ${r.ms} ms]${r.isError ? ` galat ${r.data.error?.code}` : r.data.ok === false ? ` ok:false ${r.data.code}: ${String(r.data.error?.message ?? "").slice(0, 200)}` : ""}`;
 
   const sections = [
     { heading: "Summary", blocks: [`Smoke IMPL-W: laporan ditulis lewat studio_write dari isi saja (cap ${stamp}).`] },
@@ -80,7 +80,8 @@ async function main(): Promise<number> {
     { heading: "Next steps", blocks: ["Jalankan ronde 5."] },
   ];
   const w4 = await call("studio_write", { mission, docKey, sections: sections.slice(0, 4) });
-  steps.push({ step: "studio_write 4 bagian (bab wajib kurang)", ok: w4.data.error?.code === "SECTION_MISSING", note: note(w4, String(w4.data.error?.message ?? "").slice(0, 160)) });
+  // IMPL-W3 butir 6: bab wajib kurang pada tulisan pertama = disimpan INCOMPLETE (hasil normal), bukan SECTION_MISSING.
+  steps.push({ step: "studio_write 4 bagian (bab wajib kurang) -> INCOMPLETE", ok: !w4.isError && w4.data.ok === true && w4.data.state === "INCOMPLETE" && (w4.data.missing ?? []).length === 1, note: note(w4, `state ${w4.data.state} missing ${(w4.data.missing ?? []).join(",")}`) });
 
   const w = await call("studio_write", { mission, docKey, title: `Smoke IMPL-W ${stamp}`, sections });
   const documentId: string | null = w.data.documentId ?? null;

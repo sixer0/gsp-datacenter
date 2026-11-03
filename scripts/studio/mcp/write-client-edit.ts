@@ -8,7 +8,12 @@
 import { McpToolError } from "./safety";
 import { tok, type ToolWarning } from "./tool-kit";
 import { chartBlock, type ClientChart } from "./write-client";
+import { parseInline } from "../../../src/lib/studio/services/import/inline";
 import { normalize } from "./write-edit";
+import { findCell, findText, fold, spliceSpans, type MatchUnit } from "./write-match";
+import { isPositionEdit, paragraphsOf, resolvePosition, type PositionEdit } from "./write-position";
+
+const NOOP = { warn: () => undefined, drop: () => undefined };
 
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -17,6 +22,11 @@ export type Scope = { kind: "chapter"; key: string } | { kind: "slot"; slot: str
 export interface JUnit {
   scope: Scope;
   kind: "paragraph" | "item" | "cell" | "caption" | "source" | "title" | "field";
+  /** IMPL-W3: judul bab/section tempat satuan berada; sel: teks baris, judul kolom, baris judul. */
+  section: string;
+  rowCells?: string[];
+  column?: string;
+  headerRow?: boolean;
   get(): string;
   set(v: string, warn: (w: ToolWarning) => void): void;
   /** hapus satuan (paragraf/butir) dari lariknya; null = kosongkan saja. */
@@ -55,6 +65,7 @@ function setInline(h: Rec, v: string, warn: (w: ToolWarning) => void): void {
 const inlineUnit = (scope: Scope, kind: JUnit["kind"], h: Rec, extra: Partial<JUnit> = {}): JUnit => ({
   scope,
   kind,
+  section: "",
   get: () => inlineText(h),
   set: (v, warn) => setInline(h, v, warn),
   remove: null,
@@ -71,11 +82,11 @@ function slotUnits(slot: string, payload: unknown, out: JUnit[]): void {
     if (Array.isArray(v)) return v.forEach(walk);
     if (!isObj(v)) return;
     if (typeof v.text === "string" || Array.isArray(v.runs)) {
-      out.push(inlineUnit(scope, "field", v));
+      out.push(inlineUnit(scope, "field", v, { section: slot }));
       return;
     }
     for (const [k, x] of Object.entries(v)) {
-      if (typeof x === "string" && !FRONT_SKIP.has(k)) out.push({ scope, kind: "field", get: () => v[k] as string, set: (s) => (v[k] = s), remove: null, after: null });
+      if (typeof x === "string" && !FRONT_SKIP.has(k)) out.push({ scope, kind: "field", section: slot, get: () => v[k] as string, set: (s) => (v[k] = s), remove: null, after: null });
       else walk(x);
     }
   };
@@ -84,36 +95,45 @@ function slotUnits(slot: string, payload: unknown, out: JUnit[]): void {
 
 const META_EDITABLE = ["title", "author", "classification", "audience", "custodian", "subject", "basis"];
 
-function blockUnits(key: string, list: Rec[], out: JUnit[]): void {
+function blockUnits(key: string, list: Rec[], out: JUnit[], section: string): void {
   const scope: Scope = { kind: "chapter", key };
   list.forEach((b) => {
     const after = { list, block: b };
-    if (b.type === "paragraph") out.push(inlineUnit(scope, "paragraph", b, { remove: () => list.splice(list.indexOf(b), 1), after }));
+    if (b.type === "paragraph") out.push(inlineUnit(scope, "paragraph", b, { section, remove: () => list.splice(list.indexOf(b), 1), after }));
     else if (b.type === "list" && Array.isArray(b.items)) {
       const items = b.items as Rec[];
-      items.forEach((it) => out.push(inlineUnit(scope, "item", it, { remove: () => items.splice(items.indexOf(it), 1), after })));
+      items.forEach((it) => out.push(inlineUnit(scope, "item", it, { section, remove: () => items.splice(items.indexOf(it), 1), after })));
     } else if (Array.isArray(b.rows)) {
-      for (const r of b.rows as Rec[]) for (const c of Array.isArray(r.cells) ? (r.cells as Rec[]) : []) out.push(inlineUnit(scope, "cell", c, { after }));
+      const rows = (b.rows as Rec[]).filter(isObj);
+      const cellsOf = (r: Rec) => (Array.isArray(r.cells) ? (r.cells as Rec[]) : []);
+      const head = rows.find((r) => r.kind === "header") ?? rows[0];
+      const header = head !== undefined ? cellsOf(head).map(inlineText) : [];
+      for (const r of rows) {
+        const rowCells = cellsOf(r).map(inlineText);
+        cellsOf(r).forEach((c, ci) => out.push(inlineUnit(scope, "cell", c, { section, rowCells, column: header[ci] ?? "", headerRow: r === head, after })));
+      }
     }
-    if (isObj(b.caption)) out.push(inlineUnit(scope, "caption", b.caption, { after }));
-    if (isObj(b.source)) out.push(inlineUnit(scope, "source", b.source, { after }));
+    if (isObj(b.caption)) out.push(inlineUnit(scope, "caption", b.caption, { section, after }));
+    if (isObj(b.source)) out.push(inlineUnit(scope, "source", b.source, { section, after }));
   });
 }
 
 export function clientUnits(content: Rec): JUnit[] {
   const out: JUnit[] = [];
   const meta = isObj(content.meta) ? content.meta : {};
-  for (const f of META_EDITABLE) if (typeof meta[f] === "string") out.push({ scope: { kind: "meta" }, kind: "field", get: () => meta[f] as string, set: (s) => (meta[f] = s), remove: null, after: null });
+  for (const f of META_EDITABLE) if (typeof meta[f] === "string") out.push({ scope: { kind: "meta" }, kind: "field", section: "meta", get: () => meta[f] as string, set: (s) => (meta[f] = s), remove: null, after: null });
   const sections = isObj(content.sections) ? content.sections : {};
   for (const slot of ["cover", "controlSheet", "signature"]) if (isObj(sections[slot])) slotUnits(slot, sections[slot], out);
   const chapters = isObj(sections.content) && Array.isArray(sections.content.chapters) ? (sections.content.chapters as Rec[]) : [];
   for (const ch of chapters) {
     const key = String(ch.key);
-    if (isObj(ch.title)) out.push(inlineUnit({ kind: "chapter", key }, "title", ch.title));
-    if (Array.isArray(ch.intro)) blockUnits(key, ch.intro as Rec[], out);
+    const chTitle = isObj(ch.title) ? inlineText(ch.title) : "";
+    if (isObj(ch.title)) out.push(inlineUnit({ kind: "chapter", key }, "title", ch.title, { section: chTitle }));
+    if (Array.isArray(ch.intro)) blockUnits(key, ch.intro as Rec[], out, chTitle);
     for (const s of Array.isArray(ch.sections) ? (ch.sections as Rec[]) : []) {
-      if (isObj(s.title)) out.push(inlineUnit({ kind: "chapter", key }, "title", s.title));
-      if (Array.isArray(s.blocks)) blockUnits(key, s.blocks as Rec[], out);
+      const sTitle = isObj(s.title) ? `${chTitle} / ${inlineText(s.title)}` : chTitle;
+      if (isObj(s.title)) out.push(inlineUnit({ kind: "chapter", key }, "title", s.title, { section: sTitle }));
+      if (Array.isArray(s.blocks)) blockUnits(key, s.blocks as Rec[], out, sTitle);
     }
   }
   return out;
@@ -124,47 +144,43 @@ const snip = (s: string): string => {
   const t = s.replace(/\s+/g, " ").trim();
   return t.length > 120 ? `${t.slice(0, 120)}...` : t;
 };
-function count(hay: string, needle: string): number {
-  let n = 0;
-  for (let k = hay.indexOf(needle); k >= 0; k = hay.indexOf(needle, k + needle.length)) n++;
-  return n;
+/** Satuan klien -> satuan pencocokan bersama (IMPL-W3, `write-match.ts`); teks klien sudah polos (tanpa tingkat markah). */
+function matchUnits(units: readonly JUnit[]): MatchUnit[] {
+  return units.map((u) => ({
+    text: u.get(),
+    section: u.section,
+    part: scopeName(u.scope),
+    kind: u.kind,
+    noPlain: true,
+    ...(u.rowCells !== undefined ? { rowCells: u.rowCells, column: u.column ?? "", headerRow: u.headerRow === true } : {}),
+  }));
 }
 
-/** Satuan untuk `find`: tepat satu (atau satu kelompok salinan meta identik di depan); selain itu galat (+kandidat). */
-export function locateClient(find: string, units: readonly JUnit[], label: string): JUnit[] {
-  const nf = normalize(find).text;
-  if (nf === "") throw new McpToolError("INVALID_ARGUMENT", `${label}: teks find/after kosong`);
-  const hits = units.filter((u) => count(normalize(u.get()).text, nf) > 0);
-  const total = hits.reduce((n, u) => n + count(normalize(u.get()).text, nf), 0);
-  if (total === 0) {
-    const words = new Set(nf.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
-    const candidates = units
-      .map((u) => ({ u, score: [...new Set(u.get().toLowerCase().split(/[^\p{L}\p{N}]+/u))].filter((w) => words.has(w)).length }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map((x) => ({ part: scopeName(x.u.scope), kind: x.u.kind, text: snip(x.u.get()) }));
-    throw new McpToolError("TEXT_NOT_FOUND", `${label}: teks tidak ditemukan di paragraf, sel, keterangan, judul, atau medan dokumen (dicocokkan persis, spasi dinormalkan). Kandidat terdekat ada di blok rincian; tidak ada yang ditulis`, { untrusted: true, details: { edit: label, candidates } });
-  }
-  // Teks depan (meta, sampul, lembar kendali, tanda tangan) adalah salinan meta: semua salinan diganti bersama.
-  const front = hits.every((u) => u.scope.kind !== "chapter") && hits.every((u) => count(normalize(u.get()).text, nf) === 1);
-  if (total > 1 && !front) {
-    throw new McpToolError("TEXT_AMBIGUOUS", `${label}: teks muncul ${total} kali; perpanjang find sampai unik. Lokasi ada di blok rincian; tidak ada yang ditulis`, {
-      untrusted: true,
-      details: { edit: label, matches: hits.slice(0, 5).map((u) => ({ part: scopeName(u.scope), kind: u.kind, text: snip(u.get()) })) },
-    });
-  }
-  return hits;
+/**
+ * Satuan untuk `find` (persis -> samar; dibatasi section; semua bila `all`). Teks depan (meta, sampul, lembar kendali,
+ * tanda tangan) adalah salinan meta: bila SEMUA kecocokan ada di sana dan masing-masing sekali, semua salinan diganti
+ * bersama (perilaku IMPL-W2).
+ */
+export function locateClient(find: string, units: readonly JUnit[], label: string, opts: { section?: string; all?: boolean } = {}): Array<{ u: JUnit; spans: Array<[number, number]> | null; tier: string }> {
+  const { hits } = findText(find, matchUnits(units), { ...opts, sameCopies: (hs) => /* W3-I2: hanya kecocokan persis */ hs.every((h) => h.tier === "exact" && units[h.index].scope.kind !== "chapter" && (h.spans?.length ?? 1) === 1) }, label);
+  return hits.map((h) => ({ u: units[h.index], spans: h.spans, tier: h.tier }));
 }
 
-function replaceIn(text: string, find: string, replace: string): string {
-  const n = normalize(text);
-  const nf = normalize(find).text;
-  const k = n.text.indexOf(nf);
-  return text.slice(0, n.map[k]) + replace + text.slice(n.map[k + nf.length - 1] + 1);
-}
+export type ClientEditOp =
+  | { find: string; replace: string; section?: string; occurrence?: "all" }
+  | { after: string; insert: string; section?: string }
+  | { cell: { section?: string; row: string; column: string }; value: string }
+  | { figure: string; chart: Partial<ClientChart> }
+  | PositionEdit;
 
-export type ClientEditOp = { find: string; replace: string } | { after: string; insert: string } | { figure: string; chart: Partial<ClientChart> };
+/** Paragraf baru dari teks agen: baris kosong memisah paragraf, wrap keras digabung, inline Markdown (`kode`, **tebal**) diurai (butir 13). */
+function newParagraphs(text: string): Rec[] {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter((p) => p !== "")
+    .map((p) => ({ type: "paragraph", ...parseInline(p, NOOP) }));
+}
 
 /** Terapkan suntingan berurutan; kembalikan lingkup teks yang berubah dan suntingan grafik (sudah diterapkan ke blok). */
 export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], warn: (w: ToolWarning) => void): { touched: Scope[]; charts: Array<{ key: string; block: Rec; patch: Rec }> } {
@@ -180,28 +196,41 @@ export function applyClientEdits(content: Rec, edits: readonly ClientEditOp[], w
       Object.assign(c.block, patch);
       return;
     }
+    if (isPositionEdit(e)) {
+      // IMPL-W3 butir 14c: pid + offset teks polos (+ expect sebagai penjaga) -> paragraf itu saja.
+      const { para, next } = resolvePosition(e, paragraphsOf(content), label);
+      if (next !== para.text) {
+        setInline(para.block, next, warn);
+        touch({ kind: "chapter", key: para.chapter });
+      }
+      return;
+    }
     const units = clientUnits(content);
+    if ("cell" in e) {
+      const u = units[findCell(e.cell, matchUnits(units), label)];
+      u.set(e.value.replace(/\s+/g, " ").trim(), warn);
+      touch(u.scope);
+      return;
+    }
     if ("insert" in e) {
-      const [u] = locateClient(e.after, units, label);
+      const [{ u }] = locateClient(e.after, units, label, { ...(e.section !== undefined ? { section: e.section } : {}) });
       if (u.after === null) throw new McpToolError("INVALID_ARGUMENT", `${label}: after harus menunjuk teks di dalam bab (paragraf, tabel, grafik); sisipan tidak berlaku untuk meta/slot`);
-      const paras = e.insert
-        .split(/\n\s*\n/)
-        .map((p) => p.replace(/\s+/g, " ").trim())
-        .filter((p) => p !== "")
-        .map((text) => ({ type: "paragraph", text }));
+      const paras = newParagraphs(e.insert);
       if (paras.length === 0) throw new McpToolError("INVALID_ARGUMENT", `${label}: insert kosong`);
       u.after.list.splice(u.after.list.indexOf(u.after.block) + 1, 0, ...paras);
       touch(u.scope);
       return;
     }
-    const hits = locateClient(e.find, units, label);
-    for (const u of hits) {
-      if (e.replace === "" && u.remove !== null && normalize(e.find).text !== normalize(u.get()).text) {
+    const hits = locateClient(e.find, units, label, { ...(e.section !== undefined ? { section: e.section } : {}), all: e.occurrence === "all" });
+    if (hits.some((h) => h.tier === "fuzzy")) warn({ code: "FUZZY_MATCH", message: `${label}: find cocok setelah normalisasi (huruf besar/kecil, spasi, kutip, tanda pisah, angka); ${hits.length} sasaran diganti` });
+    for (const { u, spans } of hits) {
+      if (e.replace === "" && u.remove !== null && normalize(e.find).text !== normalize(u.get()).text && fold(e.find).text !== fold(u.get()).text) {
         // L-1 (review 13): hapus paragraf/butir hanya bila find = seluruh teksnya.
         throw new McpToolError("EDIT_INVALID", `${label}: replace "" menghapus paragraf/butir hanya bila find berisi SELURUH teksnya; untuk membuang sebagian kalimat, tulis replace berisi sisa kalimat. Tidak ada yang ditulis`);
       }
+      const repl = u.kind === "cell" || u.kind === "field" ? e.replace.replace(/\s+/g, " ") : e.replace;
       if (e.replace === "" && u.remove !== null) u.remove();
-      else u.set(replaceIn(u.get(), e.find, u.kind === "cell" || u.kind === "field" ? e.replace.replace(/\s+/g, " ") : e.replace), warn);
+      else u.set(spliceSpans(u.get(), spans ?? [], () => repl), warn);
       touch(u.scope);
     }
   });
@@ -252,7 +281,8 @@ function chartPatch(block: Rec, edit: Partial<ClientChart>, warn: (w: ToolWarnin
     source: edit.source ?? inlineText(isObj(block.source) ? block.source : {}),
     ...(edit.unit !== undefined ? { unit: edit.unit } : typeof block.unit === "string" ? { unit: block.unit } : {}),
   };
-  const next = chartBlock(merged, merged.source as string, warn, label, "grafik");
+  // IMPL-W3 butir 10: sumber tidak dikarang; grafik tanpa sumber -> SOURCE_MISSING (hasil normal, 0 tulis).
+  const next = chartBlock(merged, null, warn, label, "grafik");
   const patch: Rec = { code: next.code, data: next.data };
   if (edit.caption !== undefined) patch.caption = next.caption;
   if (edit.source !== undefined) patch.source = next.source;

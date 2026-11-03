@@ -26,6 +26,22 @@ export class McpSession {
   private readonly bases = new Map<string, RememberedBasis>();
   private readonly warned = new Set<string>();
   private readonly adopted = new Set<string>();
+  private lastOutcome: string | null = null;
+  private repeats = 0;
+  /**
+   * W3-I1: hitung hasil identik berturut-turut (alat + kode + sasaran). null = sukses (reset). Mengembalikan jumlah
+   * berturut-turut untuk kunci ini (1 = pertama).
+   */
+  noteOutcome(key: string | null): number {
+    if (key === null) {
+      this.lastOutcome = null;
+      this.repeats = 0;
+      return 0;
+    }
+    this.repeats = key === this.lastOutcome ? this.repeats + 1 : 1;
+    this.lastOutcome = key;
+    return this.repeats;
+  }
   /** MCP-D3 F-2: dokumen milik pemanggil lain yang diadopsi eksplisit (`adoptExisting: true`) di proses ini. */
   adopt(documentId: string): void {
     this.adopted.add(documentId);
@@ -103,6 +119,8 @@ export interface ToolDef {
   annotations: ToolAnnotations;
   /** MCP-D1: toolset yang memuat alat ini (STUDIO_MCP_TOOLSETS). */
   toolsets: readonly Toolset[];
+  /** IMPL-W3: prapemrosesan sebelum validasi skema (bentuk varian -> kanonik); mengubah args di tempat, mengembalikan peringatan. */
+  prepare?(args: Args): ToolWarning[];
   run(args: Args, ctx: ToolContext): Promise<ToolOutput>;
 }
 
@@ -353,6 +371,22 @@ export async function http(ctx: ToolContext, method: StudioMethod, routePath: st
     });
   }
   return reply;
+}
+
+/** IMPL-W3 butir 7: jeda coba ulang HEAD R10 sesudah 404 (berkas baru dirender mungkin belum terlihat): 3 percobaan dalam ~1,5 s. */
+export const VERIFY_RETRY_MS = [500, 1000];
+
+/** HEAD dengan coba ulang singkat HANYA untuk 404 (3 percobaan, ~1,5 s); galat lain langsung diteruskan. */
+export async function headWithRetry(ctx: ToolContext, route: string, action: string): Promise<HttpReply> {
+  for (let i = 0; ; i++) {
+    try {
+      return await http(ctx, "HEAD", route, action);
+    } catch (e) {
+      const notFound = e instanceof McpToolError && (e.extra.httpStatus === 404 || e.code === "HTTP_404");
+      if (!notFound || i >= VERIFY_RETRY_MS.length) throw e;
+      await new Promise((r) => setTimeout(r, VERIFY_RETRY_MS[i]));
+    }
+  }
 }
 
 export function query(params: Array<[string, string | number | boolean | string[] | null]>): string {

@@ -29,7 +29,13 @@ export interface ChartInput {
   source?: string;
   unit?: string;
 }
-export type Block = string | Rows | { table: Rows; caption?: string; source?: string } | { chart: ChartInput } | { list: string[]; ordered?: boolean };
+export interface RefInput {
+  rel: string;
+  documentId: string;
+  pid?: string;
+  revision?: string | number;
+}
+export type Block = string | Rows | { table: Rows; caption?: string; source?: string; unit?: string } | { chart: ChartInput } | { list: string[]; ordered?: boolean } | { subheading: string } | { ref: RefInput };
 export interface SectionInput {
   heading: string;
   blocks: Block[];
@@ -75,9 +81,17 @@ export function guardLine(raw: string): string {
   return out;
 }
 
-/** Satu paragraf: setiap baris lewat {@link guardLine}; peringatan bila ada baris yang berubah. */
+/**
+ * Satu paragraf: setiap baris lewat {@link guardLine}; peringatan bila ada baris yang berubah. IMPL-W3 butir 13: baris
+ * tunggal (wrap keras) digabung dengan spasi; baris kosong memisah paragraf (dipertahankan sebagai baris kosong).
+ */
 export function paragraphLines(s: string, warn: (w: ToolWarning) => void, where: string): string[] {
-  const lines = s.replace(/\r\n?/g, "\n").split("\n");
+  const lines = s
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n/)
+    .map((p) => p.replace(/[ \t]*\n[ \t]*/g, " ").trim())
+    .filter((p) => p !== "")
+    .flatMap((p, i) => (i === 0 ? [p] : ["", p]));
   const out = lines.map(guardLine);
   // Escape `\:` / `\.` tidak terlihat di hasil (tanpa peringatan); peringatan hanya bila awal baris atau `|` berubah.
   if (out.some((l, i) => l.replace(/\\([:.])/g, "$1") !== lines[i].trim())) warn({ code: "TEXT_ESCAPED", message: `${where}: baris yang menyerupai struktur (judul, tabel, pagar, daftar, Kunci: nilai) di dalam teks di-escape agar tetap teks` });
@@ -181,7 +195,16 @@ const ITEM_STATUS_ALIASES: Readonly<Record<string, string>> = {
   review: "review", ditinjau: "review", tinjau: "review",
   blocked: "blocked", terhambat: "blocked", blokir: "blocked", macet: "blocked",
   cancelled: "cancelled", canceled: "cancelled", batal: "cancelled", dibatalkan: "cancelled",
+  // IMPL-W3 butir 7: padanan Indonesia tambahan (kunci dinormalkan: huruf kecil, - _ menjadi spasi).
+  terblokir: "blocked", diblokir: "blocked", tertahan: "blocked",
+  "perlu tinjauan": "review", "perlu review": "review", "perlu ditinjau": "review", "menunggu tinjauan": "review", "menunggu review": "review", "needs review": "review",
+  "belum mulai": "todo", "belum dimulai": "todo", "akan dikerjakan": "todo",
+  "dalam proses": "running", "sedang berjalan": "running", "sedang dikerjakan": "running", "on going": "running",
 };
+
+/** Kunci alias status: huruf kecil, `-`/`_` menjadi spasi, spasi dirapatkan. */
+const statusKey = (s: string): string => s.trim().toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ");
+const lookupStatus = (table: Readonly<Record<string, string>>, raw: string): string | undefined => table[raw.trim().toLowerCase()] ?? table[statusKey(raw)];
 
 const KEY_RE = new RegExp(CONTRACT_KEY_PATTERN);
 const ACTOR_RE = new RegExp(CONTRACT_ACTOR_PATTERN);
@@ -234,8 +257,7 @@ export function repairItemTable(rows: Rows, warn: (w: ToolWarning) => void, wher
     for (let n = 2; used.has(k.toLowerCase()); n++) k = `${key}-${n}`;
     used.add(k.toLowerCase());
     r[keyIdx] = k;
-    const raw = String(r[s] ?? "").trim().toLowerCase();
-    const st = ITEM_STATUS_ALIASES[raw];
+    const st = lookupStatus(ITEM_STATUS_ALIASES, String(r[s] ?? ""));
     if (st !== undefined) r[s] = st;
     else unknown.push(String(r[s] ?? ""));
     const ownerIdx = out[0].indexOf("owner");
@@ -268,7 +290,20 @@ const META_RECORD_KEYS: Readonly<Record<string, "status" | "owner" | "verdict" |
 const RECORD_STATUS_EXTRA: Readonly<Record<string, string>> = {
   selesai: "complete", done: "complete", finished: "complete", tuntas: "complete", lengkap: "complete",
   sebagian: "partial", parsial: "partial", terhambat: "blocked", macet: "blocked", draf: "draft", review: "needs-review", tinjau: "needs-review", "perlu review": "needs-review",
+  // IMPL-W3 butir 7 (kunci dinormalkan statusKey).
+  terblokir: "blocked", diblokir: "blocked", "perlu tinjauan": "needs-review", "perlu ditinjau": "needs-review", "needs review": "needs-review", "menunggu tinjauan": "needs-review",
+  berjalan: "partial", "dalam proses": "partial", "sedang berjalan": "partial", "in progress": "partial", "selesai sebagian": "partial",
 };
+
+/** IMPL-W3 butir 4: vonis -> kode registri (PASS, CAUTION, FAIL, NEEDS_REVIEW); kunci dinormalkan statusKey. */
+const VERDICT_ALIASES: Readonly<Record<string, string>> = {
+  pass: "PASS", lulus: "PASS", ok: "PASS", berhasil: "PASS", lolos: "PASS", aman: "PASS",
+  caution: "CAUTION", "lulus dengan catatan": "CAUTION", "lolos dengan catatan": "CAUTION", catatan: "CAUTION", waspada: "CAUTION", "hati hati": "CAUTION", "perlu perhatian": "CAUTION",
+  fail: "FAIL", gagal: "FAIL", "tidak lulus": "FAIL", "tidak lolos": "FAIL",
+  "needs review": "NEEDS_REVIEW", "perlu tinjauan": "NEEDS_REVIEW", "perlu review": "NEEDS_REVIEW", "perlu ditinjau": "NEEDS_REVIEW",
+};
+const VERDICT_CODES = ["PASS", "CAUTION", "FAIL", "NEEDS_REVIEW"];
+const CARD_RE = /^t_[0-9a-f]{8}$/;
 
 const REPORTED_AT_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2}| ?WIB)?)?$/;
 
@@ -296,6 +331,8 @@ export interface BuiltReport {
   itemKeys: Set<string>;
   /** M-1: medan record kepala yang ditulis mesin (nama medan kontrak -> nilai). */
   recordFields: Record<string, string>;
+  /** IMPL-W3 butir 6: judul bab wajib yang belum berisi (kosong = lengkap). */
+  missing: string[];
 }
 
 const HEADER_FIELD: Readonly<Record<string, string>> = { Status: "status", Owner: "owner", ReportedAt: "reportedAt", Verdict: "verdict", Initiator: "initiator", TaskRef: "taskRef", CardIds: "cardIds" };
@@ -312,6 +349,42 @@ function fieldsOf(header: readonly string[]): Record<string, string> {
 /** Tanggal hari ini di zona WIB (+07:00), YYYY-MM-DD. */
 export const wibDate = (now: number): string => new Date(now + 7 * 3600_000).toISOString().slice(0, 10);
 
+/**
+ * IMPL-W3 butir 4: medan kepala opsional dinormalkan ke bentuk yang dibaca konverter. Tanpa ini konverter memotong nilai
+ * ke token pertama (TaskRef/Initiator), atau memindah baris ke pembuka bab 1 (Verdict tak dikenal) sehingga `assertShape`
+ * memberi CONTENT_INJECTION palsu. Nilai yang tidak dapat dinormalkan dibuang dengan peringatan (tidak ditebak).
+ */
+function normalizeOptionalFields(v: Partial<Record<string, string>>, warn: (w: ToolWarning) => void): void {
+  if (v.verdict !== undefined) {
+    const up = v.verdict.toUpperCase().replace(/[- ]/g, "_");
+    const vd = VERDICT_ALIASES[statusKey(v.verdict)] ?? (VERDICT_CODES.includes(up) ? up : undefined);
+    if (vd === undefined) warn({ code: "VERDICT_DROPPED", message: `meta.verdict "${v.verdict}" tidak dikenal; tidak ditulis (pilihan: PASS, CAUTION, FAIL, NEEDS_REVIEW)` });
+    if (vd !== undefined) v.verdict = vd;
+    else delete v.verdict;
+  }
+  if (v.taskRef !== undefined) {
+    const t = v.taskRef.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-{2,}/g, "-").replace(/^[^A-Za-z0-9]+/, "").replace(/[-.]+$/, "").slice(0, 64);
+    const ok = t !== "" && KEY_RE.test(t);
+    if (t !== v.taskRef) warn({ code: ok ? "TASKREF_NORMALIZED" : "TASKREF_DROPPED", message: `meta.taskRef "${v.taskRef}" ${ok ? `ditulis sebagai ${t}` : "bukan kunci; tidak ditulis"}` });
+    if (ok) v.taskRef = t;
+    else delete v.taskRef;
+  }
+  if (v.initiator !== undefined) {
+    const t = v.initiator.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9._-]+/g, "");
+    const ok = ACTOR_RE.test(t);
+    if (t !== v.initiator) warn({ code: ok ? "INITIATOR_NORMALIZED" : "INITIATOR_DROPPED", message: `meta.initiator "${v.initiator}" ${ok ? `ditulis sebagai ${t}` : "bukan id pelaku; tidak ditulis"}` });
+    if (ok) v.initiator = t;
+    else delete v.initiator;
+  }
+  if (v.cardIds !== undefined) {
+    const all = v.cardIds.split(/[\s,;]+/).filter((x) => x !== "");
+    const ok = all.filter((x) => CARD_RE.test(x));
+    if (ok.length < all.length) warn({ code: "CARD_IDS_DROPPED", message: `meta.cardIds: ${all.length - ok.length} id bukan bentuk t_xxxxxxxx dan tidak ditulis` });
+    if (ok.length > 0) v.cardIds = ok.join(", ");
+    else delete v.cardIds;
+  }
+}
+
 function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { header: string[]; title: string | null } {
   const v: Partial<Record<string, string>> = {};
   const unknown: string[] = [];
@@ -324,7 +397,7 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
   if (unknown.length > 0) warn({ code: "META_IGNORED", message: `meta tidak dipakai laporan kerja: ${unknown.slice(0, 8).join(", ")} (dikenal: status, owner, verdict, initiator, taskRef, reportedAt, cardIds, title)` });
   const def = getContractKindDef(MD_REPORT_DEFAULT_KIND);
   const statuses = { ...RECORD_STATUS_EXTRA, ...(def?.aliases.statuses ?? {}) } as Record<string, string>;
-  let status = v.status !== undefined ? statuses[v.status.toLowerCase()] : undefined;
+  let status = v.status !== undefined ? lookupStatus(statuses, v.status) : undefined;
   if (status === undefined) {
     warn({ code: "STATUS_DEFAULTED", message: v.status !== undefined ? `meta.status "${v.status}" tidak dikenal; dipakai draft (pilihan: draft, complete, partial, blocked, needs-review)` : "meta.status tidak diisi; dipakai draft (isi meta.status: complete bila pekerjaan selesai)" });
     status = "draft";
@@ -343,6 +416,7 @@ function recordLines(input: WorkReportInput, warn: (w: ToolWarning) => void): { 
     warn({ code: "REPORTED_AT_DEFAULTED", message: `meta.reportedAt "${reportedAt}" bukan YYYY-MM-DD; dipakai tanggal hari ini` });
     reportedAt = null;
   }
+  normalizeOptionalFields(v, warn);
   const header = [`Status: ${status}`, ...(owner !== null ? [`Owner: ${owner}`] : []), `ReportedAt: ${reportedAt ?? wibDate(input.now)}`];
   for (const [f, label] of [["verdict", "Verdict"], ["initiator", "Initiator"], ["taskRef", "TaskRef"], ["cardIds", "CardIds"]] as const) if (v[f] !== undefined) header.push(`${label}: ${v[f]}`);
   return { header, title: v.title ?? null };
@@ -359,6 +433,7 @@ function expectedParagraphs(b: Block): string[] {
     const cap = [c.caption, c.source !== undefined ? `Sumber: ${c.source}` : undefined].filter((x): x is string => typeof x === "string" && x.trim() !== "");
     return cap.length > 0 ? [cap.join(". ")] : [];
   }
+  if (isObj(o) && typeof o.subheading === "string") return o.subheading.trim() === "" ? [] : [o.subheading.replace(/\s+/g, " ").trim()];
   return [];
 }
 
@@ -384,7 +459,12 @@ function blockLines(b: Block, warn: (w: ToolWarning) => void, where: string, use
     if (guarded.some((g, i) => g !== items[i])) warn({ code: "TEXT_ESCAPED", message: `${where}: butir daftar yang menyerupai struktur di-escape agar tetap teks` });
     return guarded.map((x, i) => (o.ordered === true ? `${i + 1}. ${x}` : `- ${x}`));
   }
-  throw new McpToolError("INVALID_ARGUMENT", `${where}: blok tidak dikenal (string = paragraf, larik baris = tabel, {table}, {chart}, {list})`);
+  if (isObj(o) && typeof o.subheading === "string") {
+    // IMPL-W3: laporan kerja tidak punya sub-bagian (setiap `##` = bab); sub-judul ditulis sebagai paragraf.
+    warn({ code: "SUBHEADING_AS_PARAGRAPH", message: `${where}: laporan kerja tanpa sub-bagian; sub-judul ditulis sebagai paragraf` });
+    return o.subheading.trim() === "" ? [] : paragraphLines(o.subheading.trim(), warn, where);
+  }
+  throw new McpToolError("INVALID_ARGUMENT", `${where}: blok tidak dikenal (string = paragraf, larik baris = tabel, {table}, {chart}, {list}, {subheading}, {ref})`);
 }
 
 /**
@@ -404,7 +484,7 @@ export function buildWorkReport(input: WorkReportInput): BuiltReport {
   const paragraphs: string[][] = [];
   const mapped: string[] = [];
   const extra: string[] = [];
-  input.sections.forEach((s, i) => {
+  arrangeRefs(input.sections, warn).forEach((s, i) => {
     const where = `bagian ${i + 1}`;
     const h = mapHeading(s.heading.replace(/\s+/g, " ").trim(), m);
     if (h.how === "alias" || h.how === "words") mapped.push(`"${s.heading.trim()}" -> ${h.heading}`);
@@ -423,16 +503,58 @@ export function buildWorkReport(input: WorkReportInput): BuiltReport {
   });
   if (mapped.length > 0) warn({ code: "HEADING_MAPPED", message: `judul bagian dipetakan ke bab laporan: ${mapped.join("; ")}` });
   if (extra.length > 0) warn({ code: "HEADING_EXTRA", message: `judul tanpa padanan bab laporan, disimpan sebagai bab tambahan: ${extra.join("; ")}` });
-  const missing = m.required.filter((k) => !filled.has(k));
-  if (missing.length > 0) {
-    const names = missing.map((k) => m.titles.get(k) ?? k);
-    throw new McpToolError(
-      "SECTION_MISSING",
-      `bab wajib laporan kerja tanpa isi: ${names.join(", ")}. Tambahkan bagian, mis. { "heading": "${names[0]}", "blocks": ["..."] } (tulis "Tidak ada." bila memang kosong). Tidak ada yang dikirim`,
-      { details: { missing: names, required: m.required.map((k) => m.titles.get(k) ?? k) } },
-    );
-  }
+  // IMPL-W3 butir 6: bab wajib tanpa isi tidak lagi menolak; laporan disimpan INCOMPLETE (tanpa render) dan `missing`
+  // menyebut semua bab yang kurang sekaligus. Tidak ada isi yang dikarang.
+  const missing = m.required.filter((k) => !filled.has(k)).map((k) => m.titles.get(k) ?? k);
   const title = (input.title ?? metaTitle ?? `Laporan kerja ${input.docKey}`).replace(/\s+/g, " ").trim();
   const markdown = [`# ${title.replace(/^#+\s*/, "")}`, "", `mission: ${input.mission}`, `docKey: ${input.docKey}`, ...header, "", ...body].join("\n").replace(/\n{3,}/g, "\n\n");
-  return { markdown: `${markdown.trimEnd()}\n`, warnings, chapters, headings, paragraphs, itemKeys: used, recordFields: fieldsOf(header) };
+  return { markdown: `${markdown.trimEnd()}\n`, warnings, chapters, headings, paragraphs, itemKeys: used, recordFields: fieldsOf(header), missing };
+}
+
+// ── Rujukan (IMPL-W3 butir 7) ───────────────────────────────────────────
+
+const REFS_HEADINGS = new Set(["rujukan", "rujukan dokumen", "refs", "references", "referensi", "daftar rujukan"]);
+const REL_ALIASES: Readonly<Record<string, string>> = {
+  basis: "basis", dasar: "basis", evidence: "evidence", bukti: "evidence", output: "output", keluaran: "output", hasil: "output",
+  supersedes: "supersedes", menggantikan: "supersedes", mengganti: "supersedes", replaces: "supersedes",
+};
+const REF_DOC_RE = /^[a-z0-9]{20,40}$/;
+const isRefsHeading = (h: string) => REFS_HEADINGS.has(stripNumber(h).toLowerCase().replace(/\s+/g, " ").trim());
+
+/**
+ * Blok `{ref}` di bagian mana pun -> satu tabel Rujukan (hubungan | dokumen | paragraf | revisi) di akhir; teks di
+ * bagian Rujukan (selain tabel) dipindah ke bagian "Catatan rujukan" agar konverter tidak menolak "baris di luar tabel
+ * rujukan". Rujukan tak sah (hubungan/dokumen) disimpan sebagai teks catatan, bukan dibuang.
+ */
+function arrangeRefs(sections: readonly SectionInput[], warn: (w: ToolWarning) => void): SectionInput[] {
+  const rows: Rows = [];
+  const notes: Block[] = [];
+  const refTables: Block[] = [];
+  const out: SectionInput[] = [];
+  for (const s of sections) {
+    const keep: Block[] = [];
+    const refs = isRefsHeading(s.heading);
+    for (const b of s.blocks) {
+      const o = b as unknown as Record<string, unknown>;
+      if (isObj(o) && isObj(o.ref)) {
+        const r = o.ref as unknown as RefInput;
+        const rel = REL_ALIASES[String(r.rel).trim().toLowerCase()];
+        if (rel !== undefined && REF_DOC_RE.test(String(r.documentId).trim())) rows.push([rel, String(r.documentId).trim(), r.pid ?? "", r.revision !== undefined ? String(r.revision) : ""]);
+        else {
+          notes.push(`Rujukan: ${String(r.rel)} ${String(r.documentId)}${r.pid ? ` ${r.pid}` : ""}`);
+          warn({ code: "REF_KEPT_AS_TEXT", message: "rujukan dengan hubungan/documentId tak sah disimpan sebagai teks di Catatan rujukan (hubungan: basis, evidence, output, supersedes; documentId 20-40 huruf kecil/angka)" });
+        }
+      } else if (refs && (isRows(b) || (isObj(o) && isRows(o.table)))) refTables.push(isRows(b) ? b : (o.table as Rows));
+      else if (refs) notes.push(b);
+      else keep.push(b);
+    }
+    if (!refs) out.push({ heading: s.heading, blocks: keep });
+  }
+  if (notes.length > 0) {
+    if (sections.some((s) => isRefsHeading(s.heading))) warn({ code: "REFS_TEXT_MOVED", message: "teks di bagian Rujukan (selain tabel) dipindah ke bagian Catatan rujukan; tabel rujukan tetap" });
+    out.push({ heading: "Catatan rujukan", blocks: notes });
+  }
+  if (rows.length > 0) refTables.push([["hubungan", "dokumen", "paragraf", "revisi"], ...rows]);
+  if (refTables.length > 0) out.push({ heading: "Rujukan", blocks: refTables });
+  return out;
 }

@@ -186,7 +186,8 @@ describe('L-1: tidak ada teks server di baris kepala galat', () => {
     const { call } = await connect({ fetch: m.f, env });
     for (const slot of ['controlSheet', 'signature']) {
       const r = await call('studio_slot_fill', { documentId: DOC, slot, payload: { type: slot }, baseRevisionNo: 1 });
-      expect(r.isError).toBe(true);
+      expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
       expect(outside(r.text)).not.toContain('ABAIKAN');
       expect(inside(r.text)).toContain('ABAIKAN');
       expect(r.data.untrusted).toBe(true);
@@ -216,7 +217,8 @@ describe('L-1: tidak ada teks server di baris kepala galat', () => {
     });
     const { call } = await connect({ fetch: m.f, env });
     const r = await call('studio_slot_fill', { documentId: DOC, slot: 'controlSheet', payload: { type: 'controlSheet' }, baseRevisionNo: 1 });
-    expect(r.isError).toBe(true);
+    expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
     expect(outside(r.text)).not.toContain('ABAIKAN');
     expect(r.data.error.correlationSource).toBe('mcp');
   });

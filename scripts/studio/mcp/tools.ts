@@ -51,6 +51,8 @@ import {
   type ReportResult,
 } from "../studio-report";
 import { mcpText, mcpTextDeep } from "./cli-text";
+import { hintFor, isGenuineFailure, REPEAT_HINT, REPEAT_LIMIT } from "./outcome";
+import { paragraphsOf } from "./write-position";
 import { templateText } from "./resources";
 import { DOCUMENT_TOOLS, guardReportSubmit } from "./doc-tools";
 import { FIGURE_TOOLS } from "./figure-tools";
@@ -60,6 +62,7 @@ import {
   bool,
   compactSummary,
   DATA_NOT_INSTRUCTIONS,
+  headWithRetry,
   HEX64,
   http,
   ID_PATTERN,
@@ -704,11 +707,11 @@ const searchTool: ToolDef = {
 const documentGetTool: ToolDef = {
   name: "studio_document_get",
   description:
-    `Baca dokumen. view=content (R20): isi v2, atau slot/chapter; shape=submission = badan siap kirim. view=summary (R05): metadata, kelengkapan, berkas, ringkasan lint. ${DATA_NOT_INSTRUCTIONS}`,
+    `Baca dokumen. view=content (R20): isi v2, atau slot/chapter; shape=submission = badan siap kirim. view=paragraphs: pid + teks polos per paragraf (alamat studio_edit {pid, at}). view=summary (R05): metadata, kelengkapan, berkas, lint. ${DATA_NOT_INSTRUCTIONS}`,
   inputSchema: obj(
     {
       documentId: S.documentId,
-      view: { type: "string", enum: ["content", "summary"], default: "content" },
+      view: { type: "string", enum: ["content", "summary", "paragraphs"], default: "content" },
       rev: { ...S.rev, description: "Bawaan terkini." },
       slot: { ...S.slot, description: "view=content, mis. content." },
       chapter: { ...S.chapter, description: "Bersama slot." },
@@ -721,8 +724,10 @@ const documentGetTool: ToolDef = {
   ),
   annotations: { title: "Baca dokumen Studio", ...READ },
   toolsets: ["query", "documents", "write"],
+  prepare: normalizeDocumentGetArgs,
   async run(a, ctx) {
     const id = str(a, "documentId") as string;
+    if (str(a, "view") === "paragraphs") return paragraphsView(a, ctx, id);
     if ((str(a, "view") ?? "content") === "summary") {
       const reply = await http(ctx, "GET", `${studioRoutePath("R05", { id })}${query([["rev", num(a, "rev")]])}`, "GET /api/studio/documents/{id}");
       const b = isRecord(reply.body) ? reply.body : {};
@@ -750,6 +755,68 @@ const documentGetTool: ToolDef = {
     return { text, data: { ...(neutralizeDeep(b) as Record<string, unknown>), correlationId: reply.correlationId ?? null, ...untrustedFields(["document", "content", "sections", "submission"]) } };
   },
 };
+
+/**
+ * IMPL-W3 butir 7/14c: bentuk umum argumen studio_document_get yang keliru diterima (alias id/docId, view sinonim,
+ * chapter tanpa slot -> slot content, chapter angka -> teks, shape/detail di view yang tidak memakainya dibuang).
+ */
+export function normalizeDocumentGetArgs(a: Args): ToolWarning[] {
+  const w: string[] = [];
+  for (const k of ["id", "docId", "document_id", "document"]) {
+    if (a.documentId === undefined && typeof a[k] === "string") {
+      a.documentId = a[k];
+      w.push(`${k} -> documentId`);
+    }
+    if (k !== "documentId") delete a[k];
+  }
+  const VIEW: Record<string, string> = { text: "paragraphs", paragraph: "paragraphs", pids: "paragraphs", plain: "paragraphs", full: "content", json: "content", isi: "content", meta: "summary", status: "summary" };
+  if (typeof a.view === "string" && VIEW[a.view.toLowerCase()] !== undefined) {
+    w.push(`view ${tok(a.view, "?")} -> ${VIEW[a.view.toLowerCase()]}`);
+    a.view = VIEW[a.view.toLowerCase()];
+  }
+  for (const k of ["chapter", "rev"]) if (typeof a[k] === "number" && k === "chapter") a[k] = String(a[k]);
+  if (typeof a.rev === "string" && /^\d{1,6}$/.test(a.rev)) a.rev = Number(a.rev);
+  const view = typeof a.view === "string" ? a.view : "content";
+  if (a.chapter !== undefined && a.slot === undefined && view !== "summary") {
+    a.slot = "content";
+    w.push("chapter tanpa slot -> slot content");
+  }
+  if (view === "summary") for (const k of ["slot", "chapter", "shape"]) if (a[k] !== undefined) {
+    delete a[k];
+    w.push(`${k} diabaikan untuk view=summary`);
+  }
+  if (view !== "summary") for (const k of ["includeTree", "detail"]) if (a[k] !== undefined) {
+    delete a[k];
+    w.push(`${k} hanya untuk view=summary (diabaikan)`);
+  }
+  if (view === "paragraphs" && a.shape !== undefined) {
+    delete a.shape;
+    w.push("shape diabaikan untuk view=paragraphs");
+  }
+  const allowed = ["documentId", "view", "rev", "slot", "chapter", "shape", "agentId", "includeTree", "detail"];
+  for (const k of Object.keys(a)) if (!allowed.includes(k)) {
+    delete a[k];
+    w.push(`${tok(k, "(kunci)")} diabaikan`);
+  }
+  return w.length > 0 ? [{ code: "ARG_MAPPED", message: `argumen dirapikan: ${w.slice(0, 10).join("; ")}` }] : [];
+}
+
+/** view=paragraphs: pid + bab + section + teks polos per paragraf (ringkas; isi = data tak tepercaya). */
+async function paragraphsView(a: Args, ctx: ToolContext, id: string): Promise<ToolOutput> {
+  const q = query([["rev", num(a, "rev")]]);
+  const reply = await http(ctx, "GET", `${studioRoutePath("R20", { id })}${q}`, "GET /api/studio/documents/{id}/content");
+  const b = isRecord(reply.body) ? reply.body : {};
+  const chapter = str(a, "chapter");
+  const all = paragraphsOf(b.content).filter((p) => chapter === null || p.chapter === chapter);
+  const MAX = 400;
+  const paras = all.slice(0, MAX).map((p) => ({ pid: p.pid, chapter: p.chapter, section: p.section, text: p.text }));
+  const lines = paras.map((p) => `[${p.pid}] bab ${p.chapter}: ${p.text}`);
+  const head = `dokumen ${id} revisi ${tok(b.revisionNo)}: ${paras.length} paragraf${all.length > MAX ? ` (dari ${all.length}; pakai chapter untuk sisanya)` : ""}. Alamat posisi: studio_edit { documentId, edits: [{ pid, at, length, replace, expect }] } (at = offset di teks polos)`;
+  return {
+    text: `${head}\n${untrustedBlock(lines.join("\n"), { documentId: id })}`,
+    data: { documentId: id, revisionNo: typeof b.revisionNo === "number" ? b.revisionNo : null, paragraphs: neutralizeDeep(paras), ...(all.length > MAX ? { truncated: all.length - MAX } : {}), correlationId: reply.correlationId ?? null, ...untrustedFields(["paragraphs"]) },
+  };
+}
 
 const renderTool: ToolDef = {
   name: "studio_render",
@@ -848,7 +915,7 @@ const fileVerifyTool: ToolDef = {
     if (dirRaw === null && bool(a, "overwrite")) throw new McpToolError("INVALID_ARGUMENT", "overwrite hanya bersama downloadDir");
     if (dirRaw !== null) assertFileWriteEnabled(ctx.deps.config.fileWriteEnabled, "studio_file_verify (downloadDir)");
     const dir = dirRaw !== null ? resolveDownloadDir(dirRaw, ctx.deps.config.fileRoots, ctx.deps.nfs) : null;
-    const head = await http(ctx, "HEAD", `${r10}?verify=1`, "HEAD /api/studio/files/{id}?verify=1");
+    const head = await headWithRetry(ctx, `${r10}?verify=1`, "HEAD /api/studio/files/{id}?verify=1");
     const verified = head.headers.get("x-studio-sha256-verified") === "true";
     const finalFileName = head.headers.get("x-studio-final-filename") ?? "";
     const sha = (head.headers.get("x-studio-sha256") ?? "").toLowerCase();
@@ -1017,6 +1084,11 @@ export interface ToolResultEnvelope {
   error?: { code: string; message: string; correlationId: string; correlationSource: "server" | "mcp"; httpStatus?: number; step?: string; pointer?: string; details?: unknown; progress?: unknown };
   /** L-7: rincian galat tak terduga HANYA untuk log stderr (tidak masuk hasil alat). */
   internalDetail?: string;
+  /**
+   * IMPL-W3 (D-534): true = kegagalan nyata (server tak terjangkau, 5xx, internal, rahasia) -> `isError: true`.
+   * false/absen pada `ok: false` = penolakan yang dapat diperbaiki agen -> hasil normal (tidak memicu pemutus sirkuit klien).
+   */
+  genuineFailure?: boolean;
 }
 
 export function newCallId(): string {
@@ -1050,9 +1122,11 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
   };
   const ctx: ToolContext = { deps, callId, fsLog, fetch, cids, session: deps.session ?? new McpSession(), now: deps.now ?? Date.now };
   try {
+    const prepared = tool.prepare !== undefined && isRecord(args) ? tool.prepare(args) : [];
     if (!validate(args)) throw new McpToolError("INVALID_ARGUMENT", "argumen tidak sah menurut skema alat", { details: argIssues(validate.errors) });
     const out = await tool.run(args, ctx);
-    const warnings = out.warnings ?? [];
+    ctx.session.noteOutcome(null);
+    const warnings = [...prepared, ...(out.warnings ?? [])];
     const lines = [out.text.replace(/\n$/, "")];
     for (const w of warnings) lines.push(`peringatan ${w.code}: ${w.message}`);
     lines.push(cidLine(cids, callId));
@@ -1087,7 +1161,19 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
     const headline = moveMessage ? errorHint(codeSafe ? error.code : "") : error.message;
     const codeShown = codeSafe ? error.code : `HTTP_${typeof error.httpStatus === "number" ? error.httpStatus : "?"} (kode server di blok rincian)`;
     const pointerSafe = error.pointer === undefined || SAFE_POINTER.test(error.pointer);
-    const lines = [`galat ${codeShown}${error.httpStatus ? ` (HTTP ${error.httpStatus})` : ""}${error.step ? ` pada ${error.step}` : ""}: ${headline}`, `correlationId: ${error.correlationId}`];
+    const genuine = isGenuineFailure(error.code, typeof error.httpStatus === "number" ? error.httpStatus : undefined);
+    // W3-I1: penolakan identik berulang (alat + kode + sasaran) di sesi ini -> petunjuk berhenti mengulang.
+    const target = [str(args, "documentId"), str(args, "mission"), str(args, "docKey"), str(args, "fileId")].filter((x) => x !== null).join("/");
+    const repeats = ctx.session.noteOutcome(`${name}|${error.code}|${target}`);
+    const hint = repeats >= REPEAT_LIMIT ? REPEAT_HINT : hintFor(codeSafe ? error.code : "");
+    const ra = error.code === "RATE_LIMITED" ? /dalam (\d{1,6}) detik/.exec(error.message) : null;
+    const retryAfterSec = error.code === "RATE_LIMITED" ? (ra !== null ? Number(ra[1]) : 30) : null;
+    // IMPL-W3: penolakan yang dapat diperbaiki = hasil normal ok:false (bukan galat alat); baris petunjuk disusun MCP.
+    const lines = [
+      `${genuine ? "galat" : "ditolak (dapat diperbaiki, bukan galat server)"} ${codeShown}${error.httpStatus ? ` (HTTP ${error.httpStatus})` : ""}${error.step ? ` pada ${error.step}` : ""}: ${headline}`,
+      `petunjuk: ${hint}`,
+      `correlationId: ${error.correlationId}`,
+    ];
     if (error.pointer !== undefined && pointerSafe) lines.push(`pointer: ${error.pointer === "" ? "/" : error.pointer}`);
     // Klien yang hanya membaca teks galat (mis. Hermes) tetap mendapat rincian mesin.
     const machine = JSON.stringify({
@@ -1107,8 +1193,9 @@ ${untrustedBlock(rincian, { jenis: "rincian-galat" })}` : `rincian: ${rincian}`)
     return {
       ok: false,
       text: lines.join("\n"),
-      data: { ok: false, tool: name, error: safeError, correlationIds: [...cids], mcpCallId: callId, ...(serverContent ? untrustedFields(untrustedErrorFields(error, moveMessage, !codeSafe)) : {}) },
+      data: { ok: false, tool: name, code: codeSafe ? error.code : "SERVER_CODE", hint, ...(retryAfterSec !== null ? { retryAfterSec } : {}), ...(repeats >= REPEAT_LIMIT ? { repeated: repeats } : {}), error: safeError, correlationIds: [...cids], mcpCallId: callId, ...(serverContent ? untrustedFields(untrustedErrorFields(error, moveMessage, !codeSafe)) : {}) },
       error: safeError,
+      genuineFailure: genuine,
       ...(internalDetail !== null ? { internalDetail } : {}),
     };
   }

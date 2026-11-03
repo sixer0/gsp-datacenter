@@ -8,18 +8,28 @@ import type { ReportPartMarkdown } from "../../../src/lib/studio/services/draft/
 import { McpToolError } from "./safety";
 import type { ToolWarning } from "./tool-kit";
 import { cellText, guardLine, paragraphLines } from "./write-content";
+import { exactView, findCell, findText, fold, spansHaveMarkup, spliceSpans, type MatchUnit, type Tier } from "./write-match";
 
 export type Region = keyof ReportPartMarkdown;
 export interface EditPart {
   part: string;
   md: ReportPartMarkdown;
 }
-export type EditOp = { find: string; replace: string } | { after: string; insert: string };
+export type EditOp =
+  | { find: string; replace: string; section?: string; occurrence?: "all"; target?: { plain: string; nth: number } }
+  | { after: string; insert: string; section?: string }
+  | { cell: { section?: string; row: string; column: string }; value: string };
 
 export interface Unit {
   part: number;
   region: Region;
   kind: "field" | "paragraph" | "cell";
+  /** IMPL-W3: judul `##` terakhir sebelum satuan ("" = kepala/record). */
+  section: string;
+  /** sel: teks semua sel baris ini, judul kolom, dan apakah baris judul tabel. */
+  rowCells?: string[];
+  column?: string;
+  headerRow?: boolean;
   /** baris awal..akhir (eksklusif) di region; sel = satu baris. */
   start: number;
   end: number;
@@ -45,14 +55,17 @@ function regionUnits(lines: string[], part: number, region: Region): Unit[] {
   if (region === "header") {
     lines.forEach((l, i) => {
       const m = FIELD_RE.exec(l);
-      if (m) out.push({ part, region, kind: "field", start: i, end: i + 1, blockEnd: i + 1, text: m[2] });
+      if (m) out.push({ part, region, kind: "field", section: "", start: i, end: i + 1, blockEnd: i + 1, text: m[2] });
     });
     return out;
   }
+  let section = "";
   let i = 0;
   while (i < lines.length) {
     const l = lines[i];
-    if (l.trim() === "" || /^#{1,6}\s/.test(l)) {
+    const h = /^#{1,6}\s+(.*)$/.exec(l);
+    if (h) section = h[1].replace(/\\(?=[\p{P}\p{S}])/gu, "").trim();
+    if (l.trim() === "" || h) {
       i++;
       continue;
     }
@@ -61,23 +74,26 @@ function regionUnits(lines: string[], part: number, region: Region): Unit[] {
       let j = i + 1;
       while (j < lines.length && !lines[j].trim().startsWith(fence[1])) j++;
       const end = Math.min(j + 1, lines.length);
-      out.push({ part, region, kind: "paragraph", start: i, end, blockEnd: end, text: lines.slice(i, end).join("\n") });
+      out.push({ part, region, kind: "paragraph", section, start: i, end, blockEnd: end, text: lines.slice(i, end).join("\n") });
       i = end;
       continue;
     }
     if (l.trimStart().startsWith("|")) {
       let j = i;
       while (j < lines.length && lines[j].trimStart().startsWith("|")) j++;
+      const unpipe = (c: string) => c.replace(/\\\|/g, "|");
+      const header = splitRow(lines[i]).map(unpipe);
       for (let r = i; r < j; r++) {
         if (TABLE_SEP_RE.test(lines[r].trim())) continue;
-        splitRow(lines[r]).forEach((c, ci) => out.push({ part, region, kind: "cell", start: r, end: r + 1, blockEnd: j, cell: ci, text: c.replace(/\\\|/g, "|") }));
+        const rowCells = splitRow(lines[r]).map(unpipe);
+        rowCells.forEach((c, ci) => out.push({ part, region, kind: "cell", section, rowCells, column: header[ci] ?? "", headerRow: r === i, start: r, end: r + 1, blockEnd: j, cell: ci, text: c }));
       }
       i = j;
       continue;
     }
     let j = i;
     while (j < lines.length && lines[j].trim() !== "" && !/^#{1,6}\s/.test(lines[j]) && !lines[j].trimStart().startsWith("|") && !FENCE_RE.test(lines[j])) j++;
-    out.push({ part, region, kind: "paragraph", start: i, end: j, blockEnd: j, text: lines.slice(i, j).join("\n") });
+    out.push({ part, region, kind: "paragraph", section, start: i, end: j, blockEnd: j, text: lines.slice(i, j).join("\n") });
     i = j;
   }
   return out;
@@ -158,77 +174,34 @@ export function plainOf(s: string): string {
   return out;
 }
 
-function occurrences(hay: string, needle: string): number[] {
-  const at: number[] = [];
-  for (let k = hay.indexOf(needle); k >= 0; k = hay.indexOf(needle, k + needle.length)) at.push(k);
-  return at;
+/** Satuan paragraf yang sebenarnya blok kode berpagar. */
+const isFence = (u: Unit): boolean => u.kind === "paragraph" && FENCE_RE.test(u.text);
+
+/** Satuan laporan kerja -> satuan pencocokan bersama (IMPL-W3, `write-match.ts`). */
+export function matchUnitsOf(units: readonly Unit[], parts: readonly EditPart[]): MatchUnit[] {
+  return units.map((u) => ({
+    text: u.text,
+    section: u.region === "header" ? "record" : u.section,
+    part: parts[u.part].part,
+    kind: u.kind,
+    // W3-L3: blok kode berpagar tidak pernah dicocokkan lewat proyeksi tanpa markah (itu menulis ulang blok sebagai paragraf).
+    ...(isFence(u) ? { noPlain: true } : {}),
+    ...(u.rowCells !== undefined ? { rowCells: u.rowCells, column: u.column ?? "", headerRow: u.headerRow === true } : {}),
+  }));
 }
 
 export interface Hit {
   unit: Unit;
-  /** indeks asli [awal, akhir) di unit.text; null = cocok lewat proyeksi tanpa markah. */
-  span: [number, number] | null;
+  /** rentang asli [awal, akhir) di unit.text; null = cocok lewat proyeksi tanpa markah. */
+  spans: Array<[number, number]> | null;
+  tier: Tier;
 }
 
-const snippet = (s: string, at = 0): string => {
-  const t = s.replace(/\s+/g, " ").trim();
-  const from = Math.max(0, at - 40);
-  return `${from > 0 ? "..." : ""}${t.slice(from, from + 120)}${t.length > from + 120 ? "..." : ""}`;
-};
-const describe = (u: Unit, parts: readonly EditPart[]) => ({ part: parts[u.part].part, kind: u.kind, text: snippet(u.text) });
-
-/** Kandidat terdekat (irisan kata) untuk TEXT_NOT_FOUND. */
-function nearest(find: string, units: readonly Unit[], parts: readonly EditPart[]): Array<Record<string, unknown>> {
-  const words = new Set(find.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3));
-  return units
-    .map((u) => ({ u, score: [...new Set(u.text.toLowerCase().split(/[^\p{L}\p{N}]+/u))].filter((w) => words.has(w)).length }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((x) => describe(x.u, parts));
-}
-
-/** Satu satuan, satu kemunculan; selain itu galat (data dokumen di details = tak tepercaya). */
-export function locate(find: string, parts: readonly EditPart[], label: string): Hit {
-  const nf = normalize(find).text;
-  if (nf === "") throw new McpToolError("INVALID_ARGUMENT", `${label}: teks find/after kosong`);
+/** Satuan untuk `find`/`after` (persis -> tanpa markah -> samar; dibatasi section; semua bila `all`). */
+export function locate(find: string, parts: readonly EditPart[], label: string, opts: { section?: string; all?: boolean } = {}): Hit[] {
   const units = unitsOf(parts);
-  const exact: Hit[] = [];
-  let count = 0;
-  for (const u of units) {
-    const n = normalize(u.text);
-    const at = occurrences(n.text, nf);
-    count += at.length;
-    for (const k of at) exact.push({ unit: u, span: [n.map[k], n.map[k + nf.length - 1] + 1] });
-  }
-  let hits = exact;
-  if (count === 0) {
-    // Cadangan tanpa markah: satuan > PLAIN_MAX dilewati (tidak pernah ditulis ulang dari teks terpotong); satu proyeksi per satuan.
-    const pf = normalize(plainOf(find)).text;
-    hits = [];
-    count = 0;
-    if (pf !== "") {
-      for (const u of units) {
-        if (u.text.length > PLAIN_MAX) continue;
-        const n = occurrences(normalize(plainOf(u.text)).text, pf).length;
-        if (n > 0) hits.push({ unit: u, span: null });
-        count += n;
-      }
-    }
-  }
-  if (count === 0) {
-    throw new McpToolError("TEXT_NOT_FOUND", `${label}: teks tidak ditemukan di paragraf, sel tabel, atau medan record dokumen (dicocokkan persis, spasi dinormalkan). Kandidat terdekat ada di blok rincian; tidak ada yang ditulis`, {
-      untrusted: true,
-      details: { edit: label, candidates: nearest(nf, units, parts) },
-    });
-  }
-  if (count > 1) {
-    throw new McpToolError("TEXT_AMBIGUOUS", `${label}: teks muncul ${count} kali; perpanjang find sampai unik. Lokasi ada di blok rincian; tidak ada yang ditulis`, {
-      untrusted: true,
-      details: { edit: label, matches: hits.slice(0, 5).map((h) => describe(h.unit, parts)) },
-    });
-  }
-  return hits[0];
+  const { hits } = findText(find, matchUnitsOf(units, parts), opts, label);
+  return hits.map((h) => ({ unit: units[h.index], spans: h.spans, tier: h.tier }));
 }
 
 /** Rencana suntingan untuk cek struktur pasca-konversi (R-1 siklus 2). */
@@ -292,10 +265,27 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
   };
   const snapshot = parts.map((p) => ({ header: [...p.md.header], intro: [...p.md.intro], body: [...p.md.body], tail: [...p.md.tail] }));
   const trusted = parts.map(() => new Map<string, number>());
+  const cellSet = (u: Unit, next: string) => {
+    const lines = parts[u.part].md[u.region];
+    const cells = splitRow(lines[u.start]);
+    cells[u.cell as number] = cellText(next);
+    lines[u.start] = joinRow(cells);
+    trusted[u.part].set(lines[u.start], (trusted[u.part].get(lines[u.start]) ?? 0) + 1);
+    if (u.region === "tail") plan.refCells = true;
+    else plan.itemCells = true;
+    touched.add(u.part);
+  };
   edits.forEach((e, i) => {
     const label = `edit ${i + 1}`;
+    if ("cell" in e) {
+      // IMPL-W3: sel tabel struktural (row = teks sel mana pun di baris, column = judul kolom), tepat satu sel.
+      const units = unitsOf(parts);
+      const u = units[findCell(e.cell, matchUnitsOf(units, parts), label)];
+      cellSet(u, e.value);
+      return;
+    }
     if ("insert" in e) {
-      const h = locate(e.after, parts, label);
+      const [h] = locate(e.after, parts, label, { ...(e.section !== undefined ? { section: e.section } : {}) });
       if (h.unit.kind === "field") throw new McpToolError("INVALID_ARGUMENT", `${label}: after menunjuk medan record; sisipan hanya sesudah paragraf atau tabel`);
       const lines = parts[h.unit.part].md[h.unit.region];
       const add = e.insert.trim() === "" ? [] : paragraphLines(e.insert.trim(), warn, label);
@@ -305,13 +295,38 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       touched.add(h.unit.part);
       return;
     }
-    const h = locate(e.find, parts, label);
+    if (e.target !== undefined) {
+      // W3-L1 (internal, dari suntingan posisi): satuan = paragraf ke-nth di bab itu yang teks polosnya sama dengan
+      // paragraf ber-pid; find hanya dicari di dalam satuan itu. Tidak ketemu -> POSITION_MISMATCH (0 tulis).
+      const units = unitsOf(parts);
+      const want = exactView(e.target.plain).text;
+      const cands = units.filter((u) => u.kind === "paragraph" && !isFence(u) && parts[u.part].part === e.section && exactView(plainOf(u.text)).text === want);
+      const u = e.target.nth >= 0 ? cands[e.target.nth] : undefined;
+      if (u === undefined) throw new McpToolError("POSITION_MISMATCH", `${label}: paragraf ber-pid itu tidak dapat dipetakan tepat ke teks bab (${cands.length} kandidat); tidak ada yang ditulis. Pakai { find, replace, section }`);
+      const { hits } = findText(e.find, matchUnitsOf([u], parts), {}, label);
+      if (hits[0].tier === "fuzzy") warn({ code: "FUZZY_MATCH", message: `${label}: find cocok setelah normalisasi` });
+      applyFind({ unit: u, spans: hits[0].spans, tier: hits[0].tier }, e.find, e.replace, false, label);
+      return;
+    }
+    const all = e.occurrence === "all";
+    const hits = locate(e.find, parts, label, { ...(e.section !== undefined ? { section: e.section } : {}), all });
+    if (hits.some((h) => h.tier === "fuzzy")) warn({ code: "FUZZY_MATCH", message: `${label}: find cocok setelah normalisasi (huruf besar/kecil, spasi, kutip, tanda pisah, markah, angka); ${hits.length} sasaran diganti` });
+    // Urut menurun (bagian, region, baris) agar perubahan jumlah baris tidak menggeser satuan yang belum diproses.
+    const order = (h: Hit) => [h.unit.part, ["header", "intro", "body", "tail"].indexOf(h.unit.region), h.unit.start];
+    hits.sort((x, y) => {
+      const a = order(x);
+      const b = order(y);
+      return b[0] - a[0] || b[1] - a[1] || b[2] - a[2];
+    });
+    for (const h of hits) applyFind(h, e.find, e.replace, all, label);
+  });
+  function applyFind(h: Hit, find: string, replace: string, all: boolean, label: string): void {
     const u = h.unit;
     const lines = parts[u.part].md[u.region];
-    if (u.kind === "paragraph" && e.replace === "") {
+    if (u.kind === "paragraph" && replace === "") {
       // L-1: hapus paragraf hanya bila find = SELURUH paragraf (agar teks penulis lain di paragraf itu tidak ikut hilang).
-      const whole = normalize(e.find).text;
-      if (whole !== normalize(u.text).text && normalize(plainOf(e.find)).text !== normalize(plainOf(u.text)).text) {
+      const whole = normalize(find).text;
+      if (whole !== normalize(u.text).text && normalize(plainOf(find)).text !== normalize(plainOf(u.text)).text && fold(find).text !== fold(u.text).text) {
         throw new McpToolError("EDIT_INVALID", `${label}: replace "" menghapus paragraf hanya bila find berisi SELURUH teks paragraf itu; untuk membuang sebagian kalimat, tulis replace berisi sisa kalimat. Tidak ada yang ditulis`);
       }
       lines.splice(u.start, u.end - u.start);
@@ -319,48 +334,67 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       touched.add(u.part);
       return;
     }
-    if (h.span === null) warn({ code: "MARKUP_DROPPED", message: `${label}: teks cocok hanya tanpa markah inline; satuan itu ditulis ulang sebagai teks polos` });
-    // L-2: irisan indeks (bukan String.replace dengan string pengganti: tanpa tafsir $' $` $&).
-    const spliced = (text: string, at: number, len: number, repl: string) => text.slice(0, at) + repl + text.slice(at + len);
+    // Samar dengan markah di dalam rentang, atau cocok hanya tanpa markah -> satuan ditulis ulang sebagai teks polos.
+    // Blok kode berpagar: selalu irisan mentah (isi kode literal), tidak pernah ditulis ulang polos (W3-L3).
+    const plain = !isFence(u) && (h.spans === null || (h.tier === "fuzzy" && spansHaveMarkup(u.text, h.spans)));
+    if (plain) warn({ code: "MARKUP_DROPPED", message: `${label}: teks cocok hanya tanpa markah inline; satuan itu ditulis ulang sebagai teks polos` });
+    const plainNext = () => plainReplaced(u.text, find, replace, all, h.tier === "fuzzy");
     if (u.kind === "field") {
       const m = FIELD_RE.exec(lines[u.start]) as RegExpExecArray;
-      const next = h.span !== null ? spliced(u.text, h.span[0], h.span[1] - h.span[0], e.replace) : u.text;
+      const next = plain ? plainNext() : spliceSpans(u.text, h.spans as Array<[number, number]>, () => replace);
       const v = next.replace(/\s+/g, " ").trim();
       if (v === "") lines.splice(u.start, 1);
       else lines[u.start] = `${m[1]}: ${v}`;
       plan.fields.add(FIELD_NAMES[m[1].trim().toLowerCase()] ?? m[1].trim());
     } else if (u.kind === "cell") {
-      const next = h.span !== null ? spliced(u.text, h.span[0], h.span[1] - h.span[0], e.replace) : plainReplaced(u.text, e.find, e.replace);
-      const cells = splitRow(lines[u.start]);
-      cells[u.cell as number] = cellText(next);
-      lines[u.start] = joinRow(cells);
-      trusted[u.part].set(lines[u.start], (trusted[u.part].get(lines[u.start]) ?? 0) + 1);
-      if (u.region === "tail") plan.refCells = true;
-      else plan.itemCells = true;
-    } else if (h.span !== null) {
+      cellSet(u, plain ? plainNext() : spliceSpans(u.text, h.spans as Array<[number, number]>, () => replace));
+      return;
+    } else if (!plain) {
       // M-1: pengganti di dalam paragraf lewat guardFragment (tanpa baris baru, | dan : di-escape, awal baris dijaga).
-      const before = u.text.slice(0, h.span[0]);
-      const linePrefix = before.slice(before.lastIndexOf("\n") + 1);
-      const repl = guardFragment(e.replace, linePrefix);
-      if (repl !== e.replace) warn({ code: "TEXT_ESCAPED", message: `${label}: teks pengganti yang menyerupai struktur di-escape agar tetap teks` });
-      lines.splice(u.start, u.end - u.start, ...spliced(u.text, h.span[0], h.span[1] - h.span[0], repl).split("\n"));
+      // L-2: irisan indeks (spliceSpans), tanpa tafsir $' $` $&.
+      let escaped = false;
+      const next = spliceSpans(u.text, h.spans as Array<[number, number]>, (at) => {
+        const before = u.text.slice(0, at);
+        const repl = guardFragment(replace, before.slice(before.lastIndexOf("\n") + 1));
+        escaped ||= repl !== replace;
+        return repl;
+      });
+      if (escaped) warn({ code: "TEXT_ESCAPED", message: `${label}: teks pengganti yang menyerupai struktur di-escape agar tetap teks` });
+      lines.splice(u.start, u.end - u.start, ...next.split("\n"));
       delta(u.part, 1, 0);
     } else {
-      lines.splice(u.start, u.end - u.start, ...paragraphLines(plainReplaced(u.text, e.find, e.replace), warn, label));
+      lines.splice(u.start, u.end - u.start, ...paragraphLines(plainNext(), warn, label));
       delta(u.part, 1, 0);
     }
     touched.add(u.part);
-  });
+  }
   reguard(parts, snapshot, trusted);
   return { touched, plan };
 }
 
-/** Cadangan tanpa markah: proyeksi polos satuan dengan kemunculan pertama `find` diganti (irisan, tanpa pola $). */
-function plainReplaced(text: string, find: string, replace: string): string {
+/**
+ * Cadangan tanpa markah: proyeksi polos satuan dengan kemunculan pertama (atau semua) `find` diganti (irisan, tanpa
+ * pola $). `fuzzy`: dicari lewat lipatan samar atas proyeksi polos.
+ */
+function plainReplaced(text: string, find: string, replace: string, all = false, fuzzy = false): string {
   const p = normalize(plainOf(text)).text;
+  if (fuzzy) {
+    const f = fold(p);
+    const ff = fold(find).text;
+    const spans: Array<[number, number]> = [];
+    for (let k = f.text.indexOf(ff); k >= 0 && ff !== ""; k = f.text.indexOf(ff, k + ff.length)) {
+      spans.push([f.map[k], f.map[k + ff.length - 1] + 1]);
+      if (!all) break;
+    }
+    return spliceSpans(p, spans, () => replace);
+  }
   const f = normalize(plainOf(find)).text;
-  const k = p.indexOf(f);
-  return k < 0 ? p : p.slice(0, k) + replace + p.slice(k + f.length);
+  const spans: Array<[number, number]> = [];
+  for (let k = p.indexOf(f); k >= 0 && f !== ""; k = p.indexOf(f, k + f.length)) {
+    spans.push([k, k + f.length]);
+    if (!all) break;
+  }
+  return spliceSpans(p, spans, () => replace);
 }
 
 /**

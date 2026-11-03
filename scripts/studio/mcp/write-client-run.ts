@@ -10,8 +10,9 @@ import { studioRoutePath } from "../../../src/lib/studio/contract/env";
 import { safeFinalName, sameContent } from "../studio-report";
 import { checkOwnership, findMissionDoc, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError } from "./safety";
-import { http, isRecord, str, tok, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
+import { headWithRetry, http, isRecord, str, tok, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
 import { buildClient, type ClientSection } from "./write-client";
+import { requireOwnParts } from "./write-parts";
 import { applyClientEdits, type ClientEditOp } from "./write-client-edit";
 import { wibDate } from "./write-content";
 
@@ -129,7 +130,7 @@ export async function finishDoc(ctx: ToolContext, id: string, agentId: string | 
   }
   const out = arr(isRecord(reply.body) ? reply.body.outputs : null).find((o) => String(o.format).toUpperCase() === "DOCX");
   if (out === undefined || typeof out.id !== "string") return { completeness, render: null, renderError: "NO_DOCX_OUTPUT" };
-  const head = await http(ctx, "HEAD", `${studioRoutePath("R10", { id: out.id })}?verify=1`, "HEAD /api/studio/files/{id}?verify=1");
+  const head = await headWithRetry(ctx, `${studioRoutePath("R10", { id: out.id })}?verify=1`, "HEAD /api/studio/files/{id}?verify=1");
   const sha = (head.headers.get("x-studio-sha256") ?? String(out.sha256 ?? "")).toLowerCase();
   const name = head.headers.get("x-studio-final-filename") ?? "";
   return {
@@ -242,6 +243,14 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
     server = sections;
     if (isRecord(sections.record)) throw new McpToolError("INVALID_ARGUMENT", "mission + docKey ini adalah laporan kerja; tulis tanpa template. Tidak ada yang dikirim");
     await preflight(ctx, built, agentId, { target: { documentId: id }, baseRevisionNo: base });
+    // W3-L4 / S2-2: bagian yang akan ditulis ulang (isi berbeda dari server) harus terakhir ditulis pemanggil; tulisan
+    // pihak lain yang LEBIH LAMA dari tulisan terakhir pemanggil tidak tertimpa (PART_CHANGED_BY_OTHER, 0 tulis).
+    const srvChapters = arr(isRecord(sections.content) ? sections.content.chapters : null);
+    const toWrite = [
+      ...Object.entries(built.slots).filter(([slot, payload]) => !sameContent(sections[slot], payload)).map(([slot]) => `slot ${slot}`),
+      ...built.chapters.filter((c) => !sameContent(srvChapters.find((x) => String(x.key) === String(c.key)), c)).map((c) => `bab ${String(c.key)}`),
+    ];
+    await requireOwnParts(ctx, id, toWrite, me);
     const cur = isRecord(content.meta) ? content.meta : {};
     const diff = Object.fromEntries(Object.entries(built.docMeta).filter(([k, v]) => cur[k] !== v));
     if (Object.keys(diff).length > 0) {
@@ -291,7 +300,13 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   }
   const f = await finishDoc(ctx, id, agentId);
   const state = created ? "dibuat" : sentParts > 0 ? "diperbarui" : "tidak berubah";
-  return clientOutput("studio_write", id, docNumber, lastRev, state, f, warnings, { chapters: built.chapters.map((c) => c.key), displayNumber: built.meta.number ?? null, ...(skipped.length > 0 ? { skipped } : {}) });
+  const out = clientOutput("studio_write", id, docNumber, lastRev, state, f, warnings, { chapters: built.chapters.map((c) => c.key), displayNumber: built.meta.number ?? null, ...(skipped.length > 0 ? { skipped } : {}), ...(built.emptySections.length > 0 ? { emptySections: built.emptySections } : {}) });
+  // IMPL-W3 butir 6: dokumen belum lengkap = hasil normal INCOMPLETE (tanpa render), bukan galat.
+  if (f.completeness.status !== "COMPLETE") {
+    const hint = "lengkapi bab/slot yang kurang lewat studio_write (bagian lengkap) atau studio_edit { after, insert }; isi tidak dikarang mesin";
+    return { ...out, text: [out.text, `lanjut: ${hint}`].join("\n"), data: { ...out.data, state: "INCOMPLETE", writeState: state, missingRequired: f.completeness.missingRequired, hint } };
+  }
+  return out;
 }
 
 /**

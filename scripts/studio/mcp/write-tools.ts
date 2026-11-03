@@ -22,10 +22,13 @@ import {
 } from "../../../src/lib/studio/services/draft/md-report";
 import { partsOf, partsOfValues, remapExtraChapters, ReportError, runReport, safeFinalName, sameContent, type CliArgs, type CliIo, type ReportResult } from "../studio-report";
 import { MAX_INPUT_BYTES } from "./config";
-import { checkOwnership, findMissionDoc, guardReportSubmit, type ExistingDoc } from "./doc-tools";
+import { checkOwnership, findMissionDoc, guardReportSubmit, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError, virtualFs } from "./safety";
 import { http, isRecord, obj, plainAgentId, requireSecret, S, str, tok, VIRTUAL_FILE, type Args, type ToolContext, type ToolDef, type ToolOutput, type ToolWarning } from "./tool-kit";
-import { buildWorkReport, type SectionInput } from "./write-content";
+import { buildWorkReport, workReportChapters, type SectionInput } from "./write-content";
+import { requireOwnParts } from "./write-parts";
+import { normalizeEditArgs, normalizeWriteArgs } from "./write-normalize";
+import { isPositionEdit, paragraphsOf, positionToFind } from "./write-position";
 import { applyEdits, type EditOp, type EditPart, type EditPlan } from "./write-edit";
 import { editClient, writeClient } from "./write-client-run";
 
@@ -39,7 +42,7 @@ const BLOCK = {
   anyOf: [
     { type: "string", maxLength: 40000 },
     ROWS,
-    obj({ table: ROWS, caption: { type: "string", maxLength: 500 }, source: { type: "string", maxLength: 500 } }, ["table"]),
+    obj({ table: ROWS, caption: { type: "string", maxLength: 500 }, source: { type: "string", maxLength: 500 }, unit: { type: "string", maxLength: 40 } }, ["table"]),
     obj(
       {
         chart: obj(
@@ -59,6 +62,8 @@ const BLOCK = {
     ),
     obj({ list: { type: "array", minItems: 1, maxItems: 200, items: { type: "string", maxLength: 4000 } }, ordered: { type: "boolean" } }, ["list"]),
     obj({ subheading: { type: "string", minLength: 1, maxLength: 200 } }, ["subheading"]),
+    // IMPL-W3 butir 7: rujukan terstruktur (laporan kerja) -> tabel Rujukan disusun mesin.
+    obj({ ref: obj({ rel: { type: "string", minLength: 1, maxLength: 40 }, documentId: { type: "string", minLength: 1, maxLength: 200 }, pid: { type: "string", maxLength: 80 }, revision: { anyOf: [{ type: "string", maxLength: 16 }, { type: "integer", minimum: 1 }] } }, ["rel", "documentId"]) }, ["ref"]),
   ],
 } as const;
 const SECTIONS = {
@@ -68,7 +73,7 @@ const SECTIONS = {
   items: obj({ heading: { type: "string", minLength: 1, maxLength: 200 }, blocks: { type: "array", maxItems: 400, items: BLOCK } }, ["heading", "blocks"]),
   description: "Bagian: heading + blocks (string=paragraf, [[header],[baris]...]=tabel, {table,caption,source}, {chart:{categories,series:[{name,values}],caption,source,stacked?}}, {list}, {subheading}).",
 } as const;
-const META = { type: "object", maxProperties: 40, additionalProperties: { type: "string", maxLength: 500 }, description: "Kunci-nilai datar. Laporan: status, owner, taskRef. Klien: title, number (nomor tampilan), author, checker, approver, rev, date, classification, source." } as const;
+const META = { type: "object", maxProperties: 40, additionalProperties: { type: "string", maxLength: 2000 }, description: "Kunci-nilai datar. Laporan: status, owner, taskRef. Klien: title, number (nomor tampilan), author, checker, approver, rev, date, classification, source." } as const;
 const TEMPLATE = { type: "string", pattern: "^(latest|[a-z0-9][a-z0-9-]{0,63})$", description: "Dokumen klien: slug templat DATUM atau latest; kosong = laporan kerja." } as const;
 
 // ── Bersama ─────────────────────────────────────────────────────────────
@@ -149,6 +154,19 @@ function resultOutput(tool: string, r: ReportResult, warnings: ToolWarning[], ex
   };
 }
 
+/**
+ * IMPL-W3 butir 6: tulisan pertama yang belum memuat semua bab wajib tetap disimpan (INCOMPLETE, tanpa render, bukan
+ * galat): `state: "INCOMPLETE"`, `missing` = SEMUA bab yang kurang, dan petunjuk menambahkannya.
+ */
+export function incomplete(out: ToolOutput, missing: readonly string[]): ToolOutput {
+  const hint = `tambahkan bab ${missing.join(", ")} lewat studio_write lagi (bagian lengkap) atau studio_edit { after, insert }; isi tidak dikarang mesin`;
+  return {
+    ...out,
+    text: [out.text, `belum lengkap (disimpan, tanpa render): kurang ${missing.length} bab: ${missing.map((m) => tok(m.replace(/\s+/g, "-"), "?")).join(", ")}`, `lanjut: ${hint}`].join("\n"),
+    data: { ...out.data, state: "INCOMPLETE", writeState: out.data.state, missing: [...missing], hint },
+  };
+}
+
 // ── studio_write ────────────────────────────────────────────────────────
 
 const WRITE_EXAMPLE = `{"mission":"2026-11-03_x","docKey":"lap-1","sections":[{"heading":"Ringkasan","blocks":["Teks."]},{"heading":"Rincian kerja","blocks":[[["judul","status"],["Bab 2","done"]]]}]}`;
@@ -159,6 +177,7 @@ const writeTool: ToolDef = {
   inputSchema: obj({ mission: S.mission, docKey: S.docKey, template: TEMPLATE, title: { type: "string", minLength: 1, maxLength: 200 }, meta: META, sections: SECTIONS, agentId: S.agentId }, ["mission", "docKey", "sections"]),
   annotations: { title: "Tulis dokumen (isi saja)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   toolsets: ["write"],
+  prepare: normalizeWriteArgs,
   async run(a, ctx) {
     const bytes = Buffer.byteLength(JSON.stringify(a), "utf8");
     if (bytes > MAX_INPUT_BYTES) throw new McpToolError("PAYLOAD_TOO_LARGE", `masukan ${bytes} B melebihi batas ${MAX_INPUT_BYTES} B`);
@@ -167,21 +186,100 @@ const writeTool: ToolDef = {
     const meta = isRecord(a.meta) ? (a.meta as Record<string, string>) : {};
     const built = buildWorkReport({ mission: str(a, "mission") as string, docKey: str(a, "docKey") as string, title: str(a, "title"), meta, sections: a.sections as SectionInput[], agentId, now: ctx.now() });
     assertShape(built);
-    const md = Buffer.from(built.markdown, "utf8");
-    const args: CliArgs = { ...baseArgs("submit", agentId), remote: ctx.deps.config.baseUrl, mission: str(a, "mission"), docKey: str(a, "docKey") };
-    // Pagar yang sama dengan studio_report_submit: pemilik, laporan kerja, penulis terakhir (0 tulis bila ditolak).
-    let r: ReportResult;
     try {
-      r = await runReport(args, reportIo(ctx, md, (plan) => guardReportSubmit(a, ctx, plan)));
+      // W3-M1: laporan yang SUDAH ADA ditulis ulang lewat jalur update ber-basis (hanya bab di masukan), bukan submit
+      // yang mengganti record utuh. Laporan baru tetap lewat submit (INCOMPLETE boleh).
+      const existing = await findMissionDoc(ctx, str(a, "mission") as string, str(a, "docKey") as string);
+      if (existing !== null) return await rewriteOwnReport(a, ctx, agentId, built, existing);
+      const md = Buffer.from(built.markdown, "utf8");
+      const args: CliArgs = { ...baseArgs("submit", agentId), remote: ctx.deps.config.baseUrl, mission: str(a, "mission"), docKey: str(a, "docKey") };
+      // Pagar yang sama dengan studio_report_submit: pemilik, laporan kerja, penulis terakhir (0 tulis bila ditolak).
+      const r = await runReport(args, reportIo(ctx, md, (plan) => guardReportSubmit(a, ctx, plan)));
+      rememberNext(ctx, r, "studio_write");
+      const out = resultOutput("studio_write", r, [...built.warnings, ...conversionWarnings(r)]);
+      return built.missing.length > 0 ? incomplete(out, built.missing) : out;
     } catch (e) {
       // I-1: di toolset write alat refresh/update tidak dimuat; arahkan ke studio_edit (membaca revisi terkini).
       if (e instanceof McpToolError && e.code === "REPORT_CHANGED_BY_OTHER") e.message = `${e.message.split("; kirim ulang")[0]}; tulis ulang utuh dapat menimpa tulisan itu, jadi tidak ada yang dikirim. Ubah bagian tertentu dengan studio_edit { documentId, edits } (membaca revisi terkini lebih dulu). Penulis ada di blok rincian`;
       throw e;
     }
-    rememberNext(ctx, r, "studio_write");
-    return resultOutput("studio_write", r, [...built.warnings, ...conversionWarnings(r)]);
   },
 };
+
+/**
+ * W3-M1 + W3-L4 (siklus perbaikan 1): tulis ulang laporan kerja SENDIRI yang sudah ada.
+ * 1. Pagar pemilik/laporan kerja/penulis terakhir dokumen = sama dengan submit (`guardReportSubmit`).
+ * 2. Isi terkini dibaca (R20, revisi = basis); hanya bab di masukan yang isinya berbeda dikirim, lewat jalur update
+ *    ber-basis (`sections` = bagian itu) sehingga bab lain tidak disentuh dan pagar record jalur update berlaku.
+ * 3. Record hanya dikirim bila bab sumber tabel butirnya (Rincian kerja) ada di masukan; selain itu butir/bukti record
+ *    tidak pernah ikut terkirim (RECORD_KEPT).
+ * 4. Penulis terakhir per bagian yang akan dikirim harus pemanggil (PART_CHANGED_BY_OTHER, 0 tulis).
+ * 5. Judul berbeda -> setMeta dengan baseRevisionNo = revisi yang dibaca (bukan revisi yang dibaca ulang).
+ * 6. `missing` dihitung terhadap isi server.
+ */
+async function rewriteOwnReport(a: Args, ctx: ToolContext, agentId: string | null, built: ReturnType<typeof buildWorkReport>, doc: ExistingDoc): Promise<ToolOutput> {
+  const mission = str(a, "mission") as string;
+  const docKey = str(a, "docKey") as string;
+  const plan = [{ index: 1, sourceBlock: null, value: { $schema: "studio.slot/v2", ...(agentId !== null ? { agentId } : {}), target: { mission: { folder: mission }, docKey } } }];
+  await guardReportSubmit(a, ctx, plan);
+  const reply = await http(ctx, "GET", studioRoutePath("R20", { id: doc.id }), "GET /api/studio/documents/{id}/content");
+  const body = isRecord(reply.body) ? reply.body : {};
+  if (typeof body.revisionNo !== "number" || !isRecord(body.content)) throw new McpToolError("REMOTE_BAD_RESPONSE", "jawaban isi dokumen tanpa revisionNo/content", { ...(reply.correlationId ? { correlationId: reply.correlationId } : {}) });
+  const rev = body.revisionNo;
+  const content = body.content;
+  const md = built.markdown.replace(/^(docKey: .*)$/m, `$1\nbasis: ${doc.id}@rev${rev}`);
+  const mine = reparseOrThrow(md, doc.id, content, "tulis");
+  const server = partsOf(content);
+  const warnings: ToolWarning[] = [...built.warnings];
+  const hasItems = built.chapters.includes("2");
+  let changed = [...mine.keys()].filter((p) => !sameContent(mine.get(p), server.get(p))).sort((x, y) => PART_ORDER(x) - PART_ORDER(y));
+  if (!hasItems && changed.includes("record")) {
+    changed = changed.filter((p) => p !== "record");
+    warnings.push({ code: "RECORD_KEPT", message: "Rincian kerja tidak ada di masukan: record (status, butir, bukti) di dokumen tidak dikirim agar butir dan bukti tidak terhapus; tulis Rincian kerja untuk memperbarui record" });
+  }
+  const me = requesterOf(agentId);
+  await requireOwnParts(ctx, doc.id, changed, me);
+  const title = /^# (.+)$/m.exec(built.markdown)?.[1]?.trim() ?? "";
+  const curTitle = isRecord(content.meta) && typeof content.meta.title === "string" ? content.meta.title : "";
+  // Judul hanya diganti bila agen memberinya (title / meta.title / meta.judul); judul bawaan mesin tidak menimpa.
+  const titleGiven = str(a, "title") !== null || (isRecord(a.meta) && (typeof a.meta.title === "string" || typeof a.meta.judul === "string"));
+  const titleChanged = title !== "" && title !== curTitle && titleGiven;
+  const missing = missingAgainstServer(built, server);
+  let metaRev = rev;
+  if (titleChanged) {
+    // W3-L4: basis = revisi yang dibaca di atas; meta yang diubah pihak lain sesudahnya -> 409 lingkup server. Sebelum
+    // kiriman bab agar render sesudahnya memuat judul baru.
+    const pr = await http(ctx, "PATCH", studioRoutePath("R14", { id: doc.id }), "PATCH /api/studio/documents/{id}/structure", {
+      json: { op: "setMeta", baseRevisionNo: rev, change: { what: "studio_write: judul laporan diperbarui", why: "tulis ulang laporan sendiri dengan judul baru", impact: "judul dokumen berubah" }, ...(agentId !== null ? { agentId } : {}), meta: { title } },
+    });
+    const pb = isRecord(pr.body) && isRecord(pr.body.revision) && typeof pr.body.revision.revisionNo === "number" ? pr.body.revision.revisionNo : null;
+    if (pb !== null) metaRev = pb;
+    warnings.push({ code: "META_UPDATED", message: "judul laporan sendiri berbeda dari dokumen; judul baru diterapkan (setMeta, basis = revisi yang dibaca)" });
+  }
+  let r: ReportResult | null = null;
+  if (changed.length > 0) {
+    // Basis tetap revisi yang dibaca: setMeta sendiri hanya menyentuh lingkup meta, jadi tidak bentrok dengan bab.
+    const args: CliArgs = { ...baseArgs("update", agentId), documentId: doc.id, remote: ctx.deps.config.baseUrl, sections: changed.map((p) => (p.startsWith("bab ") ? p.slice(4) : p)), baseRev: rev };
+    r = await runReport(args, reportIo(ctx, Buffer.from(md, "utf8")));
+    rememberNext(ctx, r, "studio_write");
+  } else if (titleChanged) ctx.session.remember(doc.id, metaRev, "studio_write", ctx.now());
+  const out =
+    r !== null
+      ? resultOutput("studio_write", r, [...warnings, ...conversionWarnings(r)], { written: changed, basisRevisionNo: rev })
+      : {
+          text: `studio_write: laporan kerja ${tok(doc.docNumber)} (documentId ${tok(doc.id)}) rev ${metaRev} ${titleChanged ? "judul diperbarui" : "tidak berubah"}; bab lain tidak disentuh`,
+          data: { documentId: doc.id, docNumber: tok(doc.docNumber, ""), revisionNo: metaRev, state: titleChanged ? "diperbarui" : "tidak berubah", written: [], basisRevisionNo: rev },
+          ...(warnings.length > 0 ? { warnings } : {}),
+        };
+  return missing.length > 0 ? incomplete(out, missing) : out;
+}
+
+/** Bab wajib yang kosong di masukan DAN tidak ada di server (W3-M1: `missing` dihitung terhadap server). */
+function missingAgainstServer(built: ReturnType<typeof buildWorkReport>, server: Map<string, unknown>): string[] {
+  const m = workReportChapters();
+  const keyOf = new Map([...m.titles].map(([k, t]) => [t, k] as [string, string]));
+  return built.missing.filter((name) => !server.has(`bab ${keyOf.get(name) ?? "?"}`));
+}
 
 /**
  * M-1 pertahanan kedua: konversi ulang teks yang disusun mesin harus memberi struktur yang SAMA dengan masukan (judul
@@ -218,7 +316,13 @@ export function assertShape(built: ReturnType<typeof buildWorkReport>): void {
     }
     if (ch !== null && Array.isArray(ch.intro) && ch.intro.length > 0) bad.push(`pembuka bab ${String(ch.key)} di luar section`);
   }
-  const keepIdx = built.headings.map((h, i) => (["rujukan", "rujukan dokumen", "refs"].includes(h.trim().toLowerCase()) ? -1 : i)).filter((i) => i >= 0);
+  // IMPL-W3 butir 4: konverter mengurutkan bab menurut kunci (1..5) lalu bab tambahan sesuai urutan masukan, jadi
+  // harapan diurutkan sama (stabil) sebelum dibandingkan; pembandingan tetap persis per judul dan per paragraf.
+  const rank = (i: number) => (built.chapters[i] !== null && built.chapters[i] !== undefined ? Number(built.chapters[i]) : 1000 + i);
+  const keepIdx = built.headings
+    .map((h, i) => (["rujukan", "rujukan dokumen", "refs"].includes(h.trim().toLowerCase()) ? -1 : i))
+    .filter((i) => i >= 0)
+    .sort((x, y) => rank(x) - rank(y) || x - y);
   const want = keepIdx.map((i) => built.headings[i]);
   if (titles.length !== want.length || titles.some((t, i) => t.trim() !== want[i].trim())) bad.push(`section hasil konversi (${titles.length}) berbeda dari masukan (${want.length})`);
   else {
@@ -313,18 +417,22 @@ const CHART_EDIT = obj(
   [],
 );
 
+const TARGET_TEXT = { type: "string", minLength: 1, maxLength: 500 } as const;
+
 const EDITS = {
   type: "array",
   minItems: 1,
   maxItems: 50,
   items: {
     anyOf: [
-      obj({ find: { type: "string", minLength: 1, maxLength: 4000 }, replace: { type: "string", maxLength: 40000 } }, ["find", "replace"]),
-      obj({ after: { type: "string", minLength: 1, maxLength: 4000 }, insert: { type: "string", minLength: 1, maxLength: 40000 } }, ["after", "insert"]),
+      obj({ find: { type: "string", minLength: 1, maxLength: 4000 }, replace: { type: "string", maxLength: 40000 }, section: TARGET_TEXT, occurrence: { type: "string", enum: ["all"] } }, ["find", "replace"]),
+      obj({ after: { type: "string", minLength: 1, maxLength: 4000 }, insert: { type: "string", minLength: 1, maxLength: 40000 }, section: TARGET_TEXT }, ["after", "insert"]),
+      obj({ cell: obj({ section: TARGET_TEXT, row: TARGET_TEXT, column: TARGET_TEXT }, ["row", "column"]), value: { type: "string", maxLength: 4000 } }, ["cell", "value"]),
+      obj({ pid: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{2,63}$" }, at: { type: "integer", minimum: 0, maximum: 1000000 }, length: { type: "integer", minimum: 0, maximum: 100000 }, replace: { type: "string", maxLength: 40000 }, expect: { type: "string", maxLength: 4000 } }, ["pid", "at", "replace"]),
       obj({ figure: { type: "string", minLength: 1, maxLength: 500 }, chart: CHART_EDIT }, ["figure", "chart"]),
     ],
   },
-  description: "{find,replace}: replace \"\" menghapus paragraf berisi find; {after,insert}: paragraf baru sesudah paragraf/tabel berisi after; {figure,chart}: data grafik yang keterangannya memuat figure (dokumen klien).",
+  description: "{find,replace,section?,occurrence?:\"all\"}: replace \"\" menghapus paragraf berisi find; {after,insert,section?}: paragraf baru sesudah paragraf/tabel berisi after; {cell:{section?,row,column},value}: sel tabel (row = teks sel mana pun di baris, column = judul kolom); {figure,chart}: data grafik (dokumen klien).",
 } as const;
 
 /** Galat konversi hasil sunting: pesannya dapat mengutip isi dokumen -> hanya di blok rincian. */
@@ -339,11 +447,15 @@ function reparseOrThrow(md: string, documentId: string, content: unknown, stage:
   }
 }
 
-/** Paragraf (teks) bagian bab hasil konversi: intro + blok section bertipe paragraph. */
-function chapterParagraphs(ch: unknown): { blocks: number; paras: string[] } {
-  if (!isRecord(ch)) return { blocks: 0, paras: [] };
+/** Paragraf (teks) bagian bab hasil konversi: intro + blok section bertipe paragraph; `kinds` = jenis blok bukan paragraf, urut. */
+function chapterParagraphs(ch: unknown): { blocks: number; paras: string[]; kinds: string[] } {
+  if (!isRecord(ch)) return { blocks: 0, paras: [], kinds: [] };
   const all = [...(Array.isArray(ch.intro) ? ch.intro : []), ...(Array.isArray(ch.sections) ? ch.sections.flatMap((s) => (isRecord(s) && Array.isArray(s.blocks) ? s.blocks : [])) : [])];
-  return { blocks: all.length, paras: all.filter((b): b is Record<string, unknown> => isRecord(b) && b.type === "paragraph").map(inlineTextOf) };
+  return {
+    blocks: all.length,
+    paras: all.filter((b): b is Record<string, unknown> => isRecord(b) && b.type === "paragraph").map(inlineTextOf),
+    kinds: all.map((b) => (isRecord(b) && typeof b.type === "string" ? b.type : "?")).filter((t) => t !== "paragraph"),
+  };
 }
 
 /**
@@ -386,6 +498,9 @@ export function assertEditShape(before: Map<string, unknown>, after: Map<string,
       else removed++;
     }
     if (removed > allow.removedMax) bad.push(`${k}: ${removed} paragraf hilang/berubah, suntingan paragraf hanya ${allow.removedMax}`);
+    // W3-L3 / S2-1: jenis blok selain paragraf (daftar, kode, tabel, kutipan, ...) harus sama dan urut; suntingan teks
+    // tidak pernah bertujuan mengubah jenis blok (paragraf -> daftar, kode -> paragraf).
+    if (a.kinds.join("|") !== b.kinds.join("|")) bad.push(`${k}: jenis blok berubah (${b.kinds.join(",") || "-"} -> ${a.kinds.join(",") || "-"})`);
   }
   if (bad.length > 0) {
     throw new McpToolError("CONTENT_INJECTION", `hasil sunting mengubah struktur dokumen di luar satuan yang disunting (${bad.join("; ")}); tidak ada yang ditulis. Sunting teks biasa; medan record lewat baris medannya, butir lewat sel tabel. Rincian di blok`, {
@@ -403,7 +518,14 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
   const exact = new Set(parts.filter((p) => before.has(p.part) && sameContent(before.get(p.part), server.get(p.part))).map((p) => p.part));
   const edited = cloneParts(parts);
   const warnings: ToolWarning[] = [];
-  const { plan } = applyEdits(edited, a.edits as EditOp[], (w) => warnings.push(w));
+  // IMPL-W3 butir 14c: suntingan posisi (pid + offset teks polos) -> cari-ganti jendela di bab paragraf itu.
+  const paras = paragraphsOf(content);
+  const ops = (a.edits as unknown[]).flatMap((e, i): EditOp[] => {
+    if (!isPositionEdit(e)) return [e as EditOp];
+    const f = positionToFind(e, paras, `edit ${i + 1}`);
+    return f === null ? [] : [f];
+  });
+  const { plan } = applyEdits(edited, ops, (w) => warnings.push(w));
   const md = assemble(edited, title, doc.id, rev);
   const after = reparseOrThrow(md, doc.id, content, "sunting");
   assertEditShape(before, after, plan);
@@ -445,10 +567,11 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
 const editTool: ToolDef = {
   name: "studio_edit",
   description:
-    "Sunting seperti patch: edits [{find,replace}], [{after,insert}], atau [{figure,chart}] (data grafik, dicari dari keterangan); find persis (spasi dinormalkan) harus mengenai tepat satu paragraf/sel/keterangan/medan. Mesin membaca revisi terkini dan menulis revisi baru; tanpa basis. Tidak ketemu/ganda -> TEXT_NOT_FOUND/TEXT_AMBIGUOUS + kandidat, 0 tulis.",
+    "Sunting seperti patch; mesin membaca revisi terkini (tanpa basis). find = frasa >= 3 kata, atau jangkar pendek bertanda baca (cocok persis); section?, occurrence:\"all\"; {cell:{row,column},value} sel tabel; {pid,at,length,replace,expect} posisi (pid: studio_document_get view=paragraphs); {after,insert}; {figure,chart}. Ambigu -> ok:false + kandidat siap salin.",
   inputSchema: obj({ documentId: S.documentId, mission: S.mission, docKey: S.docKey, edits: EDITS, agentId: S.agentId, adoptExisting: { type: "boolean", description: "Sunting dokumen buatan agentId lain (eksplisit)." } }, ["edits"]),
   annotations: { title: "Sunting teks dokumen", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   toolsets: ["write"],
+  prepare: normalizeEditArgs,
   async run(a, ctx) {
     const agentId = plainAgentId(a, ctx);
     const doc = await targetDoc(a, ctx, agentId);

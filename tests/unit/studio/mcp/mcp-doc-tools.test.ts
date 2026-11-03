@@ -537,7 +537,8 @@ describe('MCP-D3 F-1: isi server di galat dibungkus data tak tepercaya', () => {
       await call('studio_document_structure', { documentId: DOC, op: 'setMeta', meta: { title: 'x' }, baseRevisionNo: 1, change: CHANGE }),
     ];
     for (const r of runs) {
-      expect(r.isError).toBe(true);
+      expect(r.isError).toBeFalsy(); // IMPL-W3: dapat diperbaiki = hasil normal
+    expect(r.data.ok).toBe(false);
       expect(r.data.error).toMatchObject({ code: 'SCOPE_CONFLICT', correlationId: 'cid-scope-409', correlationSource: 'server', httpStatus: 409 });
       expect(r.data.untrusted).toBe(true);
       expect(r.data.untrustedFields).toEqual(expect.arrayContaining(['error.message', 'error.details.currentContent', 'error.details.changedBy']));

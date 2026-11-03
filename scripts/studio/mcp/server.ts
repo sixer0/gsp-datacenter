@@ -122,7 +122,7 @@ export function createStudioMcpServer(deps: ServerDeps): Server {
       ...(fsLog.writes.length > 0 ? { fileWrites: fsLog.writes } : {}),
     });
     const structured = JSON.parse(redactSecret(JSON.stringify(env.data), secret)) as Record<string, unknown>;
-    return { content: [{ type: "text", text: redactSecret(env.text, secret) }], structuredContent: structured, ...(env.ok ? {} : { isError: true }) };
+    return { content: [{ type: "text", text: redactSecret(env.text, secret) }], structuredContent: structured, ...(env.ok || env.genuineFailure !== true ? {} : { isError: true }) };
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
