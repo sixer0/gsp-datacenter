@@ -1,0 +1,15 @@
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "gsp_agent_hq", schema "public" at "localhost:5433"
+
+8 migrations found in prisma/migrations
+Following migrations have not yet been applied:
+20260927154000_add_ilsearchdoc
+20260927170000_agentrequest_requestedby_backfill
+20261022120000_add_studio
+20261023150000_worker_trace_baseline
+20261023200000_add_studio_structure
+20261030220000_add_studio_contract
+
+To apply migrations in development run prisma migrate dev.
+To apply migrations in production run prisma migrate deploy.

@@ -143,8 +143,10 @@ describe('B: normalisasi vonis', () => {
   it('token awal yang terpetakan -> nilai enum + VERDICT_NORMALIZED (teks asli di rincian)', () => {
     const cases: Array<[string, string]> = [
       ['PASS (CHECK 1-8)', 'PASS'], ['pass: semua lulus', 'PASS'], ['NEEDS-REVIEW, lihat isu', 'NEEDS_REVIEW'], ['needs review (2 temuan)', 'NEEDS_REVIEW'],
-      ['LULUS - cek 1-8', 'PASS'], ['GAGAL 2 dari 8', 'FAIL'], ['PERLU TINJAUAN lanjutan', 'NEEDS_REVIEW'], ['Butuh tinjauan: data', 'NEEDS_REVIEW'],
-      ['WASPADA (kuota)', 'CAUTION'], ['FAIL; lihat log', 'FAIL'], ['caution - minor', 'CAUTION'], ['lulus dengan catatan minor', 'CAUTION'],
+      ['LULUS - cek 1-8', 'PASS'], ['Butuh tinjauan: data', 'NEEDS_REVIEW'],
+      ['WASPADA (kuota)', 'CAUTION'], ['FAIL; lihat log', 'FAIL'], ['caution - minor', 'CAUTION'],
+      // IMPL-W10 L16-1: "GAGAL 2 dari 8", "PERLU TINJAUAN lanjutan", "lulus dengan catatan minor" (sisa diawali kata/angka,
+      // bukan anotasi netral) kini VERDICT_DROPPED; lihat implw10-final.test.ts.
     ];
     for (const [raw, want] of cases) {
       const h = header(raw);
@@ -161,28 +163,28 @@ describe('B: normalisasi vonis', () => {
       expect(h.line, raw).toBe(want);
       expect(h.codes, raw).not.toContain('VERDICT_NORMALIZED');
     }
-    for (const raw of ['xyz', '(PASS)', '8/8 lulus', 'not pass']) {
+    for (const raw of ['xyz', '(PASS)', '8/8 lulus', 'not pass', 'GAGAL 2 dari 8', 'PERLU TINJAUAN lanjutan', 'lulus dengan catatan minor']) {
       const h = header(raw);
       expect(h.line, raw).toBeNull();
       expect(h.codes, raw).toContain('VERDICT_DROPPED');
     }
   });
 
-  it('studio_write dan studio_edit meta: "PASS (CHECK 1-8)" -> PASS di record; ringkas menyembunyikan VERDICT_NORMALIZED, detail menampilkan', async () => {
+  it('studio_write dan studio_edit meta: "PASS (CHECK 1-8)" -> PASS di record; VERDICT_NORMALIZED tampil (IMPL-W10 L16-2)', async () => {
     const w = studioMock();
     const cw = await connect({ fetch: w.f, env });
     const rw = await cw.call('studio_write', { mission: '2026-11-04_implw9', docKey: 'lap-implw9', meta: { status: 'complete', verdict: 'PASS (CHECK 1-8)' }, sections: [{ heading: 'Ringkasan', blocks: ['x'] }] });
     expect(rw.data.ok, rw.text).toBe(true);
     expect(w.s.latest().sections.record.verdict).toBe('PASS');
-    expect(codes(rw)).not.toContain('VERDICT_NORMALIZED');
-    expect(rw.text).not.toContain('VERDICT_NORMALIZED');
+    expect(codes(rw)).toContain('VERDICT_NORMALIZED');
+    expect(rw.text).toContain('VERDICT_NORMALIZED');
 
     const m = mock();
     const { call } = await connect({ fetch: m.f as any, env });
     const r = await call('studio_edit', { documentId: DOC, meta: { verdict: 'PASS (CHECK 1-8)' } });
     expect(r.data.ok, r.text).toBe(true);
     expect(m.s.latest().sections.record.verdict).toBe('PASS');
-    expect(codes(r)).not.toContain('VERDICT_NORMALIZED');
+    expect(codes(r)).toContain('VERDICT_NORMALIZED');
     const r2 = await call('studio_edit', { documentId: DOC, detail: true, meta: { verdict: 'gagal: 2 cek' } });
     expect(r2.data.ok, r2.text).toBe(true);
     expect(m.s.latest().sections.record.verdict).toBe('FAIL');
@@ -192,8 +194,8 @@ describe('B: normalisasi vonis', () => {
     expect(m.s.latest().sections.record.verdict).toBe('FAIL');
   });
 
-  it('kedua kode baru masuk kelas informasional', () => {
-    expect(INFORMATIONAL_WARNING_CODES.has('SECTION_CREATED')).toBe(true);
-    expect(INFORMATIONAL_WARNING_CODES.has('VERDICT_NORMALIZED')).toBe(true);
+  it('kedua kode baru TIDAK informasional (IMPL-W10 L16-2: keduanya mengubah isi tersimpan)', () => {
+    expect(INFORMATIONAL_WARNING_CODES.has('SECTION_CREATED')).toBe(false);
+    expect(INFORMATIONAL_WARNING_CODES.has('VERDICT_NORMALIZED')).toBe(false);
   });
 });

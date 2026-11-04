@@ -30,7 +30,7 @@ import { buildWorkReport, isRefsHeading, recordMetaFields, wibStamp, workReportC
 import { requireOwnParts } from "./write-parts";
 import { normalizeEditArgs, normalizeWriteArgs } from "./write-normalize";
 import { isPositionEdit, paragraphsOf, positionToFind } from "./write-position";
-import { applyEdits, type EditOp, type EditPart, type EditPlan } from "./write-edit";
+import { applyEdits, SUB_MARK, type AppendedShape, type EditOp, type EditPart, type EditPlan } from "./write-edit";
 import { editClient, writeClient } from "./write-client-run";
 import { titlesOf, withVerify } from "./write-verify";
 
@@ -495,13 +495,26 @@ function reparseOrThrow(md: string, documentId: string, content: unknown, stage:
 }
 
 /** IMPL-W5 E1: jenis blok bukan paragraf yang diharapkan sesudah `append` (disisipkan di akhir section sasaran, urut). */
-function kindsAfterAppend(ch: unknown, app: ReadonlyArray<{ section: number; kinds: string[] }>): string[] {
-  const kindOf = (l: unknown): string[] => (Array.isArray(l) ? l : []).map((b) => (isRecord(b) && typeof b.type === "string" ? b.type : "?")).filter((t) => t !== "paragraph");
+function kindsAfterAppend(ch: unknown, app: ReadonlyArray<AppendedShape>): string[] {
+  // IMPL-W11 (R1): sub-judul (paragraf role subheading) ikut sebagai penanda posisi; append ke sub-judul yang bukan
+  // terakhir disisipkan sebelum sub-judul ke-`beforeSub`, lalu penanda dibuang (paragraf tetap tidak dihitung).
+  const kindOf = (l: unknown): string[] =>
+    (Array.isArray(l) ? l : []).map((b) => (isRecord(b) && typeof b.type === "string" ? (b.type === "paragraph" && b.role === "subheading" ? SUB_MARK : b.type) : "?")).filter((t) => t !== "paragraph");
   const c = isRecord(ch) ? ch : {};
   const secs = (Array.isArray(c.sections) ? c.sections : []).map((x) => kindOf(isRecord(x) ? x.blocks : null));
   const intro = kindOf(c.intro);
-  for (const a of app) (a.section < 0 || secs.length === 0 ? intro : secs[Math.min(a.section, secs.length - 1)]).push(...a.kinds);
-  return [...intro, ...secs.flat()];
+  for (const a of app) {
+    const list = a.section < 0 || secs.length === 0 ? intro : secs[Math.min(a.section, secs.length - 1)];
+    const add = a.seq ?? a.kinds;
+    let at = list.length;
+    if (a.beforeSub !== undefined) {
+      let n = -1;
+      const k = list.findIndex((t) => t === SUB_MARK && ++n === a.beforeSub);
+      if (k >= 0) at = k;
+    }
+    list.splice(at, 0, ...add);
+  }
+  return [...intro, ...secs.flat()].filter((t) => t !== SUB_MARK);
 }
 
 /** Paragraf (teks) bagian bab hasil konversi: intro + blok section bertipe paragraph; `kinds` = jenis blok bukan paragraf, urut. */
@@ -639,7 +652,8 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
   const rec0 = server.get("record");
   const prevItemStatus = new Map((isRecord(rec0) && Array.isArray(rec0.items) ? rec0.items.filter(isRecord) : []).map((i) => [String(i.key ?? "").toLowerCase(), String(i.status ?? "")] as [string, string]));
   // IMPL-W9 A: append ke section laporan baku yang belum ada membuat section itu (dokumen klien tidak lewat sini).
-  const { plan, notApplied, errors } = applyEdits(edited, ops, (w) => warnings.push(w), { prevItemStatus, createMissing: true });
+  // IMPL-W10 M16-1: `existing` = semua bagian server (juga yang tak terserialisasi), agar append tidak membuatnya ulang.
+  const { plan, notApplied, errors } = applyEdits(edited, ops, (w) => warnings.push(w), { prevItemStatus, createMissing: true, existing: new Set(server.keys()) });
   // E4: semua suntingan gagal alamat -> perilaku lama (ok:false, galat pertama, 0 tulis).
   if (ops.length > 0 && notApplied.length === ops.length) throw errors[0];
   for (const n of notApplied) n.edit = (index[n.edit - 1] ?? n.edit - 1) + 1;
@@ -648,7 +662,10 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
   let after = reparseOrThrow(md, doc.id, content, "sunting", plan.refsAppended === true);
   const diff = () => [...new Set([...before.keys(), ...after.keys()])].filter((p) => !sameContent(before.get(p), after.get(p))).sort((x, y) => PART_ORDER(x) - PART_ORDER(y));
   let changed = diff();
-  if (changed.length > 0 && metaFields.reportedAt === undefined && exact.has("record")) {
+  // IMPL-W10 (review 17 #5): cap hanya bila record memang ikut terkirim (saluran meta, sel tabel butir/Rujukan, medan
+  // record). Suntingan bab biasa tidak mengirim record, jadi dua agen yang menyunting bab berbeda tidak bertabrakan di record.
+  const sendsRecord = changed.includes("record") || Object.keys(metaFields).length > 0;
+  if (changed.length > 0 && sendsRecord && metaFields.reportedAt === undefined && exact.has("record")) {
     // IMPL-W5 E6: revisi ini dicap jam server (ReportedAt) bila agen tidak memberi reportedAt.
     patchRecordHeader(edited, { reportedAt: wibStamp(ctx.now()) }, plan, () => undefined);
     md = assemble(edited, title, doc.id, rev);
@@ -664,7 +681,8 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
-  const unsafe = changed.filter((p) => !exact.has(p) && plan.created?.has(p) !== true);
+  // IMPL-W10 M16-1 (pertahanan kedua): bab "baru" hanya dikecualikan bila memang tidak ada di server.
+  const unsafe = changed.filter((p) => !exact.has(p) && !(plan.created?.has(p) === true && !server.has(p)));
   if (unsafe.length > 0) {
     throw new McpToolError("EDIT_UNSAFE", `bagian ${unsafe.map((p) => tok(p.replace(/ /g, "-"))).join(", ")} memuat bentuk yang tidak dapat ditulis ulang lewat teks tanpa kehilangan isi; tidak ada yang ditulis. Sunting bagian itu dengan studio_write (tulis ulang utuh)`, {
       details: { parts: unsafe, revisionNo: rev },

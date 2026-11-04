@@ -1167,3 +1167,5 @@ MCP-D3 (D-480; F-1 F-2 F-3 + Low) scripts/studio/mcp/** , tests/unit/studio/mcp/
 | ANALYSIS-R4 | research/26_efficiency_results_r4.md, C:/Users/TRIAL/AppData/Local/Temp/hermes_trial/analysis_r4/** | 2026-11-03 | aktif |
 | IMPL-W | scripts/studio/mcp/** , scripts/studio/studio-report.ts (aditif), tests/unit/studio/mcp/** , docs/STUDIO-MCP.md, delegation_progress/coder_execution_implw.md | 2026-11-03 | aktif |
 | IMPL-W5 | scripts/studio/mcp/** , scripts/studio/studio-report.ts (aditif), src/lib/studio/** (grafik kategori, footer), tests/unit/studio/{mcp,renderers,figures}/** , docs/STUDIO-MCP.md, delegation_progress/coder_execution_implw5.md | 2026-11-04 | aktif |
+| FINAL-SEC | review-only: verification/16_loop_security_review.md | 2026-11-04 | aktif |
+| FINAL-CR | review-only: verification/17_loop_code_review.md | 2026-11-04 | aktif |

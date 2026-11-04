@@ -180,10 +180,10 @@ describe('studio_edit lewat MCP (laporan kerja)', () => {
     const { call } = await connect({ fetch: m.f, env });
     const r = await call('studio_edit', { documentId: DOC, edits: [{ find: 'Ringkasan   awal', replace: 'Ringkasan sesudah sunting' }] });
     expect(r.isError).toBeFalsy();
-    // IMPL-W5 E6: record ikut terkirim (ReportedAt = jam server revisi ini).
-    expect(chapterPosts(m.calls)).toEqual([{ part: 'record', base: 6 }, { part: 'bab 1', base: 6 }]);
+    // IMPL-W10 (review 17 #5): asersi asli dipulihkan; cap ReportedAt tidak lagi membuat suntingan bab mengirim record.
+    expect(chapterPosts(m.calls)).toEqual([{ part: 'bab 1', base: 6 }]);
     expect(JSON.stringify(m.s.chapter('1'))).toContain('Ringkasan sesudah sunting.');
-    expect(r.data).toMatchObject({ documentId: DOC, edited: ['record', 'bab 1'], basisRevisionNo: 6 });
+    expect(r.data).toMatchObject({ documentId: DOC, revisionNo: 7, edited: ['bab 1'], basisRevisionNo: 6 });
   });
 
   it('sel tabel butir (status) -> record ikut berubah; medan record (Status) dapat disunting', async () => {

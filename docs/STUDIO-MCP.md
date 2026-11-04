@@ -685,7 +685,14 @@ studio_edit { "documentId": "<id>", "edits": [
   sesudah konversi (selain itu `CONTENT_INJECTION`). Klien: pembangun bab `studio_write` (`chapterOf`), sumber/satuan tidak
   dikarang (`SOURCE_MISSING`/`TABLE_UNIT_MISSING` menolak batch), lalu dry-run R08 seperti suntingan lain.
 - **addRow.** Satu baris `[sel, ...]` atau beberapa `[[...], ...]`. Tabel butir (kolom key/id + status): kunci kosong ->
-  kunci stabil `K-<sha8 judul>` tanpa bentrok, status lewat alias, baris masuk record seperti ditulis di tabel.
+  kunci stabil `K-<sha8 judul>` tanpa bentrok, status lewat alias, baris masuk record seperti ditulis di tabel. IMPL-W10:
+  tabel butir yang kolom pertamanya `key` (kolom yang ditambahkan `studio_write`) juga menerima baris TANPA sel kunci
+  (lebar = kolom - 1, mis. `["X-B5: uraian","berjalan"]` untuk `| key | judul | status |`); kunci dibangkitkan sama dengan
+  `studio_write`. Lebar lain tetap `EDIT_INVALID` + judul kolom. IMPL-W11 (R3): baris n-1 yang sel pertamanya tampak
+  seperti kunci butir (`K-` + 8 heksa, kunci yang sudah dipakai, atau berbentuk sama dengan kunci yang sudah dipakai,
+  mis. `R3F2-9` di tabel berkunci `R3F2-1`) TIDAK dianggap baris tanpa kunci: `EDIT_INVALID` + judul kolom (kolom lain
+  kemungkinan terlupa), seperti sebelum IMPL-W10.
+  Tabel sasaran bawaan (tanpa `table`) = tabel terakhir milik judul sasaran sendiri, lihat rentang sub-judul di 5.s.
 - **Alamat batch (E3).** Suntingan diterapkan urut; tiap alamat (sel, jangkar `after`, section/tabel append/addRow) dicari
   di keadaan sesudah suntingan sebelumnya; tidak ketemu -> dicari di isi tersimpan dan dipetakan ke blok yang sama
   (identitas baris laporan / identitas objek klien), peringatan `ADDRESS_FROM_STORED`. `find`/`replace` tidak memakai
@@ -704,7 +711,9 @@ studio_edit { "documentId": "<id>", "edits": [
   record sesudah statusnya dikenal (`ITEM_STATUS_UNKNOWN`; status wajib di kontrak). Berlaku juga untuk `studio_write`.
 - **ReportedAt (E6).** Laporan kerja tanpa `reportedAt`: revisi yang ditulis (studio_write baru/tulis ulang, studio_edit
   teks atau meta) dicap jam server WIB `YYYY-MM-DDTHH:MM:SS+07:00` (C37). Nilai eksplisit menang. Tulis ulang identik tetap
-  "tidak berubah" (cap tidak membuat revisi sendiri). Akibat: studio_edit laporan kini juga mengirim bagian record.
+  "tidak berubah" (cap tidak membuat revisi sendiri). IMPL-W10 (review 17 #5): studio_edit mencap ReportedAt HANYA bila
+  record memang ikut terkirim (saluran meta, sel tabel butir/Rujukan, medan record); suntingan bab biasa mengirim bab itu
+  saja, sehingga dua agen yang menyunting bab berbeda dari basis yang sama tidak bertabrakan di record.
 - **Kandidat** dicetak tanpa escape Markdown (`\:` r6 membingungkan agen).
 - **Dokumen klien (D1/D2).** Talang label kategori grafik batang horizontal (K-01..K-04 bertumpuk/divergen, P-01 galeri,
   P-04..P-07/P-11 berlabel kiri) diukur dengan metrik glif nyata Plex (textfit) + ruang tepi 0,4 mm (taksiran rerata
@@ -727,8 +736,8 @@ dan mengganti daftar dengan tabel ditolak pagar struktur (`CONTENT_INJECTION`, b
   lebih yang BERURUTAN, masing-masing larik datar skalar (teks/angka) dengan lebar SAMA >= 2, digabung menjadi SATU blok
   tabel `Cell[][]` (urutan baris tetap, baris pertama = judul kolom, sama persis dengan blok tabel kanonik). Perubahan
   lebar memutus run (tiap run selebar sama >= 2 digabung sendiri); larik bersarang, larik lebar 1, dan blok lain tidak
-  ikut. Peringatan `ROWS_COALESCED_TO_TABLE` (kelas informasional, disembunyikan di hasil ringkas, tampil dengan
-  `detail: true`).
+  ikut. Peringatan `ROWS_COALESCED_TO_TABLE` (sejak IMPL-W10 L16-2 bukan lagi kelas informasional: tampil di hasil
+  ringkas karena mengubah struktur tersimpan).
 - **Tidak berubah.** Larik datar TUNGGAL (bukan bagian run) tetap daftar (`ARG_MAPPED`). `append` yang SELURUHNYA larik
   baris (`[[..],[..]]`) tetap satu tabel seperti IMPL-W5.
 - **Tabel hasil gabungan = tabel biasa.** Kolom status -> tabel butir (kolom `key`, kunci stabil `K-<sha8>`, alias status,
@@ -785,7 +794,55 @@ atas laporan tanpa Rujukan -> `TEXT_NOT_FOUND`, agen menulis ulang seluruh lapor
   peringatan `VERDICT_NORMALIZED` (pesan memuat teks asli). Alias Indonesia: lulus -> PASS, gagal -> FAIL, perlu/butuh
   tinjauan -> NEEDS_REVIEW, waspada -> CAUTION (ditambah passed/failed). Tanpa token awal terpetakan (`"xyz"`, `"(PASS)"`,
   `"8/8 lulus"`) tetap `VERDICT_DROPPED`.
-- `SECTION_CREATED` dan `VERDICT_NORMALIZED` masuk kelas informasional (senyap di hasil ringkas, tampil dengan `detail: true`).
+- `SECTION_CREATED` dan `VERDICT_NORMALIZED` sempat masuk kelas informasional; IMPL-W10 L16-2 mengeluarkannya (lihat 5.s).
+
+### 5.s Gerbang akhir loop (IMPL-W10, D-577): temuan review 16/17
+
+- **M16-1 (bab server tak terserialisasi).** `append` tidak pernah "membuat" bab baku yang sudah ADA di isi server. Bab yang
+  tidak dapat diwakili Markdown (mis. teks bertab, blok `chart`) tidak muncul di tampilan teks; append ke judulnya kini
+  `EDIT_UNSAFE` (pesan menyebut `bab-N (judul)`; 0 tulis, seluruh batch ditolak) alih-alih menimpa bab itu. Dua lapis:
+  `ApplyOptions.existing` (semua bagian server) di `standardSection`, dan filter `EDIT_UNSAFE` di `editWorkReport` yang
+  hanya mengecualikan bab baru bila bab itu tidak ada di server. Bab yang benar-benar belum ada tetap dibuat (`SECTION_CREATED`).
+- **L16-1 (vonis bersyarat).** Token awal vonis hanya dipakai bila sisanya netral: kosong; tanda baca saja (bukan `?`); atau
+  rincian yang diawali `(`, `[`, `:`, `-`, `,`, `;` tanpa `?` dan tanpa kata kualifikasi/negasi (kecuali, tapi, tetapi,
+  namun, but, however, except, with issues, with conditions, with notes, dengan catatan, bersyarat, conditional, not, tidak,
+  belum, partial, sebagian, parsial) serta tanpa kata gagal/fail kecuali vonisnya FAIL. Contoh: `"PASS (CHECK 1-8)"` -> PASS,
+  `"FAIL (2 cek gagal)"` -> FAIL; `"PASS WITH ISSUES"`, `"PASS kecuali cek 3 gagal"`, `"pass but tests not run"`, `"lulus
+  bersyarat"`, `"OK tapi 2 gagal"`, `"not pass"`, `"GAGAL 2 dari 8"` -> `VERDICT_DROPPED` (tidak ditulis, seperti sebelum
+  IMPL-W9). Alias utuh tidak berubah (`"tidak lulus"` = FAIL, `"lulus dengan catatan"` = CAUTION).
+- **L16-2 (kelas informasional).** `SECTION_CREATED`, `ROWS_COALESCED_TO_TABLE`, `VERDICT_NORMALIZED` dikeluarkan dari
+  `INFORMATIONAL_WARNING_CODES` (ketiganya mengubah isi tersimpan), jadi selalu tampil di hasil ringkas. Tetap informasional:
+  `ITEM_KEY_COLUMN_ADDED`, `ITEM_KEY_GENERATED`, `ARGS_UNWRAPPED`, `META_LIFTED_FROM_EDITS`.
+- **addRow tanpa sel kunci** (review 17 High): lihat butir addRow di 5.w. Contoh how-to `STUDIO-HOWTO-REPORT.md` §4 dijalankan
+  apa adanya oleh uji (S1 `studio_write` lalu S2 `studio_edit`).
+- **Append ke section bersub-judul** (review 17 #2): section = judul `##`; sub-judul `###` milik section induknya, jadi
+  append ke induk mendarat di akhir section (sesudah isi sub-judul terakhir), dan indeks section (`plan.appended`) hanya
+  menghitung `##`.
+- **Rentang sub-judul untuk append/addRow** (IMPL-W11, cek ulang review 17 R1). Rentang `##` berakhir di `#`/`##`
+  berikutnya; rentang sub-judul berakhir di judul berikutnya bertingkat sama atau lebih tinggi (`### Sub A` berakhir di
+  `### Sub B` atau `##` berikutnya; `####` di bawahnya ikut rentang Sub A). Contoh `## Bukti` (tabel T0) / `### Sub A`
+  (TA) / `### Sub B` (TB):
+  - `append` ke `Sub A` mendarat di akhir isi Sub A (sebelum `### Sub B`); ke `Bukti` di akhir seluruh section (sesudah
+    isi Sub B); ke `Sub B` (sub-judul terakhir) sama dengan akhir section.
+  - `addRow` ke `Sub A` -> TA, ke `Sub B` -> TB. `addRow` ke `Bukti` tanpa `table` -> tabel terakhir SEBELUM sub-judul
+    pertama (T0). Induk tanpa tabel sendiri tetapi sub-judulnya bertabel (satu atau lebih) -> `TEXT_AMBIGUOUS` + daftar
+    tabel di blok rincian (tidak dipilih diam-diam); pilih dengan `table` (nomor 1..n dihitung di seluruh rentang induk:
+    1 = T0, 2 = TA, 3 = TB) atau jadikan sub-judul itu sasaran.
+  - Pagar bentuk `assertEditShape` mengikuti posisi: append ke sub-judul yang bukan terakhir diharapkan sebelum sub-judul
+    berikutnya (`beforeSub` di `plan.appended`), jadi tidak ada `CONTENT_INJECTION` palsu.
+- **`find`/`after`/`cell` dengan `section`** (R4, didokumentasikan, tidak diubah): lingkup `section` pada pencocokan teks
+  = isi judul itu sendiri saja (judul terdekat tingkat mana pun), TIDAK termasuk sub-judulnya. `find {section:"Bukti"}`
+  atas teks di bawah `### Sub A` -> `TEXT_NOT_FOUND`; pakai `section: "Sub A"` (atau tanpa `section`). Ini berbeda dari
+  `append`/`addRow` yang mengikuti rentang di atas.
+- **ReportedAt** (review 17 #5): lihat E6 di 5.w.
+- **Talang label grafik** (review 17 #4): P-05 galeri dan P-06 datum kini menyisakan ruang tepi 0,4 mm di kiri label
+  terlebar (`labelGutter(..., anchorGap)` = lebar + jarak anchor + `LABEL_EDGE_MM`); `gutterPlan` tidak pernah melampaui
+  `capMm` (kecuali talang lama sendiri sudah lebih lebar). Batas yang diketahui (R2, didokumentasikan, tidak diubah):
+  bila talang saat ini sudah di atau dekat cap (`currentMm >= capMm - 0,4`) atau melampauinya, cap dapat memakan ruang
+  tepi itu (probe: tepi ~0,24 mm, bukan 0,4 mm; dapat lebih kecil bila label terbungkus memenuhi lebar). Praktis hanya
+  pada lebar grafik sangat kecil dengan fit aktif (datum bar < ~53 mm); galeri bar/threshold/arrow/bullet tetap >= 0,4 mm,
+  dan tidak ada fixture yang terdampak.
+- **M16-2** (teks sel penulis lain di peringatan `ITEM_STATUS_*`) diterima sebagai risiko tercatat (D-577), tidak diubah.
 
 ## 6. Keamanan
 
@@ -922,6 +979,16 @@ atas laporan tanpa Rujukan -> `TEXT_NOT_FOUND`, agen menulis ulang seluruh lapor
   MD_REPORT_INVALID sama dengan studio_write, 0 tulis; bab Isu terbuka/alias Risks dibuat; non-baku dan dokumen klien tetap
   TEXT_NOT_FOUND; vonis token awal + alias Indonesia; VERDICT_DROPPED tetap; ringkas vs detail). Asap DEV:
   `scripts/studio/mcp/smoke-implw9.ts`.
+- IMPL-W10: `implw10-final.test.ts` (M16-1 varian tab/chart -> EDIT_UNSAFE 0 tulis + kontrol; vonis bersyarat ->
+  VERDICT_DROPPED; kelas informasional; how-to S1/S2 apa adanya dari dokumen; addRow 2 sel = kunci studio_write; append
+  bersub-judul; ReportedAt hanya bila record terkirim; dua agen bab berbeda tanpa konflik record);
+  `tests/unit/studio/renderers/implw10-chart-edge.test.ts` (tepi kiri label >= 0,4 mm P-05 galeri/P-06 datum; batas
+  `gutterPlan`). Asap DEV: `scripts/studio/mcp/smoke-implw10.ts`.
+- IMPL-W11: `implw11-span.test.ts` (probe Q1 review 17 dengan dua sub-judul bertabel selebar sama: append ke Sub A/induk/
+  sub-judul terakhir/`####`; addRow ke Sub A -> TA, Sub B -> TB, induk -> T0, nomor/teks `table` di rentang induk;
+  induk tanpa tabel sendiri -> TEXT_AMBIGUOUS + daftar; `find` ber-section induk tidak mencakup sub-judul; lewat
+  `studio_edit`: append daftar ke Sub A tanpa CONTENT_INJECTION palsu, addRow Sub A + induk satu batch; R3: baris n-1
+  berawalan kunci -> EDIT_INVALID + judul kolom, judul biasa tetap diberi kunci).
 - Asap stdio: `scripts/studio/mcp/smoke.ts`, `scripts/studio/mcp/smoke-documents.ts` (bagian 5), dan
   `scripts/studio/mcp/smoke-figures.ts` (FIG-03b: buat dokumen, bab JSON dengan grafik padat, pratinjau, pratinjau inline,
   unduh SVG, revisi berbasis sesi, pratinjau ulang dengan isu lebih sedikit, revisi basis lama -> 409), dan

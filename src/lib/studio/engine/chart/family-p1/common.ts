@@ -42,6 +42,7 @@ import { chartFloors } from "../core/prepare";
 import { type NiceDomain, type Scale, axisDomain, decimalsFor, linearScale, niceDomain } from "../core/scale";
 import { SvgDoc, ptToMm, textWidthMm, midBaseline } from "../core/svg";
 import { measure } from "../core/textfit";
+import { LABEL_EDGE_MM } from "../core/labelfit";
 import { accentOf } from "../core/params";
 import { kindAxis, kindBool as coreKindBool, kindEnum as coreKindEnum, kindInt as coreKindInt, kindValue } from "../core/read";
 
@@ -369,11 +370,16 @@ export function axisY(
 /** Garis dasar teks tegak-tengah (definisi tunggal inti). */
 export const mid = midBaseline;
 
-/** Tepi kiri plot berlabel kategori (pola chart/core gallery). */
-export function labelGutter(ctx: P1Ctx, labels: readonly string[], sizePt: number, maxFrac = 0.42): number {
+/**
+ * Tepi kiri plot berlabel kategori (pola chart/core gallery). `anchorGap` = jarak ujung kanan label (anchor `end`) ke
+ * tepi plot yang dipakai pemanggil (`x0 - anchorGap`); talang = label terlebar + anchorGap + {@link LABEL_EDGE_MM}, jadi
+ * tepi kiri label terlebar selalu >= 0,4 mm dari tepi gambar (IMPL-W10, review 17 #4; sebelumnya pemanggil ber-anchor
+ * 1,6 mm mendapat 0 mm).
+ */
+export function labelGutter(ctx: P1Ctx, labels: readonly string[], sizePt: number, maxFrac = 0.42, anchorGap = 1.2): number {
   // IMPL-W5 D1: metrik glif nyata (textfit), bukan taksiran rerata em.
   const w = Math.max(0, ...labels.map((s) => measure(s, sizePt)));
-  return Math.min(Math.max(w + 1.6, 6), ctx.W * maxFrac);
+  return Math.min(Math.max(w + anchorGap + LABEL_EDGE_MM, 6), ctx.W * maxFrac);
 }
 
 /**

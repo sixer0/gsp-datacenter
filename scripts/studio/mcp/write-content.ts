@@ -328,18 +328,46 @@ function verdictExact(raw: string): string | undefined {
 
 /**
  * IMPL-W9 butir B (R12B "PASS (CHECK 1-8)" -> VERDICT_DROPPED): token awal nilai vonis (huruf, `_`, `-`, dipisah spasi;
- * berhenti di tanda baca/angka) dicocokkan dengan kode/alias, frasa terpanjang lebih dulu (maks 4 kata), jadi
- * "lulus dengan catatan minor" -> CAUTION dan "tidak lulus ..." -> FAIL. Tanpa token awal yang terpetakan -> undefined.
+ * berhenti di tanda baca/angka) dicocokkan dengan kode/alias, frasa terpanjang lebih dulu (maks 4 kata). Tanpa token awal
+ * yang terpetakan -> undefined. IMPL-W10 L16-1: token awal hanya dipakai bila sisanya netral ({@link verdictRestNeutral});
+ * "PASS (CHECK 1-8)" -> PASS, tetapi "PASS WITH ISSUES" / "PASS kecuali cek 3 gagal" / "lulus bersyarat" -> undefined
+ * (VERDICT_DROPPED, seperti sebelum IMPL-W9).
  */
 function verdictLeading(raw: string): string | undefined {
   const m = /^\s*([\p{L}_-]+(?:\s+[\p{L}_-]+)*)/u.exec(raw);
   if (m === null) return undefined;
-  const words = statusKey(m[1]).split(" ").filter((w) => w !== "");
+  const lead = m[0].length - m[1].length;
+  const words = [...m[1].matchAll(/[\p{L}_-]+/gu)];
   for (let n = Math.min(words.length, 4); n >= 1; n--) {
-    const hit = verdictExact(words.slice(0, n).join(" "));
-    if (hit !== undefined) return hit;
+    const hit = verdictExact(words.slice(0, n).map((w) => w[0]).join(" "));
+    if (hit === undefined) continue;
+    const last = words[n - 1];
+    // IMPL-W10 L16-1: token awal pertama yang terpetakan menentukan; sisanya harus anotasi netral.
+    return verdictRestNeutral(raw.slice(lead + (last.index ?? 0) + last[0].length), hit) ? hit : undefined;
   }
   return undefined;
+}
+
+/**
+ * IMPL-W10 L16-1 (review 16; review 17 #3): kata/frasa yang membuat vonis bersyarat, sebagian, atau dinegasi. Kata gagal
+ * hanya diabaikan bila vonisnya sendiri FAIL ("FAIL (2 cek gagal)").
+ */
+const VERDICT_QUALIFIER_RE = /(?<![\p{L}])(?:kecuali|tapi|tetapi|namun|but|however|except|with issues|with conditions|with notes|dengan catatan|bersyarat|conditional|conditionally|not|tidak|belum|partial|partially|sebagian|parsial)(?![\p{L}])/iu;
+const VERDICT_FAIL_WORD_RE = /(?<![\p{L}])(?:gagal|fail|failed|failing)(?![\p{L}])/iu;
+
+/**
+ * Sisa sesudah token awal vonis dianggap netral bila: kosong; hanya tanda baca (selain `?`); atau rincian yang diawali
+ * `(`, `[`, `:`, `-`, `–`, `—`, `,`, `;` tanpa kata kualifikasi/negasi ({@link VERDICT_QUALIFIER_RE}), tanpa `?`, dan tanpa
+ * kata gagal kecuali vonisnya FAIL. Sisa yang diawali kata/angka langsung ("PASS WITH ISSUES", "GAGAL 2 dari 8") tidak netral.
+ */
+function verdictRestNeutral(rest: string, verdict: string): boolean {
+  const r = rest.trim();
+  if (r === "") return true;
+  if (r.includes("?")) return false;
+  if (/^[\p{P}\p{S}\s]+$/u.test(r)) return true;
+  if (!/^[([:,;\-–—]/u.test(r)) return false;
+  if (VERDICT_QUALIFIER_RE.test(r)) return false;
+  return verdict === "FAIL" || !VERDICT_FAIL_WORD_RE.test(r);
 }
 const CARD_RE = /^t_[0-9a-f]{8}$/;
 

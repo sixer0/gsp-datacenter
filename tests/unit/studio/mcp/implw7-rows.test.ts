@@ -1,7 +1,7 @@
 // IMPL-W7 (uji Hermes ronde 10, R12B): agen menjatuhkan satu tingkat kurung tabel, jadi setiap baris tabel menjadi blok
 // sendiri (larik datar teks). Dua atau lebih blok larik datar BERURUTAN dengan lebar sama (>= 2) digabung menjadi SATU
 // blok tabel (baris pertama = judul kolom), untuk bagian studio_write dan blok `append` studio_edit (laporan kerja dan
-// dokumen klien). Peringatan ROWS_COALESCED_TO_TABLE = informasional (senyap di hasil ringkas). Larik datar tunggal tetap
+// dokumen klien). Peringatan ROWS_COALESCED_TO_TABLE (IMPL-W10 L16-2: tampil di hasil ringkas). Larik datar tunggal tetap
 // perilaku lama (daftar). Ringkasan verifikasi mencetak jumlah tabel tercetak.
 /* eslint-disable @typescript-eslint/no-explicit-any -- structuredContent bebas bentuk */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -48,7 +48,8 @@ describe('IMPL-W7: normalisasi baris datar -> tabel (fungsi murni)', () => {
     expect(a.sections[0].blocks).toEqual([R12B_ROWS, 'paragraf']);
     expect(w.map((x) => x.code)).toContain('ROWS_COALESCED_TO_TABLE');
     expect(w.map((x) => x.code)).not.toContain('ARG_MAPPED');
-    expect(INFORMATIONAL_WARNING_CODES.has('ROWS_COALESCED_TO_TABLE')).toBe(true);
+    // IMPL-W10 L16-2: tidak lagi informasional (baris datar dapat menjadi butir record; agen harus melihatnya).
+    expect(INFORMATIONAL_WARNING_CODES.has('ROWS_COALESCED_TO_TABLE')).toBe(false);
   });
 
   it('larik datar TUNGGAL tetap perilaku lama: daftar (ARG_MAPPED), bukan tabel', () => {
@@ -100,9 +101,9 @@ describe('IMPL-W7: laporan kerja', () => {
     const tables = blocks.filter((b: any) => b.type === 'table');
     expect(tables.length).toBe(1);
     expect(blocks.some((b: any) => b.type === 'list')).toBe(false);
-    // Hasil ringkas: peringatan informasional disenyapkan.
-    expect(codesOf(r)).not.toContain('ROWS_COALESCED_TO_TABLE');
-    expect(r.text).not.toContain('ROWS_COALESCED_TO_TABLE');
+    // IMPL-W10 L16-2: hasil ringkas menampilkan ROWS_COALESCED_TO_TABLE (mengubah struktur tersimpan).
+    expect(codesOf(r)).toContain('ROWS_COALESCED_TO_TABLE');
+    expect(r.text).toContain('ROWS_COALESCED_TO_TABLE');
   });
 
   it('detail: true menampilkan ROWS_COALESCED_TO_TABLE', async () => {
@@ -136,7 +137,7 @@ describe('IMPL-W7: laporan kerja', () => {
     const st = Object.fromEntries(m.s.latest().sections.record.items.map((i: any) => [i.title.text, i.status]));
     expect(st['R12-B1: CHECK 1-2 (rubrik, lajur)']).toBe('running');
     expect(st['R12-B4: CHECK 5 (render)']).toBe('todo');
-    expect(codesOf(r)).not.toContain('ROWS_COALESCED_TO_TABLE');
+    expect(codesOf(r)).toContain('ROWS_COALESCED_TO_TABLE'); // IMPL-W10 L16-2
   });
 });
 

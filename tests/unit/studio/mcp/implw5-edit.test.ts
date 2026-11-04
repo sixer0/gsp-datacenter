@@ -60,12 +60,16 @@ describe('E6: reportedAt dicap jam server', () => {
     expect(e.markdown).toContain('ReportedAt: 2026-11-01');
   });
 
-  it('studio_edit laporan (teks atau meta) tanpa reportedAt -> record.reportedAt = jam server revisi itu', async () => {
+  it('studio_edit laporan lewat meta tanpa reportedAt -> record.reportedAt = jam server revisi itu; sunting bab saja tidak mengirim record', async () => {
     const m = editRoutes();
     const { call } = await connect({ fetch: m.f, env });
     expect(m.s.latest().sections.record.reportedAt).toBe('2026-11-01T10:00+07:00');
     const r = await call('studio_edit', { documentId: DOC, edits: [{ find: 'Ringkasan awal', replace: 'Ringkasan sesudah sunting' }] });
     expect(r.data.ok, r.text).toBe(true);
+    // IMPL-W10 (review 17 #5): cap hanya bila record ikut terkirim (meta, sel tabel butir/Rujukan, medan record).
+    expect(m.s.latest().sections.record.reportedAt).toBe('2026-11-01T10:00+07:00');
+    const r1 = await call('studio_edit', { documentId: DOC, meta: { status: 'complete' } });
+    expect(r1.data.ok, r1.text).toBe(true);
     expect(m.s.latest().sections.record.reportedAt).toMatch(STAMP);
     const r2 = await call('studio_edit', { documentId: DOC, meta: { status: 'complete', reportedAt: '2026-11-02' } });
     expect(r2.data.ok, r2.text).toBe(true);

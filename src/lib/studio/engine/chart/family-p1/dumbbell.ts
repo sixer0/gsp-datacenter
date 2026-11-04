@@ -83,7 +83,9 @@ export function renderDumbbell(ctx: P1Ctx): void {
   const T = style === "gallery" ? TYPE_PT.gallery : TYPE_PT.datum;
   const labelPt = pt(ctx, T.label);
   const dom = hintedDomain(ctx, rows.flatMap((r) => [r.a, r.b]), false, () => valueDomain(rows.flatMap((r) => [r.a, r.b]), false));
-  const x0 = labelGutter(ctx, rows.map((r) => r.label), labelPt) + (style === "gallery" ? 1.0 : 0);
+  // IMPL-W10: label berujung di x0 - 1,6 mm. Galeri: talang + 1,0 mm (anchorGap bawaan 1,2 -> tepi 1,0 mm, tidak berubah);
+  // datum: anchorGap 1,6 -> ruang tepi kiri 0,4 mm (sebelumnya 0 mm).
+  const x0 = style === "gallery" ? labelGutter(ctx, rows.map((r) => r.label), labelPt) + 1.0 : labelGutter(ctx, rows.map((r) => r.label), labelPt, 0.42, 1.6);
   const x1 = W - Math.max(1.0, tickWidth(dom, T.tick, style === "gallery" ? "struct" : "data") / 2 + 0.3);
   const keyBand = style === "datum" ? 5.0 : 0;
   const unitBand = style === "datum" && ctx.unit ? ptToMm(TYPE_PT.datum.title) + 1.6 : 0;

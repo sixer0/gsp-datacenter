@@ -216,18 +216,47 @@ export interface EditPlan {
   refCells: boolean;
   /** per bagian: paragraf yang boleh hilang/berubah (jumlah suntingan paragraf) dan selisih jumlah blok yang diharapkan. */
   paraDelta: Map<string, { removedMax: number; delta: number }>;
-  /** IMPL-W5 E1: blok yang ditambahkan `append` per bagian: indeks section (-1 = pembuka bab), jenis blok bukan paragraf, teks paragraf. */
-  appended?: Map<string, Array<{ section: number; kinds: string[]; paras: string[] }>>;
+  /**
+   * IMPL-W5 E1: blok yang ditambahkan `append` per bagian: indeks section (-1 = pembuka bab), jenis blok bukan paragraf, teks
+   * paragraf. IMPL-W11 (R1): `beforeSub` = blok disisipkan sebelum sub-judul ke-n (0-based) section itu (append ke sub-judul
+   * yang bukan terakhir); `seq` = `kinds` plus penanda {@link SUB_MARK} untuk blok sub-judul, urut.
+   */
+  appended?: Map<string, AppendedShape[]>;
   /** IMPL-W9 A: bab baku yang dibuat `append` (belum ada di dokumen). */
   created?: Set<string>;
   /** IMPL-W9 A: `append` ke bagian Rujukan (tabel rujukan -> record.refs lewat konverter). */
   refsAppended?: boolean;
 }
 
+/** IMPL-W11: penanda sub-judul (paragraf `role: subheading`) di urutan jenis blok `seq`. */
+export const SUB_MARK = "#sub";
+export interface AppendedShape {
+  section: number;
+  kinds: string[];
+  paras: string[];
+  beforeSub?: number;
+  seq?: string[];
+}
+
 const FIELD_NAMES: Readonly<Record<string, string>> = { status: "status", owner: "owner", reportedat: "reportedAt", verdict: "verdict", initiator: "initiator", taskref: "taskRef", cardids: "cardIds" };
 const LIST_MARKER_RE = /^((?:[-*+]|\d{1,9}[.)]|>)\s+)(.*)$/;
 /** Kolom kunci tabel butir (sama dengan importer kontrak `ITEM_KEY_COLUMNS`). */
 const ITEM_KEY_COLUMNS = new Set(["id", "kartu", "card", "key"]);
+/** Kunci stabil buatan `stableKey` (`K-` + 8 heksa, akhiran bentrok `-n`). */
+const STABLE_KEY_RE = /^K-[0-9a-f]{8}(?:-\d+)?$/i;
+/** Bentuk kunci: token tanpa spasi berhuruf dan berakhiran angka -> angka akhir jadi `#` (`R3F2-9` -> `r3f2-#`); null = bukan. */
+const keyShape = (k: string): string | null => (/^\S{1,40}$/.test(k) && /\p{L}/u.test(k) && /\d$/.test(k) ? k.toLowerCase().replace(/\d+$/, "#") : null);
+/**
+ * IMPL-W11 (R3): sel pertama baris n-1 tampak seperti kunci butir (kunci stabil `K-heksa`, kunci yang sudah dipakai, atau
+ * berbentuk sama dengan kunci yang sudah dipakai) -> baris itu bukan baris tanpa kunci; kolom lain kemungkinan terlupa.
+ */
+function looksLikeKey(cell: string, used: ReadonlySet<string>): boolean {
+  const c = cell.trim();
+  if (c === "") return false;
+  if (STABLE_KEY_RE.test(c) || used.has(c.toLowerCase())) return true;
+  const shape = keyShape(c);
+  return shape !== null && [...used].some((k) => keyShape(k) === shape);
+}
 
 /** Baris yang berubah dijaga ulang; penanda daftar/kutipan di awal dipertahankan, isinya lewat guardLine. */
 function guardChanged(line: string): string {
@@ -273,16 +302,46 @@ interface SecRef {
   title: string;
   /** urutan section di bagian itu (cocok dengan `chapter.sections[ordinal]`). */
   ordinal: number;
+  /** IMPL-W11: akhir isi milik judul itu sendiri (judul berikutnya tingkat mana pun, maks `end`). */
+  own: number;
+  /** IMPL-W11: `end` jatuh pada sub-judul ke-n (0-based) section induk; undefined = akhir section/region. */
+  subAt?: number;
 }
+/**
+ * IMPL-W10 (review 17 #2): section = judul `#`/`##` (sama dengan serializer: section bab = `##`, sub-judul = `###`).
+ * Sub-judul `###`..`######` milik section induknya: ujung section induk = judul `#`/`##` berikutnya (bukan sub-judul
+ * pertama), jadi append ke induk mendarat di akhir section. Ordinal hanya menghitung `#`/`##` (= indeks
+ * `chapter.sections`; -1 = sebelum `##` pertama); sub-judul memakai ordinal induknya.
+ * IMPL-W11 (cek ulang review 17 R1): sub-judul tetap entri tersendiri, tetapi rentangnya berakhir di judul berikutnya
+ * bertingkat sama atau lebih tinggi (append ke `### Sub A` mendarat di akhir Sub A, bukan sesudah Sub B). `own` = akhir
+ * isi milik judul itu sendiri (sebelum sub-judul pertamanya), untuk tabel bawaan addRow.
+ */
 function sectionsOf(parts: readonly EditPart[]): SecRef[] {
   const out: SecRef[] = [];
   parts.forEach((p, pi) => {
     if (p.part === "record") return;
-    let ordinal = 0;
+    let ordinal = -1;
     for (const region of ["intro", "body", "tail"] as const) {
       const lines = p.md[region];
-      const heads = lines.map((l, i) => (/^#{1,6}\s+/.test(l) ? i : -1)).filter((i) => i >= 0);
-      heads.forEach((h, k) => out.push({ part: pi, region, head: h, end: heads[k + 1] ?? lines.length, title: lines[h].replace(/^#{1,6}\s+/, "").replace(/\\(?=[\p{P}\p{S}])/gu, "").trim(), ordinal: ordinal++ }));
+      const heads = lines.flatMap((l, i) => {
+        const m = /^(#{1,6})\s+/.exec(l);
+        return m ? [{ i, level: m[1].length, top: m[1].length <= 2 }] : [];
+      });
+      let topK = -1;
+      heads.forEach((h, k) => {
+        if (h.top) {
+          ordinal++;
+          topK = k;
+        }
+        const rest = heads.slice(k + 1);
+        const nk = rest.findIndex((x) => x.top || (!h.top && x.level <= h.level));
+        const next = nk < 0 ? undefined : rest[nk];
+        const end = next?.i ?? lines.length;
+        // Sub-judul ke-n section induk tempat rentang berakhir (penanda posisi untuk pagar bentuk append).
+        const subAt = next !== undefined && !next.top ? heads.slice(topK + 1, k + 1 + nk).filter((x) => !x.top).length : undefined;
+        const title = lines[h.i].replace(/^#{1,6}\s+/, "").replace(/\\(?=[\p{P}\p{S}])/gu, "").trim();
+        out.push({ part: pi, region, head: h.i, end, title, ordinal, own: Math.min(rest[0]?.i ?? lines.length, end), ...(subAt !== undefined ? { subAt } : {}) });
+      });
     }
   });
   return out;
@@ -315,14 +374,16 @@ function tablesIn(lines: readonly string[], from: number, to: number): TableRef[
 }
 
 /** Jenis blok bukan paragraf + teks paragraf yang dihasilkan satu blok append (sama dengan susunan `studio_write`). */
-function blockShape(b: Block): { kinds: string[]; paras: string[] } {
+function blockShape(b: Block): { kinds: string[]; paras: string[]; seq: string[] } {
   const paras = expectedParagraphs(b);
-  if (typeof b === "string") return { kinds: [], paras };
-  if (isRows(b)) return { kinds: ["table"], paras };
+  if (typeof b === "string") return { kinds: [], paras, seq: [] };
+  if (isRows(b)) return { kinds: ["table"], paras, seq: ["table"] };
   const o = b as unknown as Record<string, unknown>;
-  if (isRows(o.table) || (o.chart !== null && typeof o.chart === "object")) return { kinds: ["table"], paras };
-  if (Array.isArray(o.list)) return { kinds: ["list"], paras };
-  return { kinds: [], paras };
+  if (isRows(o.table) || (o.chart !== null && typeof o.chart === "object")) return { kinds: ["table"], paras, seq: ["table"] };
+  if (Array.isArray(o.list)) return { kinds: ["list"], paras, seq: ["list"] };
+  // IMPL-W11: sub-judul = paragraf ber-role (bukan jenis blok), tetapi menjadi penanda posisi bagi append berikutnya.
+  if (typeof o.subheading === "string") return { kinds: [], paras, seq: [SUB_MARK] };
+  return { kinds: [], paras, seq: [] };
 }
 
 export interface ApplyOptions {
@@ -333,6 +394,11 @@ export interface ApplyOptions {
    * ke section laporan baku (bab outline atau Rujukan) membuat section itu di posisi bakunya (`SECTION_CREATED`).
    */
   createMissing?: boolean;
+  /**
+   * IMPL-W10 M16-1: bagian yang ADA di isi server (termasuk yang tidak dapat diserialisasi sehingga tidak ada di `parts`,
+   * mis. bab bertab atau berblok `chart`). Bagian ini tidak pernah "dibuat" ulang oleh `append` (itu menimpa isinya).
+   */
+  existing?: ReadonlySet<string>;
 }
 
 /** Urutan baku bagian laporan (record, bab menurut kunci, references) = urutan `serializeParts`. */
@@ -410,7 +476,8 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
     const head = tail.findIndex((l) => isHead(l) && isRefsHeading(l.replace(/^#{1,6}\s+/, "")));
     if (head < 0) return null;
     const next = tail.findIndex((l, i) => i > head && isHead(l));
-    return { part: pi, region: "tail", head, end: next < 0 ? tail.length : next, title: "Rujukan", ordinal: 0 };
+    const end = next < 0 ? tail.length : next;
+    return { part: pi, region: "tail", head, end, title: "Rujukan", ordinal: 0, own: end };
   };
   /** Bagian baru di akhir larik (posisi baku diterapkan sesudah semua suntingan); larik paralel ikut diperpanjang. */
   const addPart = (name: string): number => {
@@ -436,7 +503,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       splice(pi, "tail", head, 0, ["## Rujukan", ""]);
       trust(pi, "## Rujukan");
       warn({ code: "SECTION_CREATED", message: `${label}: section Rujukan belum ada; dibuat di posisi bakunya (akhir laporan) lalu blok ditambahkan` });
-      return { part: pi, region: "tail", head, end: head + 2, title: "Rujukan", ordinal: 0 };
+      return { part: pi, region: "tail", head, end: head + 2, title: "Rujukan", ordinal: 0, own: head + 2 };
     }
     const m = workReportChapters();
     const h = mapHeading(target.replace(/\s+/g, " ").trim(), m);
@@ -445,9 +512,15 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
     const name = `bab ${h.key}`;
     const pi = parts.findIndex((p) => p.part === name);
     if (pi >= 0) {
-      const last = sectionsOf(parts).filter((x) => x.part === pi).pop();
+      // IMPL-W11: section induk terakhir (rentang sub-judul kini berakhir di judul setingkat berikutnya).
+      const secs = sectionsOf(parts).filter((x) => x.part === pi);
+      const last = secs.filter((x) => /^#{1,2}\s/.test(parts[pi].md[x.region][x.head])).pop() ?? secs.pop();
       if (last !== undefined) warn({ code: "HEADING_MAPPED", message: `${label}: section "${target.slice(0, 80)}" dipetakan ke bab laporan ${last.title.slice(0, 80)}` });
       return last ?? null;
+    }
+    if (opts.existing?.has(name) === true) {
+      // IMPL-W10 M16-1: bab ada di server tetapi tidak terwakili teks (bentuk tak terserialisasi) -> menolak, bukan menimpa.
+      throw new McpToolError("EDIT_UNSAFE", `${label}: bab ${h.key} (${title}) sudah ada di dokumen tetapi memuat bentuk yang tidak dapat ditulis ulang lewat teks; append tidak membuat ulang bab itu dan tidak ada yang ditulis. Sunting bab-${h.key} dengan studio_write (tulis ulang utuh)`, { details: { parts: [name] } });
     }
     const line = `## ${title}`;
     const npi = addPart(name);
@@ -455,7 +528,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
     trust(npi, line);
     plan.created?.add(name);
     warn({ code: "SECTION_CREATED", message: `${label}: section ${title} belum ada; dibuat di posisi bakunya (bab ${h.key}) lalu blok ditambahkan` });
-    return { part: npi, region: "body", head: 0, end: 2, title, ordinal: 0 };
+    return { part: npi, region: "body", head: 0, end: 2, title, ordinal: 0, own: 2 };
   };
   /** Section sasaran append/addRow: judul/bab yang ada; IMPL-W9: Rujukan di ekor record, atau section baku dibuat. */
   const targetSection = (target: string, label: string, create: boolean): SecRef => {
@@ -515,6 +588,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       const add: string[] = [];
       const kinds: string[] = [];
       const paras: string[] = [];
+      const seq: string[] = [];
       let blocks = 0;
       e.append.forEach((b, k) => {
         const bl = blockLines(b, warn, `${label} blok ${k + 1}`, used, opts.prevItemStatus);
@@ -523,6 +597,7 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
         const shape = blockShape(b);
         kinds.push(...shape.kinds);
         paras.push(...shape.paras);
+        seq.push(...shape.seq);
         blocks += shape.kinds.length + shape.paras.length;
         if (shape.kinds.includes("table")) plan.itemCells = true;
       });
@@ -530,30 +605,40 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       for (const l of add) trust(sec.part, l);
       splice(sec.part, sec.region, at, 0, [...add, ""]);
       delta(sec.part, 0, blocks);
-      plan.appended?.set(pname, [...(plan.appended.get(pname) ?? []), { section: sec.ordinal, kinds, paras }]);
+      plan.appended?.set(pname, [...(plan.appended.get(pname) ?? []), { section: sec.ordinal, kinds, paras, seq, ...(sec.subAt !== undefined ? { beforeSub: sec.subAt } : {}) }]);
       touched.add(sec.part);
       return;
     }
     if ("addRow" in e) {
       // IMPL-W5 E2: baris baru di tabel section (bawaan tabel terakhir); lebar = jumlah kolom tabel.
       // IMPL-W9: Rujukan yang sudah ada (ekor record) juga dapat menjadi sasaran; addRow tidak membuat section.
+      // IMPL-W11 (R1): bawaan = tabel terakhir milik judul itu sendiri (sebelum sub-judul pertamanya); nomor/teks `table`
+      // memilih di seluruh rentang (termasuk tabel sub-judul).
       const sec = targetSection(e.section, label, false);
       const lines = parts[sec.part].md[sec.region];
       const tables = tablesIn(lines, sec.head + 1, sec.end);
-      const t = pickTable(tables, e.table, label);
-      const bad = e.addRow.findIndex((r) => r.length !== t.header.length);
-      if (bad >= 0) throw new McpToolError("EDIT_INVALID", `${label}: baris ${bad + 1} berisi ${e.addRow[bad].length} sel, tabel ${t.header.length} kolom; tidak ada yang ditulis. Judul kolom ada di blok rincian`, { untrusted: true, details: { edit: label, expectedHeader: t.header } });
+      const t = pickTable(tables, tables.filter((x) => x.start < sec.own), e.table, label);
       const head = t.header.map((h) => h.trim().toLowerCase());
       const keyIdx = head.findIndex((h) => ITEM_KEY_COLUMNS.has(h));
       const titleIdx = head.findIndex((h) => h === "judul" || h === "title");
       const items = keyIdx >= 0 && head.includes("status");
+      // IMPL-W10 (review 17 High): tabel butir dengan kolom kunci di depan (kolom `key` yang ditambahkan studio_write ke
+      // `[["judul","status"], ...]`) menerima baris TANPA sel kunci (lebar n-1, bentuk how-to); kunci stabil dibangkitkan.
+      const keyless = items && keyIdx === 0 && head[0] === "key";
+      const bad = e.addRow.findIndex((r) => r.length !== t.header.length && !(keyless && r.length === t.header.length - 1));
+      if (bad >= 0) throw new McpToolError("EDIT_INVALID", `${label}: baris ${bad + 1} berisi ${e.addRow[bad].length} sel, tabel ${t.header.length} kolom${keyless ? ` (atau ${t.header.length - 1} tanpa kolom key)` : ""}; tidak ada yang ditulis. Judul kolom ada di blok rincian`, { untrusted: true, details: { edit: label, expectedHeader: t.header } });
       const used = items ? usedKeys() : new Set<string>();
+      // IMPL-W11 (R3): baris n-1 yang sel pertamanya tampak seperti kunci = kolom lain terlupa, bukan baris tanpa kunci.
+      const keyed = keyless ? e.addRow.findIndex((r) => r.length === t.header.length - 1 && looksLikeKey(String(r[0] ?? ""), used)) : -1;
+      if (keyed >= 0) throw new McpToolError("EDIT_INVALID", `${label}: baris ${keyed + 1} berisi ${t.header.length - 1} sel dan sel pertamanya tampak seperti kunci butir; kirim ${t.header.length} sel lengkap (dengan kunci) atau ${t.header.length - 1} sel tanpa kunci. Tidak ada yang ditulis. Judul kolom ada di blok rincian`, { untrusted: true, details: { edit: label, expectedHeader: t.header } });
       const generated: string[] = [];
       const rows = e.addRow.map((r) => {
-        const cells = r.map((c) => String(c ?? "").replace(/\s+/g, " ").trim());
+        const cells = (r.length === t.header.length - 1 ? ["", ...r] : r).map((c) => String(c ?? "").replace(/\s+/g, " ").trim());
         if (items && cells[keyIdx] === "") {
-          let k = stableKey(titleIdx >= 0 && cells[titleIdx] !== "" ? cells[titleIdx] : cells.filter((_, j) => j !== keyIdx).join(" "));
-          for (let n = 2; used.has(k.toLowerCase()); n++) k = `${k.replace(/-\d+$/, "")}-${n}`;
+          const base = stableKey(titleIdx >= 0 && cells[titleIdx] !== "" ? cells[titleIdx] : cells.filter((_, j) => j !== keyIdx).join(" "));
+          // Akhiran bentrok seperti studio_write (`K-xxxxxxxx-2`); heksa serba-angka tidak dipotong.
+          let k = base;
+          for (let n = 2; used.has(k.toLowerCase()); n++) k = `${base}-${n}`;
           used.add(k.toLowerCase());
           cells[keyIdx] = k;
           generated.push(k);
@@ -690,11 +775,18 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
   return { touched: new Set([...touched].map((i) => moved.get(i) as number)), plan, notApplied, errors };
 }
 
-/** E2: tabel sasaran addRow: bawaan terakhir; angka = urutan 1..n di section; teks = keterangan atau baris judul. */
-function pickTable(tables: readonly TableRef[], sel: number | string | undefined, label: string): TableRef {
+/**
+ * E2: tabel sasaran addRow: bawaan = tabel terakhir milik judul itu sendiri (`own`); angka = urutan 1..n di seluruh
+ * rentang; teks = keterangan atau baris judul. IMPL-W11 (R1): tanpa tabel sendiri tetapi sub-judul bertabel ->
+ * TEXT_AMBIGUOUS + daftar (tabel sub-judul tidak dipilih diam-diam).
+ */
+function pickTable(tables: readonly TableRef[], own: readonly TableRef[], sel: number | string | undefined, label: string): TableRef {
   const list = () => ({ untrusted: true, details: { edit: label, tables: tables.map((t, i) => ({ table: i + 1, header: t.header.slice(0, 8).join(" | "), caption: t.caption.slice(0, 120) })) } });
   if (tables.length === 0) throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu tidak memuat tabel; tambahkan tabel dengan append. Tidak ada yang ditulis untuk suntingan ini`, list());
-  if (sel === undefined) return tables[tables.length - 1];
+  if (sel === undefined) {
+    if (own.length > 0) return own[own.length - 1];
+    throw new McpToolError("TEXT_AMBIGUOUS", `${label}: section itu tidak memuat tabel sendiri; ${tables.length} tabel ada di bawah sub-judulnya. Pakai table (nomor 1..${tables.length} atau teks judul kolom/keterangan), atau jadikan sub-judul itu sasaran section. Daftar tabel ada di blok rincian`, list());
+  }
   if (typeof sel === "number") {
     if (sel >= 1 && sel <= tables.length) return tables[sel - 1];
     throw new McpToolError("TEXT_NOT_FOUND", `${label}: section itu memuat ${tables.length} tabel, bukan tabel ${sel}. Daftar tabel ada di blok rincian`, list());

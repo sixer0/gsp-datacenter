@@ -53,7 +53,8 @@ export function gutterPlan(
   const widest = Math.max(0, ...widths);
   if (widest <= avail + 1e-9) return null;
   const lineMm = lineHeightMm(font);
-  const textMax = Math.max(avail, Math.min(widest, o.capMm - o.padMm));
+  // IMPL-W10 (review 17 #4): ruang tepi masuk anggaran cap (teks maks = cap - pad - ruang tepi), agar talang <= capMm.
+  const textMax = Math.max(avail, Math.min(widest, o.capMm - o.padMm - LABEL_EDGE_MM));
   const maxLines = Math.max(1, Math.min(o.maxLines ?? 3, Math.floor((o.pitchMm + 0.15 * lineMm) / lineMm)));
   const lines: string[][] = [];
   const titles: (string | undefined)[] = [];
@@ -71,9 +72,11 @@ export function gutterPlan(
   });
   // IMPL-W5 D1: talang = label terlebar + jarak ke plot + ruang tepi kiri, agar glif pertama label terlebar tidak
   // menempel/terpotong di tepi gambar saat dirasterisasi (sebelumnya tepi kiri label = tepat 0 mm).
+  // IMPL-W10: tidak pernah melampaui capMm, kecuali talang lama (avail) sendiri sudah lebih lebar dari cap.
   const used = Math.max(0, ...lines.flat().map((s) => measureFont(s, font))) + LABEL_EDGE_MM;
-  fitNote("LABEL_GUTTER", `talang label kiri diukur: ${(used + o.padMm).toFixed(1)} mm${truncated ? `, ${truncated} label dipotong (teks lengkap di <title>)` : ""}`);
-  return { gutterMm: used + o.padMm, textMaxMm: textMax, lines, titles, lineMm };
+  const gutterMm = Math.min(used + o.padMm, Math.max(o.capMm, textMax + o.padMm));
+  fitNote("LABEL_GUTTER", `talang label kiri diukur: ${gutterMm.toFixed(1)} mm${truncated ? `, ${truncated} label dipotong (teks lengkap di <title>)` : ""}`);
+  return { gutterMm, textMaxMm: textMax, lines, titles, lineMm };
 }
 
 /** Gambar label baris dari `gutterPlan`, tegak-tengah pada `baseline` satu baris lama. */

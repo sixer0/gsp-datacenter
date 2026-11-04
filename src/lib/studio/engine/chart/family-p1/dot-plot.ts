@@ -80,7 +80,8 @@ export function renderDotPlot(ctx: P1Ctx): void {
   if (style === "gallery") {
     const T = TYPE_PT.gallery;
     const labelPt = pt(ctx, T.label);
-    const x0 = labelGutter(ctx, names, labelPt, 0.3);
+    // IMPL-W10: label berujung di x0 - 1,6 mm -> anchorGap 1,6 (ruang tepi kiri 0,4 mm).
+    const x0 = labelGutter(ctx, names, labelPt, 0.3, 1.6);
     const x1 = W - Math.max(1.0, tickWidth(dom, T.tick, "struct") / 2 + 0.3);
     const top = 0.8;
     const base = ctx.bottom - 4.6;
