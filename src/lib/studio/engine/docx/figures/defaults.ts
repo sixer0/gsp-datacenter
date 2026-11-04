@@ -14,6 +14,7 @@
  */
 import type { Hex, ParaFormat, ParamMap, ProvenanceMark, ResolvedTemplate, RoleFormat, RoleKey, RunProps } from "../../../contract";
 import { PROVENANCE_GLYPHS } from "../../../contract";
+import { APPARATUS_TEXT, type WrapperLang } from "../../front/texts";
 import { resolveRoleFormat, resolveTokenColor } from "../../tokens";
 
 /** Token warna yang dipakai modul + cadangan heks (nilai kanonik P4C, research/07 RS). */
@@ -33,13 +34,29 @@ export function tokenColor(tpl: ResolvedTemplate, token: FigureColorToken): Hex 
   return resolveTokenColor(tpl, token) ?? COLOR_FALLBACK[token];
 }
 
-/** Label tetap aparatus figur (DT-15; bentuk "SUMBER ... PROVENANS ..." P5-23). */
-export const FIGURE_LABELS = {
-  source: "SUMBER",
-  provenance: "PROVENANS",
-  key: "KUNCI",
-  derivationPrefix: "Turunan",
-} as const;
+export interface FigureLabelSet {
+  readonly source: string;
+  readonly provenance: string;
+  readonly key: string;
+  readonly derivationPrefix: string;
+}
+
+/**
+ * Label aparatus figur DOCX per bahasa (DT-15; bentuk "SUMBER ... PROVENANS ..." P5-23). Satu sumber
+ * dengan HTML: tabel `APPARATUS_TEXT` (`engine/front/texts.ts`, S13/F-2); DOCX mencetak label
+ * SUMBER/PROVENANS/KUNCI kapital literal, kata depan turunan berhuruf campur.
+ */
+export function figureLabels(lang: WrapperLang): FigureLabelSet {
+  return {
+    source: APPARATUS_TEXT.source[lang].toUpperCase(),
+    provenance: APPARATUS_TEXT.provenance[lang].toUpperCase(),
+    key: APPARATUS_TEXT.key[lang].toUpperCase(),
+    derivationPrefix: APPARATUS_TEXT.derivation[lang],
+  };
+}
+
+/** Label ID: penanda struktural kiriman/compose dan alamat turunan ("Turunan D-n.m"), tetap ID. */
+export const FIGURE_LABELS: FigureLabelSet = figureLabels("ID");
 
 /**
  * Spasi pengapit label di dalam run label, persis BM (`research/07`, p#78-79):

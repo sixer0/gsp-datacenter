@@ -5,11 +5,23 @@
  * tanda provenans wajib dan dikenal DATUM §8 (glif boleh disertakan), satuan
  * wajib tidak kosong (DATUM-09 rev B), nilai wajib bilangan hingga, `dec`
  * bilangan bulat 0..3 (kontrak `RegisterEntry`).
+ *
+ * Angka tercetak mengikuti konvensi bahasa dokumen (S17, research/33 D-04):
+ * bawaan ID; EN memakai ribuan ",", desimal ".", rupiah "IDR" (tabel
+ * `NUMBER_CONVENTIONS`). Bahasa datang dari data dokumen, bukan slug/jenis.
  */
 import type { RegisterApi, RegisterEntry } from "../../contract";
 import { PROVENANCE_GLYPHS, PROVENANCE_MARKS, type ProvenanceMark } from "../../contract/enums";
 import { BindDefect } from "./defect";
-import { fmt, withUnit } from "./format";
+import {
+  DEFAULT_NUMBER_LANGUAGE,
+  formatWith,
+  numberConvention,
+  numberLanguageOf,
+  withUnitFor,
+  type NumberConvention,
+  type NumberLanguage,
+} from "./format";
 
 /** Bentuk masukan `Register.emit`: tuple Python `(value, dec, unit, mark, source)` atau objek. */
 export type RegisterEmitInput =
@@ -77,8 +89,13 @@ function firstWord(s: string): string | undefined {
 export class Register implements RegisterApi {
   private readonly d: Readonly<Record<string, Readonly<RegisterEntry>>>;
   private readonly usedKeys = new Set<string>();
+  /** Bahasa konvensi angka (bawaan ID). */
+  readonly language: NumberLanguage;
+  private readonly conv: NumberConvention;
 
-  constructor(entries: Readonly<Record<string, RegisterEntry>>) {
+  constructor(entries: Readonly<Record<string, RegisterEntry>>, language: NumberLanguage = DEFAULT_NUMBER_LANGUAGE) {
+    this.conv = numberConvention(language);
+    this.language = language;
     if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
       throw new BindDefect("register harus berupa objek {nama: entri}.");
     }
@@ -127,7 +144,7 @@ export class Register implements RegisterApi {
   /** Python `n()`: nilai terformat dengan `dec` entri atau override. */
   format(key: string, dec?: number): string {
     const e = this.get(key);
-    return fmt(e.v, dec ?? e.dec);
+    return formatWith(e.v, dec ?? e.dec, this.conv);
   }
 
   value(key: string): number {
@@ -145,16 +162,17 @@ export class Register implements RegisterApi {
   /** Nilai dan satuan dipisah spasi (DATUM §10); mata uang mendahului. */
   u(key: string, dec?: number): string {
     const e = this.get(key);
-    return withUnit(fmt(e.v, dec ?? e.dec), e.unit);
+    return withUnitFor(formatWith(e.v, dec ?? e.dec, this.conv), e.unit, this.conv);
   }
 
+  /** Rupiah mendahului nilai; satuannya dari tabel konvensi (ID "Rp", EN "IDR"). */
   rp(key: string): string {
     const e = this.get(key);
-    return "Rp " + fmt(e.v, e.dec);
+    return this.conv.currencyUnit + " " + formatWith(e.v, e.dec, this.conv);
   }
 
   pct(key: string, dec = 2): string {
-    return fmt(this.get(key).v, dec) + " %";
+    return formatWith(this.get(key).v, dec, this.conv) + " %";
   }
 
   /** Kunci terdaftar yang belum pernah dirujuk lewat get(). */
@@ -180,8 +198,23 @@ export class Register implements RegisterApi {
   knownForms(): Set<string> {
     const out = new Set<string>();
     for (const e of Object.values(this.d)) {
-      for (let dec = 0; dec < 4; dec++) out.add(fmt(e.v, dec));
+      for (let dec = 0; dec < 4; dec++) out.add(formatWith(e.v, dec, this.conv));
     }
     return out;
   }
+}
+
+/** Bentuk minimum snapshot yang dibaca `registerForSnapshot` (v1 dan v2). */
+export interface RegisterSource {
+  register?: Readonly<Record<string, RegisterEntry>> | null;
+  doc: { meta?: { language?: unknown } | null };
+}
+
+/**
+ * Register satu snapshot dokumen dengan konvensi angka bahasa dokumen
+ * (`doc.meta.language`, resolusi sama dengan renderer). Satu pabrik untuk
+ * titik konstruksi render/pratinjau (S18, research/33 D-07).
+ */
+export function registerForSnapshot(snapshot: RegisterSource): Register {
+  return new Register(snapshot.register ?? {}, numberLanguageOf(snapshot.doc.meta?.language));
 }

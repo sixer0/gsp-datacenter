@@ -23,7 +23,9 @@ import type {
   TableBlock,
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
-import { kickerSuppressed } from "../../front/texts";
+import { chapterLabelText, classificationMarkText, kickerSuppressed, registerWordsText } from "../../front/texts";
+import { fitRunningHeadText } from "../../front/running-head-fit";
+import { measureFont, type FitFont } from "../../chart/core/textfit";
 import { REL, type Relationship } from "./parts";
 import { mmToTw, resolveUnitSetup, sectPrXml, textWidthTw, type ResolvedSectionSetup } from "./section";
 import {
@@ -88,14 +90,14 @@ export function datumDate(iso: string): string {
 
 function chapterTitleFor(ctx: RenderContext, unit: NormUnit): { label: string; title: string } | undefined {
   const doc = ctx.snapshot.doc;
-  const en = doc.meta.language === "EN";
+  const lang = doc.meta.language === "EN" ? "EN" : "ID";
   if (unit.kind === "chapter" || unit.kind === "appendix") {
     const list = unit.kind === "chapter" ? doc.chapters : (doc.appendices ?? []);
     const idx = list.findIndex((c, i) => (c.key ?? (unit.kind === "chapter" ? String(i + 1) : String.fromCharCode(65 + i))) === unit.key);
     const ch = idx >= 0 ? list[idx] : undefined;
-    const word = unit.kind === "chapter" ? (en ? "Chapter" : "Bab") : en ? "Appendix" : "Lampiran";
     // IMPL-W4: kicker kosong eksplisit (penomoran sumber) = judul bab sudah memuat nomornya; tanpa "Bab n".
-    return { label: ch && kickerSuppressed(ch.kicker) ? "" : `${word} ${unit.key}`, title: ch ? (ch.runningHeadTitle ?? inlinePlain(ch.title)) : "" };
+    // S06 (B-10): kata bab/lampiran dari tabel teks bersama `front/texts.ts`.
+    return { label: ch && kickerSuppressed(ch.kicker) ? "" : chapterLabelText(unit.key, unit.kind === "appendix", lang), title: ch ? (ch.runningHeadTitle ?? inlinePlain(ch.title)) : "" };
   }
   if (unit.kind === "part") {
     const part = (doc.parts ?? []).find((p) => p.id === unit.key);
@@ -104,14 +106,44 @@ function chapterTitleFor(ctx: RenderContext, unit: NormUnit): { label: string; t
   return undefined;
 }
 
-/** Teks kiri bawaan P4A-01: [entitas, jenis dokumen, BAB n, judul bab] dipisah " · ". */
-export function defaultRunningHeadLeft(ctx: RenderContext, unit: NormUnit): string {
+/**
+ * Teks kiri bawaan P4A-01: [entitas, jenis dokumen, BAB n, judul bab] dipisah " · ".
+ * G-FIX (G-06): dengan `maxWidthMm`, teks dipas ke lebar itu pada huruf kepala halaman
+ * (`RUNNING_HEAD_LEFT_RUN`): jenis dokumen/judul dipendekkan lebih dulu, lalu judul bab;
+ * entitas dan label bab utuh. Teks yang sudah muat tidak berubah.
+ */
+export function defaultRunningHeadLeft(ctx: RenderContext, unit: NormUnit, maxWidthMm?: number): string {
   const p = ctx.tpl.params;
   const meta = ctx.snapshot.doc.meta;
   const entity = paramString(p, "org.entityName") ?? "PT Gemilang Satria Perkasa";
   const docLabel = paramString(p, "runningHead.docLabel") ?? meta.subject ?? meta.title;
   const ch = chapterTitleFor(ctx, unit);
-  return [entity, docLabel, ch?.label, ch?.title].filter((s): s is string => !!s && s.length > 0).join(" · ");
+  const segments = [
+    { text: entity },
+    { text: docLabel ?? "", shrinkOrder: 1 },
+    { text: ch?.label ?? "" },
+    { text: ch?.title ?? "", shrinkOrder: 2 },
+  ];
+  if (maxWidthMm === undefined) return segments.filter((s) => s.text.length > 0).map((s) => s.text).join(" · ");
+  return fitRunningHeadText(segments, maxWidthMm, fitFontOf(RUNNING_HEAD_LEFT_RUN));
+}
+
+const MM_PER_TW = 25.4 / 1440;
+/**
+ * Jarak minimum teks kiri ke klasifikasi kanan saat teks dipas: sama dengan `.runhead{gap:4mm}` HTML
+ * (`html/base/css.ts`); juga menyerap selisih tabel lebar SemiBold vs run kanan Bold dan pembulatan renderer.
+ */
+const RUNNING_HEAD_GAP_MM = 4;
+
+/** Gaya ukur `textfit` untuk run kepala halaman (ukuran, kapital, renggang, tebal, wajah). */
+function fitFontOf(r: RunProps): FitFont {
+  return {
+    pt: (r.szHalfPt ?? 13) / 2,
+    face: r.faceRole === "mono" ? "data" : "struct",
+    bold: r.b === true,
+    caps: r.caps === true,
+    trackMm: ((r.spacingTw ?? 0) / 20) * (25.4 / 72),
+  };
 }
 
 // ── Mode ────────────────────────────────────────────────────────────────
@@ -129,8 +161,16 @@ function runningHeadBody(
 ): string {
   const p = ctx.tpl.params;
   const fmt = { ...runningHeadFormat(textWidthTw(setup)), ...(spec.format ?? {}) };
-  const leftRuns: Run[] = spec.left ? inlineRuns(spec.left) : [{ t: defaultRunningHeadLeft(ctx, unit) }];
-  const right: Inline = spec.right ?? { text: ctx.snapshot.doc.meta.classification };
+  const right: Inline = spec.right ?? { text: classificationMarkText(ctx.snapshot.doc.meta.classification) };
+  let leftRuns: Run[];
+  if (spec.left) {
+    leftRuns = inlineRuns(spec.left);
+  } else {
+    // G-FIX (G-06): anggaran teks kiri = tab kanan - klasifikasi (utuh) - jarak aman.
+    const tabTw = fmt.tabs?.find((t) => t.val === "right")?.posTw ?? textWidthTw(setup);
+    const rightMm = measureFont(inlinePlain(right), fitFontOf(RUNNING_HEAD_RIGHT_RUN));
+    leftRuns = [{ t: defaultRunningHeadLeft(ctx, unit, tabTw * MM_PER_TW - rightMm - RUNNING_HEAD_GAP_MM) }];
+  }
   let rightXml: string;
   if ("text" in right) {
     // Pola BM: tab dan teks kanan dalam satu run.
@@ -160,8 +200,6 @@ export const REGISTER_CELLS_FALLBACK: readonly string[] = ["GSP · {nomor}", "RE
 const REGISTER_ORG_CELL_LEGACY = "GSP · {nomor}";
 /** Cadangan P4S-12: spasi tak-putus U+00A0 (BM footer5.xml). */
 const REGISTER_SEPARATOR_FALLBACK = "\u00A0";
-/** Kata label Indonesia pada pola sel yang dilokalkan untuk dokumen EN (perilaku lama "SHEET n OF N"). */
-const REGISTER_WORDS_EN: Readonly<Record<string, string>> = { LEMBAR: "SHEET", DARI: "OF" };
 
 type RegisterField = "org" | "nomor" | "rev" | "tanggal" | "n" | "N" | "kelas";
 type RegisterSegment = { text: string; bold: boolean } | { field: "PAGE" | "NUMPAGES"; bold: boolean };
@@ -266,12 +304,12 @@ export function displayRev(ctx: RenderContext): string | undefined {
 function registerDefaultCells(ctx: RenderContext): Run[][] {
   const p = ctx.tpl.params;
   const meta = ctx.snapshot.doc.meta;
-  const en = meta.language === "EN";
+  const lang = meta.language === "EN" ? "EN" : "ID";
   const sep = paramString(p, "device.registerBlock.separator") ?? REGISTER_SEPARATOR_FALLBACK;
   const org = paramString(p, "org.shortName") ?? "GSP";
   const bold = registerBoldFields(p);
-  const literal = (s: string): string =>
-    (en ? s.replace(/\b[A-Z]+\b/g, (w) => REGISTER_WORDS_EN[w] ?? w) : s).replace(/ /g, sep);
+  // Kata label LEMBAR/DARI dilokalkan lewat tabel bersama `front/texts.ts` (S06 B-11; "SHEET n OF N" untuk EN).
+  const literal = (s: string): string => registerWordsText(s, lang).replace(/ /g, sep);
   const value = (f: Exclude<RegisterField, "n" | "N">): string => {
     switch (f) {
       case "org":
@@ -283,7 +321,7 @@ function registerDefaultCells(ctx: RenderContext): Run[][] {
       case "tanggal":
         return datumDate(meta.issueDate);
       case "kelas":
-        return meta.classification;
+        return classificationMarkText(meta.classification);
     }
   };
   return registerCellPatterns(p).map((c0) => {

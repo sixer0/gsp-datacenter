@@ -10,7 +10,7 @@
  * - `buildPreviewHtmlV2`: rakit HTML pratinjau dari snapshot + templat + slot.
  */
 import type { NormDocSnapshot, NormDocSnapshotV2, RenderContext, ResolvedSlot, ResolvedTemplate, StudioTier } from "@/lib/studio/contract";
-import { Register } from "@/lib/studio/engine/bind";
+import { registerForSnapshot } from "@/lib/studio/engine/bind";
 import { assembleHtml } from "@/lib/studio/engine/html/assemble";
 import { getSkeleton, loadTemplateLayers, resolveSkeletonSlots } from "@/lib/studio/services/skeleton";
 import { apiLog, type ReqCtx } from "@/lib/studio/http";
@@ -41,7 +41,7 @@ export async function buildPreviewHtmlV2(i: {
   const rctx: RenderContext = {
     snapshot,
     tpl: i.tpl,
-    register: new Register(snapshot.register ?? {}),
+    register: registerForSnapshot(snapshot),
     fixedDate: snapshot.doc.meta.issueDate,
     figures: { get: () => undefined },
     slots: i.slots,

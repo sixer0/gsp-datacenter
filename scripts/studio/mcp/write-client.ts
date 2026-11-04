@@ -7,6 +7,8 @@
  * (bila ada dan naik) atau urutan. Tanpa I/O.
  */
 import type { InlineV2 } from "../../../src/lib/studio/contract";
+import { STUDIO_TIERS } from "../../../src/lib/studio/contract/enums";
+import { chapterLabelText, CONTROL_FIELD_LABELS, FRONT_PAYLOAD_LABELS, WRAPPER_TEXT, type WrapperLang } from "../../../src/lib/studio/engine/front/texts";
 import { parseInline } from "../../../src/lib/studio/services/import/inline";
 import { McpToolError } from "./safety";
 import { tok, type ToolWarning } from "./tool-kit";
@@ -21,7 +23,7 @@ const txt = (s: string): InlineV2 => ({ text: s.replace(/\s+/g, " ").trim() });
 
 export type MetaField =
   | "title" | "number" | "rev" | "date" | "author" | "checker" | "approver" | "classification" | "audience" | "custodian"
-  | "subject" | "basis" | "language" | "standfirst" | "method" | "distribution" | "source" | "revisionNote";
+  | "subject" | "basis" | "language" | "tier" | "standfirst" | "method" | "distribution" | "source" | "revisionNote";
 
 const META_ALIASES: Readonly<Record<string, MetaField>> = {
   title: "title", judul: "title",
@@ -37,6 +39,7 @@ const META_ALIASES: Readonly<Record<string, MetaField>> = {
   subject: "subject", perihal: "subject", subjek: "subject",
   basis: "basis", dasar: "basis",
   language: "language", bahasa: "language",
+  tier: "tier",
   standfirst: "standfirst", subtitle: "standfirst", abstrak: "standfirst",
   method: "method", metode: "method", "pernyataan metode": "method",
   distribution: "distribution", distribusi: "distribution",
@@ -70,7 +73,7 @@ export function normalizeMeta(raw: Record<string, string>, title: string | null,
   }
   if (title !== null && title.trim() !== "") m.title = title.replace(/\s+/g, " ").trim();
   if (Object.keys(raw).some((k) => metaFieldOf(k) === "number")) warn(NUMBER_DISPLAY_ONLY);
-  if (unknown.length > 0) warn({ code: "META_IGNORED", message: `meta tidak dikenal: ${unknown.slice(0, 8).join(", ")} (dikenal: title, number, rev, date, author, checker, approver, classification, audience, custodian, subject, basis, language, standfirst, method, distribution, source)` });
+  if (unknown.length > 0) warn({ code: "META_IGNORED", message: `meta tidak dikenal: ${unknown.slice(0, 8).join(", ")} (dikenal: title, number, rev, date, author, checker, approver, classification, audience, custodian, subject, basis, language, tier, standfirst, method, distribution, source)` });
   const missing = (["title", "author"] as const).filter((f) => m[f] === undefined);
   if (missing.length > 0) {
     throw new McpToolError("META_MISSING", `meta wajib untuk dokumen klien: ${missing.join(", ")} (judul dan penyusun dicetak di sampul, lembar kendali, dan tanda tangan; tidak dikarang). Contoh: "meta": { "title": "...", "author": "...", "number": "..." }. Tidak ada yang dikirim`, { details: { missing } });
@@ -84,6 +87,15 @@ export function normalizeMeta(raw: Record<string, string>, title: string | null,
     const l = m.language.toUpperCase();
     m.language = l === "EN" || l === "ENGLISH" || l === "INGGRIS" ? "EN" : "ID";
   }
+  // S12: meta.tier = medan DocMetaV2 yang ada (tier dokumen; menang atas `doc.defaultTier` templat di server).
+  if (m.tier !== undefined) {
+    const t = m.tier.toUpperCase();
+    if ((STUDIO_TIERS as readonly string[]).includes(t)) m.tier = t;
+    else {
+      warn({ code: "TIER_IGNORED", message: `meta.tier "${tok(m.tier, "(bukan token aman)")}" bukan ${STUDIO_TIERS.join("/")}; tier bawaan templat dipakai` });
+      delete m.tier;
+    }
+  }
   return m;
 }
 
@@ -96,15 +108,55 @@ export function docMetaOf(m: ClientMeta, warn: (w: ToolWarning) => void): Rec {
   }
   for (const f of ["classification", "author", "custodian", "audience", "basis", "subject"] as const) if (m[f] !== undefined) out[f] = m[f];
   if (m.language !== undefined) out.language = m.language;
+  if (m.tier !== undefined) out.tier = m.tier;
   if (m.date !== undefined) out.issueDate = m.date;
   return out;
 }
 
-const LABELS = {
-  ID: { number: "Nomor dokumen", rev: "Revisi", author: "Penyusun", classification: "Klasifikasi", audience: "Ditujukan kepada", custodian: "Kustodian", basis: "Dasar", sheet: "Lembar Kendali", made: "Disusun", checked: "Diperiksa", approved: "Disetujui", first: "Terbit pertama", by: "Diolah oleh" },
-  EN: { number: "Document number", rev: "Revision", author: "Author", classification: "Classification", audience: "Addressed to", custodian: "Custodian", basis: "Basis", sheet: "Control Sheet", made: "Prepared", checked: "Checked", approved: "Approved", first: "First issue", by: "Compiled by" },
+/**
+ * S12 (research/33 B-08, register research/31 §4.3): label slot depan klien. Label yang sama dengan blok kendali sampul
+ * auto dan kicker lembar kendali diambil dari tabel teks bersama (`engine/front/texts.ts`), jadi tidak bisa menyimpang.
+ * Label isi slot depan lainnya (`classification`, `made`, `checked`, `approved`, `first`) = `FRONT_PAYLOAD_LABELS` di
+ * tabel yang sama (S13).
+ */
+
+/** Label medan blok kendali dari tabel bersama; kunci yang hilang = galat pemrograman, gagal keras saat modul dimuat. */
+function controlFieldLabel(field: string): Readonly<Record<WrapperLang, string>> {
+  const l = CONTROL_FIELD_LABELS[field] as Readonly<Record<WrapperLang, string>> | undefined;
+  if (l === undefined) throw new Error(`write-client: label ${field} tidak ada di CONTROL_FIELD_LABELS (engine/front/texts.ts)`);
+  return l;
+}
+
+const CLIENT_LABELS = {
+  number: controlFieldLabel("NOMOR DOKUMEN"),
+  rev: controlFieldLabel("REVISI"),
+  author: controlFieldLabel("PENYUSUN"),
+  audience: controlFieldLabel("DITUJUKAN KEPADA"),
+  custodian: controlFieldLabel("KUSTODIAN"),
+  basis: controlFieldLabel("DASAR"),
+  sheet: WRAPPER_TEXT.controlKicker,
+  ...FRONT_PAYLOAD_LABELS,
 } as const;
-export const labelsOf = (m: ClientMeta) => LABELS[m.language === "EN" ? "EN" : "ID"];
+
+export type ClientLabelKey = keyof typeof CLIENT_LABELS;
+export type ClientLabels = Readonly<Record<ClientLabelKey, string>>;
+
+function labelSet(lang: WrapperLang): ClientLabels {
+  const out = {} as Record<ClientLabelKey, string>;
+  for (const k of Object.keys(CLIENT_LABELS) as ClientLabelKey[]) out[k] = CLIENT_LABELS[k][lang];
+  return out;
+}
+const LABELS: Readonly<Record<WrapperLang, ClientLabels>> = { ID: labelSet("ID"), EN: labelSet("EN") };
+
+/**
+ * D-6 (research/33 R-3): label EN sebelum register S12. Hanya untuk MEMBACA dokumen EN lama (`write-meta.ts`); entri baru
+ * selalu memakai `LABELS`. Label lain tidak berubah, jadi sama dengan `LABELS.EN`.
+ */
+export const LEGACY_EN_LABELS: ClientLabels = { ...LABELS.EN, author: "Author", made: "Prepared", checked: "Checked", approved: "Approved" };
+
+/** Bahasa label: `language` = bahasa dokumen (meta agen, atau templat/dokumen bila agen tidak mengirimnya; F-1). */
+export const labelLangOf = (language: string | undefined): WrapperLang => (language === "EN" ? "EN" : "ID");
+export const labelsOf = (m: Pick<ClientMeta, "language">): ClientLabels => LABELS[labelLangOf(m.language)];
 
 // ── slot dari meta ──────────────────────────────────────────────────────
 
@@ -130,8 +182,9 @@ const fit = (s: string, max: number, what: string, warn: (w: ToolWarning) => voi
   return s.slice(0, max);
 };
 
-export function frontSlots(m: ClientMeta, warn: (w: ToolWarning) => void): { cover: Rec; controlSheet: Rec; signature: Rec } {
-  const L = labelsOf(m);
+/** `lang` = bahasa label (bawaan: meta.language; F-1: pemanggil memberi bahasa dokumen dari templat bila meta tanpa language). */
+export function frontSlots(m: ClientMeta, warn: (w: ToolWarning) => void, lang: WrapperLang = labelLangOf(m.language)): { cover: Rec; controlSheet: Rec; signature: Rec } {
+  const L = LABELS[lang];
   const revShown = m.rev !== undefined ? shortRev(m.rev) : "A";
   if (m.rev === undefined) warn({ code: "REV_DEFAULTED", message: "meta.rev tidak diisi; revisi A dipakai di lembar kendali" });
   const revFull = m.rev !== undefined && revShown !== m.rev.replace(/\s+/g, " ").trim() ? m.rev.replace(/\s+/g, " ").trim() : null;
@@ -409,7 +462,7 @@ function planSource(sections: readonly ClientSection[]): ChapterPlan[] {
  * IMPL-W4 butir 1: bila ada judul/sub-judul bernomor sumber, rencana mode sumber (`planSource`) yang dipakai: judul
  * dicetak persis, tanpa penyarangan dan penomoran ulang (D-544/D-547, UD-2).
  */
-export function planChapters(sections: readonly ClientSection[], warn: (w: ToolWarning) => void): ChapterPlan[] {
+export function planChapters(sections: readonly ClientSection[], warn: (w: ToolWarning) => void, lang: WrapperLang = "ID"): ChapterPlan[] {
   if (usesSourceNumbering(sections)) return planSource(sections);
   const parsed = sections.map((s) => {
     const m = HEADING_NUM.exec(s.heading);
@@ -442,7 +495,7 @@ export function planChapters(sections: readonly ClientSection[], warn: (w: ToolW
         sec.blocks.splice(at, 0, ...pendingLead.flatMap((l) => [{ subheading: l.heading } as ClientBlock, ...l.blocks]));
         pendingLead.length = 0;
       }
-      out.push({ key: String(key), title: p.title === "" ? `Bab ${key}` : p.title, section: sec });
+      out.push({ key: String(key), title: p.title === "" ? chapterLabelText(String(key), false, lang) : p.title, section: sec });
       return;
     }
     const nextExplicit = kept.slice(i + 1).find((n): n is number => n !== null) ?? Infinity;
@@ -452,7 +505,7 @@ export function planChapters(sections: readonly ClientSection[], warn: (w: ToolW
       used.add(cand);
       prev = cand;
       if (p.num !== null) renumbered.push(`bagian ${i + 1} "${p.num}" -> ${cand}`);
-      out.push({ key: String(cand), title: p.title === "" ? `Bab ${cand}` : p.title, section: sec });
+      out.push({ key: String(cand), title: p.title === "" ? chapterLabelText(String(cand), false, lang) : p.title, section: sec });
       return;
     }
     nested.push(p.s.heading.replace(/\s+/g, " ").trim());
@@ -471,8 +524,8 @@ export function planChapters(sections: readonly ClientSection[], warn: (w: ToolW
 }
 
 /** Kompatibel IMPL-W2: kunci + judul per bab hasil rencana. */
-export function chapterKeys(sections: readonly ClientSection[], warn: (w: ToolWarning) => void): Array<{ key: string; title: string }> {
-  return planChapters(sections, warn).map((p) => ({ key: p.key, title: p.title }));
+export function chapterKeys(sections: readonly ClientSection[], warn: (w: ToolWarning) => void, lang: WrapperLang = "ID"): Array<{ key: string; title: string }> {
+  return planChapters(sections, warn, lang).map((p) => ({ key: p.key, title: p.title }));
 }
 
 /**
@@ -519,6 +572,8 @@ export function chapterOf(sec: ClientSection, key: string, title: string, metaSo
 
 export interface BuiltClient {
   meta: ClientMeta;
+  /** S12 (F-1): bahasa label slot depan dan judul bab cadangan = meta.language, selain itu `language` masukan, selain itu ID. */
+  language: WrapperLang;
   docMeta: Rec;
   slots: { cover: Rec; controlSheet: Rec; signature: Rec };
   chapters: Rec[];
@@ -533,16 +588,21 @@ export interface BuiltClient {
  * Masukan -> semua bentuk server. IMPL-W3 butir 5: isu yang tidak dapat diperbaiki mesin (sumber/satuan tidak ada,
  * tabel terlalu lebar, data grafik tak sah) dikumpulkan dan dilempar SEKALI sebagai CONTENT_INVALID (0 jaringan).
  */
-export function buildClient(input: { meta: Record<string, string>; title: string | null; sections: ClientSection[]; today: string }): BuiltClient {
+/**
+ * `language` (S12, F-1) = bahasa dokumen dari templat (R02 `doc.language`) atau dokumen yang ada, dipakai untuk label
+ * HANYA bila meta agen tidak membawa `language`; tidak ditambahkan ke DocMetaV2 (server memakai bahasa templat sendiri).
+ */
+export function buildClient(input: { meta: Record<string, string>; title: string | null; sections: ClientSection[]; today: string; language?: WrapperLang }): BuiltClient {
   const warnings: ToolWarning[] = [];
   const warn = (w: ToolWarning) => warnings.push(w);
   const issues: Issue[] = [];
   const issue: IssueSink = (i) => issues.push(i);
   const meta = normalizeMeta(input.meta, input.title, input.today, warn);
   const docMeta = docMetaOf(meta, warn);
-  const slots = frontSlots(meta, warn);
+  const language = meta.language !== undefined ? labelLangOf(meta.language) : (input.language ?? "ID");
+  const slots = frontSlots(meta, warn, language);
   const metaSource = meta.source ?? null;
-  const plan = planChapters(input.sections, warn);
+  const plan = planChapters(input.sections, warn, language);
   const emptySections: string[] = [];
   const chapters: Rec[] = [];
   const source = plan.some((p) => p.label !== undefined);
@@ -567,5 +627,5 @@ export function buildClient(input: { meta: Record<string, string>; title: string
   const merged = new Map<string, ToolWarning[]>();
   for (const w of warnings) merged.set(w.code, [...(merged.get(w.code) ?? []), w]);
   const compact = [...merged.values()].map((ws) => (ws.length === 1 ? ws[0] : { code: ws[0].code, message: `${ws.length}x: ${ws.slice(0, 3).map((w) => w.message).join(" | ")}${ws.length > 3 ? " | ..." : ""}` }));
-  return { meta, docMeta, slots, chapters, warnings: compact, emptySections, outline: source ? outline : null };
+  return { meta, language, docMeta, slots, chapters, warnings: compact, emptySections, outline: source ? outline : null };
 }

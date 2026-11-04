@@ -30,7 +30,7 @@ import type {
   ValidationIssue,
 } from "../../contract";
 import { TABLE_BLOCK_TYPES } from "../../contract";
-import { BindDefect, Register, buildDerivationBlock, isVerbatimReproduction, normalizeRegisterEntry } from "../../engine/bind";
+import { BindDefect, Register, buildDerivationBlock, isVerbatimReproduction, normalizeRegisterEntry, numberLanguageOf } from "../../engine/bind";
 import { derivationId } from "../../engine/docx/figures";
 import { isObject, joinPointer } from "./util";
 
@@ -134,7 +134,7 @@ export function bindRegister(
       });
     }
   }
-  const reg = new Register(register);
+  const reg = new Register(register, numberLanguageOf(snapshot.doc.meta?.language));
   for (const b of snapshot.blocks) {
     if (b.type !== "derivation" || !isObject(b.content)) continue;
     const d = b.content as unknown as DerivationBlock;
@@ -188,7 +188,7 @@ export function renderFeasibilityBlockers(
       /* DATUM-11 menahan entri cacat di jalur lain */
     }
   }
-  const reg = new Register(register);
+  const reg = new Register(register, numberLanguageOf(snapshot.doc.meta?.language));
   const out: ValidationIssue[] = [];
   for (const b of derivations) {
     const d = b.content as unknown as DerivationBlock;

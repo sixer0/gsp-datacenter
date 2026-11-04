@@ -22,6 +22,12 @@ import { attr, escText } from "./escape";
 import { paraHtml } from "./inline";
 import { renderVerbatimDerivation } from "./reproduction";
 import { color, css, labels, n, pNum, pStr, role, ruleCss, runCss } from "./style";
+import { APPARATUS_TEXT, verdictTagText, wrapperLangOf } from "../../front/texts";
+
+/** Tag vonis tampilan berbahasa dokumen (S13/F-2); dokumen ID apa adanya. */
+function tagText(tag: string, ctx: RenderContext): string {
+  return verdictTagText(tag, wrapperLangOf(ctx.snapshot?.doc?.meta));
+}
 
 function build(block: NormBlock, d: DerivationBlock, ctx: RenderContext): DerivationBuild {
   const id = d.id ?? block.artifactLabel ?? ctx.snapshot?.numbering?.[block.blockId] ?? "";
@@ -50,7 +56,7 @@ function monoLinesHtml(b: DerivationBuild, ctx: RenderContext): string {
   const lines = b.rows.map((r) => {
     let body: string;
     if (r.kind === "verdict" && r.tag && r.mono.endsWith(r.tag)) {
-      body = `${escText(r.mono.slice(0, r.mono.length - r.tag.length))}<span style="${escText(verdictStyle(r, ctx))}">${escText(r.tag)}</span>`;
+      body = `${escText(r.mono.slice(0, r.mono.length - r.tag.length))}<span style="${escText(verdictStyle(r, ctx))}">${escText(tagText(r.tag, ctx))}</span>`;
     } else {
       body = escText(r.mono);
     }
@@ -88,7 +94,7 @@ function nestedTableHtml(b: DerivationBuild, ctx: RenderContext): string {
     const value = paraHtml(escText(r.value ?? ""), valRf.para, css(runCss(valRun, p), "text-align:right", "white-space:pre", weight));
     const third =
       r.kind === "verdict" && r.tag
-        ? `<span style="${escText(verdictStyle(r, ctx))}">${escText(r.tag)}</span>`
+        ? `<span style="${escText(verdictStyle(r, ctx))}">${escText(tagText(r.tag, ctx))}</span>`
         : markTag(r.mark, ctx, markRun);
     return (
       `<tr class="st-derivation-${r.kind}" style="break-inside:avoid">` +
@@ -124,7 +130,9 @@ export function renderDerivationBlock(block: NormBlock, ctx: RenderContext): str
     spacingTw: 16,
     color: color(ctx.tpl, "signal", "signal").replace(/^#/, ""),
   };
-  const head = [L.derivation, b.id].filter(Boolean).join(" ") + (b.title ? ` · ${b.title}` : "");
+  // S13/F-2: dokumen berbahasa lain tidak mengulang kata depan alamat ID ("Turunan D-n.m") di belakang label bahasanya.
+  const shownId = wrapperLangOf(ctx.snapshot?.doc?.meta) === "ID" ? b.id : b.id.replace(new RegExp(`^${APPARATUS_TEXT.derivation.ID}\\s+`), "");
+  const head = [L.derivation, shownId].filter(Boolean).join(" ") + (b.title ? ` · ${b.title}` : "");
   const labelHtml = paraHtml(escText(head), labelRf.para, css(runCss(labelRun, p), "margin-bottom:1.8mm", "break-after:avoid"), "st-derivation-label");
 
   const renderer = pStr(p, "render.derivation.renderer", "monoLines");

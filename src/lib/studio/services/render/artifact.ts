@@ -49,7 +49,7 @@ import type {
 } from "../../contract";
 import { STUDIO_ERROR_HTTP } from "../../contract";
 import { StudioEngineError } from "../../contract/errors";
-import { Register } from "../../engine/bind";
+import { registerForSnapshot } from "../../engine/bind";
 import { measureLayout, rasterizeSvg } from "../../engine/browser";
 import { figureGrid } from "../../engine/chart/core/guards";
 import { buildDiagramSvg } from "../../engine/diagram/build";
@@ -452,7 +452,7 @@ async function renderHtmlArtifact(
   const ctx: RenderContext = {
     snapshot,
     tpl,
-    register: new Register(snapshot.register ?? {}),
+    register: registerForSnapshot(snapshot),
     fixedDate: snapshot.doc.meta.issueDate,
     figures: figures.store,
     log: job.log.renderLog,

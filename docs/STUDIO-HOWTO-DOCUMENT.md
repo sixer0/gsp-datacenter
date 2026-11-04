@@ -16,9 +16,9 @@ Yang TIDAK perlu kamu pikirkan:
 ## 2. Tulis pertama: satu `studio_write`
 
 - `template: "latest"`.
-- `meta` kunci-nilai dari metadata bahan: `title`, `subtitle`, `number`, `classification`, `author`, `reviewer`, `approver`, `date`, `revision` (teks lengkap, mis. "Rev 0, terbitan pertama"), `language`.
+- `meta` kunci-nilai dari metadata bahan: `title`, `subtitle`, `number`, `classification`, `author`, `reviewer`, `approver`, `date`, `revision` (kode revisi, mis. "A"), `revisionNote` (catatan revisi, mis. "Terbit pertama"), `language`.
 - `sections`: satu bagian per bab atau bagian depan, urut sesuai bahan: `{ "heading": "...", "blocks": [...] }`.
-  - Judul bab dan subbab ditulis PERSIS seperti di bahan, termasuk nomornya (mis. "Chapter 1. Introduction", "1.1 Background"); mesin mencetaknya apa adanya. Bagian depan bernomor sumber (mis. "FM.1 ...") juga ditulis persis.
+  - Judul bab dan subbab ditulis PERSIS seperti di bahan, termasuk nomornya (mis. "Bab 1. Pendahuluan", "1.1 Latar Belakang"); mesin mencetaknya apa adanya. Bagian depan bernomor sumber (mis. "FM.1 ...") juga ditulis persis.
   - Subbab di dalam bab: blok `{ "subheading": "1.1 ..." }`.
   - Paragraf: string. Salin kalimat, angka, dan rujukan apa adanya.
   - Tabel tanpa keterangan: larik baris (baris pertama = kepala).
@@ -27,15 +27,30 @@ Yang TIDAK perlu kamu pikirkan:
 
 ```json
 {"mission":"<misi>","docKey":"<kunci>","template":"latest",
- "meta":{"title":"<judul>","number":"<nomor dokumen>","revision":"Rev 0, terbitan pertama","date":"<tanggal>"},
+ "meta":{"title":"<judul>","number":"<nomor dokumen>","classification":"TERBATAS","author":"Tim Kajian","revision":"A","revisionNote":"Terbit pertama","date":"<tanggal>"},
  "sections":[
-  {"heading":"Chapter 1. Introduction","blocks":[{"subheading":"1.1 Background"},"<paragraf>"]},
-  {"heading":"Chapter 6. Security Design","blocks":["<paragraf>",
-    {"table":[["ID","Threat"],["SEC-01","<...>"]],"caption":"Threat register"},
-    {"chart":{"stacked":true,"categories":["High","Low"],"series":[{"name":"Critical","values":[1,0]}],"caption":"<...>","source":"<...>"}}]}]}
+  {"heading":"Bab 1. Pendahuluan","blocks":[{"subheading":"1.1 Latar Belakang"},"<paragraf>"]},
+  {"heading":"Bab 6. Desain Keamanan","blocks":["<paragraf>",
+    {"table":[["ID","Ancaman"],["SEC-01","<...>"]],"caption":"Register ancaman","source":"Register ancaman proyek"},
+    {"chart":{"stacked":true,"categories":["Tinggi","Rendah"],"series":[{"name":"Kritis","values":[1,0]}],"caption":"<...>","source":"<...>"}}]}]}
 ```
 
 Lalu `studio_file_verify` dengan `downloadDir` untuk mengunduh DOCX final yang sha-nya terverifikasi.
+
+Slug templat per jenis dokumen dan bahasa. `template: "latest"` = `datum-gsp`. Kode jenis, tier bawaan, bahasa, dan kicker sampul mengikuti slug.
+
+| Jenis dokumen | Bahasa | Slug | Kode | Tier bawaan | Kicker sampul |
+|---|---|---|---|---|---|
+| Proposal teknis | ID | `datum-proposal-teknis` | PT | SERAH | PROPOSAL TEKNIS |
+| Proposal teknis | EN | `datum-proposal-teknis-en` | PT | SERAH | TECHNICAL PROPOSAL |
+| Laporan | ID | `datum-laporan` | LAP | TERBIT | LAPORAN |
+| Laporan | EN | `datum-laporan-en` | LAP | TERBIT | REPORT |
+| Laporan verifikasi dan uji | ID | `datum-laporan-verifikasi` | VER | TERBIT | LAPORAN VERIFIKASI |
+| Laporan verifikasi dan uji | EN | `datum-laporan-verifikasi-en` | VER | TERBIT | VERIFICATION REPORT |
+| Standar | ID | `datum-standar` | STD | TERBIT | STANDAR |
+| Standar | EN | `datum-standar-en` | STD | TERBIT | STANDARD |
+| Nota internal | ID | `datum-nota` | NOT | NOTA | NOTA INTERNAL |
+| Nota internal | EN | `datum-nota-en` | NOT | NOTA | INTERNAL NOTE |
 
 ## 3. Revisi: satu `studio_edit`
 
@@ -46,7 +61,7 @@ Kirim `documentId` dan semua perubahan revisi dalam satu `edits`:
 3. Paragraf baru di akhir bab: `{"section":"<judul bab>","append":["<paragraf>"]}`.
 4. Sel tabel: `{"cell":{"section":"<judul bab>","row":"<isi sel pertama baris>","column":"<kepala kolom>"},"value":"..."}`.
 5. Data grafik: `{"figure":"<sebagian teks keterangan grafik>","chart":{"categories":[...],"series":[...]}}`; mesin merender ulang grafik.
-6. Revisi dokumen: `"meta":{"revision":"<teks revisi lengkap, mis. Rev 1, sesuai permintaan>"}` di panggilan yang sama. Riwayat revisi, footer, dan lembar kendali ikut otomatis.
+6. Revisi dokumen: `"meta":{"revision":"<kode revisi, mis. B>","revisionNote":"<catatan revisi, mis. Sesuai permintaan klien>"}` di panggilan yang sama. Riwayat revisi, footer, dan lembar kendali ikut otomatis.
 
 Suntingan diterapkan berurutan. Yang alamatnya tidak ketemu dikembalikan di `notApplied` (dengan kandidat), sisanya sudah tersimpan: kirim ulang HANYA yang di `notApplied`. Lalu `studio_file_verify` untuk DOCX revisi.
 

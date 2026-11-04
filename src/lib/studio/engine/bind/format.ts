@@ -10,10 +10,66 @@
  */
 import { BindDefect } from "./defect";
 
-export const DATUM_THOUSANDS_SEPARATOR = ".";
-export const DATUM_DECIMAL_SEPARATOR = ",";
-/** P6-39: satuan yang mendahului nilai. */
-export const DATUM_LEADING_UNITS: readonly string[] = ["Rp", "USD", "EUR", "SGD"];
+/** Bahasa yang memiliki entri konvensi angka (S07 ID, S16 EN). */
+export type NumberLanguage = "ID" | "EN";
+
+/** Konvensi angka satu bahasa: pemisah dan satuan yang mendahului nilai. */
+export interface NumberConvention {
+  readonly thousandsSeparator: string;
+  readonly decimalSeparator: string;
+  /** P6-39: satuan (mata uang) yang mendahului nilai; satuan lain menyusul. */
+  readonly leadingUnits: readonly string[];
+  /** Satuan rupiah tercetak (`Register.rp`): ID "Rp", EN "IDR" (EN 6.8). */
+  readonly currencyUnit: string;
+  /** Satuan register yang ditulis ulang saat dicetak, mis. EN: "Rp" -> "IDR". */
+  readonly unitAliases: Readonly<Record<string, string>>;
+}
+
+/**
+ * Tabel konvensi angka per bahasa (DATUM Rev A, research/33 D-01, register
+ * research/31 §5). Satu-satunya sumber pemisah angka di mesin; lint membangun
+ * polanya dari sini. Satu konvensi per berkas (ID:1998-2006, EN 6.8).
+ */
+export const NUMBER_CONVENTIONS: Readonly<Record<NumberLanguage, NumberConvention>> = Object.freeze({
+  ID: Object.freeze({
+    thousandsSeparator: ".",
+    decimalSeparator: ",",
+    leadingUnits: Object.freeze(["Rp", "USD", "EUR", "SGD"]),
+    currencyUnit: "Rp",
+    unitAliases: Object.freeze({}),
+  }),
+  EN: Object.freeze({
+    thousandsSeparator: ",",
+    decimalSeparator: ".",
+    leadingUnits: Object.freeze(["IDR", "USD", "EUR", "SGD"]),
+    currencyUnit: "IDR",
+    unitAliases: Object.freeze({ Rp: "IDR" }),
+  }),
+});
+
+export const DEFAULT_NUMBER_LANGUAGE: NumberLanguage = "ID";
+
+export function numberConvention(lang: NumberLanguage = DEFAULT_NUMBER_LANGUAGE): NumberConvention {
+  const conv = Object.prototype.hasOwnProperty.call(NUMBER_CONVENTIONS, lang) ? NUMBER_CONVENTIONS[lang] : undefined;
+  if (!conv) throw new BindDefect(`bahasa angka "${String(lang)}" tidak punya entri konvensi (ID, EN).`);
+  return conv;
+}
+
+/**
+ * Bahasa konvensi angka dari bahasa dokumen (`doc.meta.language`), resolusi
+ * yang sama dengan renderer (`language === "EN" ? "EN" : "ID"`).
+ */
+export function numberLanguageOf(language: unknown): NumberLanguage {
+  return language === "EN" ? "EN" : DEFAULT_NUMBER_LANGUAGE;
+}
+
+const ID = NUMBER_CONVENTIONS.ID;
+
+/** Alias entri ID (ekspor lama, diekspor ulang engine/bind/index.ts). */
+export const DATUM_THOUSANDS_SEPARATOR = ID.thousandsSeparator;
+export const DATUM_DECIMAL_SEPARATOR = ID.decimalSeparator;
+/** P6-39: satuan yang mendahului nilai (alias entri ID). */
+export const DATUM_LEADING_UNITS: readonly string[] = ID.leadingUnits;
 /** Batas jumlah desimal yang diterima fmt (Python tidak membatasi; ini penjaga masukan). */
 export const DATUM_MAX_DECIMALS = 20;
 
@@ -72,10 +128,10 @@ function roundScaledExact(v: number, digits: number): { negative: boolean; q: bi
   return { negative, q };
 }
 
-function groupThousands(intDigits: string): string {
+function groupThousands(intDigits: string, conv: NumberConvention): string {
   let out = "";
   for (let i = 0; i < intDigits.length; i++) {
-    if (i > 0 && (intDigits.length - i) % 3 === 0) out += DATUM_THOUSANDS_SEPARATOR;
+    if (i > 0 && (intDigits.length - i) % 3 === 0) out += conv.thousandsSeparator;
     out += intDigits[i];
   }
   return out;
@@ -87,8 +143,15 @@ function checkDec(dec: number): void {
   }
 }
 
-/** Ribuan "." dan desimal ",", tidak pernah terbalik (DATUM §10, DT-30). */
-export function fmt(v: number, dec = 0): string {
+/**
+ * Ribuan dan desimal menurut konvensi bahasa (bawaan ID: "." dan ","), tidak
+ * pernah terbalik (DATUM §10, DT-30).
+ */
+export function fmt(v: number, dec = 0, lang: NumberLanguage = DEFAULT_NUMBER_LANGUAGE): string {
+  return formatWith(v, dec, lang === DEFAULT_NUMBER_LANGUAGE ? ID : numberConvention(lang));
+}
+
+export function formatWith(v: number, dec: number, conv: NumberConvention): string {
   checkDec(dec);
   if (typeof v !== "number" || !Number.isFinite(v)) {
     throw new BindDefect(`nilai "${String(v)}" bukan bilangan hingga; tidak dapat diformat.`);
@@ -98,7 +161,7 @@ export function fmt(v: number, dec = 0): string {
   if (dec > 0 && digits.length <= dec) digits = "0".repeat(dec - digits.length + 1) + digits;
   const intPart = dec > 0 ? digits.slice(0, digits.length - dec) : digits;
   const fracPart = dec > 0 ? digits.slice(digits.length - dec) : "";
-  const body = groupThousands(intPart) + (dec > 0 ? DATUM_DECIMAL_SEPARATOR + fracPart : "");
+  const body = groupThousands(intPart, conv) + (dec > 0 ? conv.decimalSeparator + fracPart : "");
   return (negative ? "-" : "") + body;
 }
 
@@ -125,8 +188,53 @@ export function pyRound(x: number, n = 0): number {
   return negative ? -mag : mag;
 }
 
-/** Mata uang mendahului, satuan lain menyusul, selalu dipisah satu spasi (DATUM §10). */
-export function withUnit(s: string, unit?: string | null): string {
+/**
+ * Mata uang mendahului, satuan lain menyusul, selalu dipisah satu spasi
+ * (DATUM §10). Satuan beralias konvensi ditulis ulang (EN: "Rp" -> "IDR").
+ */
+export function withUnit(s: string, unit?: string | null, lang: NumberLanguage = DEFAULT_NUMBER_LANGUAGE): string {
+  return withUnitFor(s, unit, lang === DEFAULT_NUMBER_LANGUAGE ? ID : numberConvention(lang));
+}
+
+export function withUnitFor(s: string, unit: string | null | undefined, conv: NumberConvention): string {
   if (!unit) return s;
-  return DATUM_LEADING_UNITS.includes(unit) ? `${unit} ${s}` : `${s} ${unit}`;
+  const u = Object.prototype.hasOwnProperty.call(conv.unitAliases, unit) ? conv.unitAliases[unit] : unit;
+  return conv.leadingUnits.includes(u) ? `${u} ${s}` : `${s} ${u}`;
+}
+
+/**
+ * Semantik `Number.prototype.toFixed` (tanpa pengelompokan ribuan) dengan
+ * pemisah desimal konvensi. Khusus angka di pesan diagnosis lint; angka
+ * dokumen memakai `fmt` (half-even, paritas Python).
+ */
+export function fmtFixed(n: number, digits = 2, conv: NumberConvention = ID): string {
+  return n.toFixed(digits).replace(".", conv.decimalSeparator);
+}
+
+/** Escape teks untuk badan regex (di luar kelas karakter); satu helper untuk format dan audit (L3). */
+export function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Potongan sumber regex angka berpemisah untuk satu konvensi. */
+export interface NumberPatternSources {
+  /** Pemisah ribuan, sudah di-escape. */
+  readonly thousands: string;
+  /** Pemisah desimal, sudah di-escape. */
+  readonly decimal: string;
+  /** Angka berpemisah ribuan (minimal satu grup), desimal opsional. */
+  readonly grouped: string;
+  /** Digit tanpa pemisah ribuan, desimal opsional. */
+  readonly plain: string;
+}
+
+export function numberPatternSources(conv: NumberConvention = ID): NumberPatternSources {
+  const thousands = escapeRegExp(conv.thousandsSeparator);
+  const decimal = escapeRegExp(conv.decimalSeparator);
+  return {
+    thousands,
+    decimal,
+    grouped: `\\d{1,3}(?:${thousands}\\d{3})+(?:${decimal}\\d+)?`,
+    plain: `\\d+(?:${decimal}\\d+)?`,
+  };
 }

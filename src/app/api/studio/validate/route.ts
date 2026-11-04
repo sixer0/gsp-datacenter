@@ -70,7 +70,7 @@ import {
 import { getStudioCaller } from "@/lib/studio/contract/auth";
 import { StudioEngineError } from "@/lib/studio/contract/errors";
 import { requireSession } from "@/lib/require-session";
-import { Register } from "@/lib/studio/engine/bind";
+import { registerForSnapshot } from "@/lib/studio/engine/bind";
 import { assembleHtml } from "@/lib/studio/engine/html/assemble";
 import { ingestDocument, validateSchema, type IngestResultV2 } from "@/lib/studio/services/ingest";
 import { resolveTemplate } from "@/lib/studio/services/templates";
@@ -125,7 +125,7 @@ async function buildPreview(snapshot: NormDocSnapshot, ctx: ReqCtx, draftTpl?: R
   const rctx: RenderContext = {
     snapshot,
     tpl,
-    register: new Register(snapshot.register ?? {}),
+    register: registerForSnapshot(snapshot),
     fixedDate: doc.meta.issueDate,
     figures: { get: () => undefined },
     log: (e) => {

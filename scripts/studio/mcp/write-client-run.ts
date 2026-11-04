@@ -7,11 +7,13 @@
  * itu diubah pihak lain sesudahnya; kode konflik yang ada). Teks asal server hanya keluar lewat `tok` / blok galat.
  */
 import { studioRoutePath } from "../../../src/lib/studio/contract/env";
+import { CONTRACT_KIND_DEFS } from "../../../src/lib/studio/registry/contracts";
 import { safeFinalName, sameContent } from "../studio-report";
 import { checkOwnership, findMissionDoc, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError } from "./safety";
-import { bool, headWithRetry, http, isRecord, str, tok, untrustedFields, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
-import { buildClient, type ClientSection } from "./write-client";
+import { bool, headWithRetry, http, isRecord, query, str, tok, untrustedFields, type Args, type ToolContext, type ToolOutput, type ToolWarning } from "./tool-kit";
+import { buildClient, labelLangOf, type ClientSection } from "./write-client";
+import type { WrapperLang } from "../../../src/lib/studio/engine/front/texts";
 import { requireOwnParts } from "./write-parts";
 import { applyClientEdits, type ClientEditOp, type Scope } from "./write-client-edit";
 import { applyClientMeta } from "./write-meta";
@@ -21,18 +23,71 @@ import { wibDate } from "./write-content";
 type Rec = Record<string, unknown>;
 const arr = (v: unknown): Rec[] => (Array.isArray(v) ? v.filter(isRecord) : []);
 
-/** `latest` = templat klien DATUM terbaru (bukan preset, bukan terbatas, bukan kontrak, tidak diarsip). */
-export async function resolveTemplate(ctx: ToolContext, template: string): Promise<string> {
-  if (template !== "latest") return template;
-  const reply = await http(ctx, "GET", studioRoutePath("R01"), "GET /api/studio/templates");
-  const list = arr(isRecord(reply.body) ? reply.body.templates : null).filter(
-    (t) => typeof t.slug === "string" && t.slug.startsWith("datum-") && t.isPreset !== true && t.restricted !== true && (t.contractKind ?? null) === null && t.archived !== true,
-  );
-  list.sort((x, y) => String(y.updatedAt ?? "").localeCompare(String(x.updatedAt ?? "")) || Number(y.latestVersionNo ?? 0) - Number(x.latestVersionNo ?? 0));
-  const slug = list[0]?.slug;
-  if (typeof slug !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) throw new McpToolError("TEMPLATE_NOT_FOUND", "tidak ada templat klien DATUM yang dapat dipakai untuk template: \"latest\"; sebut slug templat");
-  return slug;
+/**
+ * S10 (D-590): templat klien bawaan untuk `template: "latest"`. Satu konstanta bernama: `latest` tidak lagi memilih
+ * templat menurut urutan `updatedAt`, jadi templat baru tidak pernah menggeser bawaan agen secara diam-diam.
+ */
+export const DEFAULT_CLIENT_TEMPLATE_SLUG = "datum-gsp";
+
+/** `latest` = `DEFAULT_CLIENT_TEMPLATE_SLUG`; slug lain apa adanya (keberadaannya diperiksa server lewat R02). */
+export function resolveTemplate(template: string): string {
+  return template === "latest" ? DEFAULT_CLIENT_TEMPLATE_SLUG : template;
 }
+
+/** Slug templat jenis kontrak (registri C58): ditulis lewat jalur laporan kerja, bukan sebagai dokumen klien. */
+const CONTRACT_TEMPLATE_SLUGS: ReadonlySet<string> = new Set(CONTRACT_KIND_DEFS.map((d) => d.templateSlug));
+
+/** Kerangka slot + tier bawaan satu versi templat; `slots` null = kerangka tidak diketahui. */
+export interface TemplateShape {
+  slots: Array<{ slotKey: string; tiers: string[] }> | null;
+  defaultTier: string;
+  /** S12 (F-1): bahasa dokumen templat (`doc.language` terresolusi); null = tidak disebut (R19 tanpa parameter). */
+  language?: WrapperLang | null;
+}
+
+/** Tier bawaan bila templat tidak menyebutnya: sama dengan cadangan server (`compose/merge.ts` `doc.defaultTier`). */
+const SERVER_FALLBACK_TIER = "TERBIT";
+
+/** D-1 (D-597): kerangka slot (R02 `definition.skeleton`, templat v1 lewat R19) + tier bawaan (`doc.defaultTier`). */
+async function templateShape(ctx: ToolContext, slug: string, version: number | null): Promise<TemplateShape> {
+  const q = query([["version", version]]);
+  const reply = await http(ctx, "GET", `${studioRoutePath("R02", { id: slug })}${q}`, "GET /api/studio/templates/{id}");
+  const b = isRecord(reply.body) ? reply.body : {};
+  const v = isRecord(b.version) ? b.version : {};
+  const p = isRecord(v.resolvedParams) ? v.resolvedParams : {};
+  let skeleton = isRecord(b.definition) && isRecord(b.definition.skeleton) ? b.definition.skeleton : null;
+  if (skeleton === null) {
+    const r19 = await http(ctx, "GET", `${studioRoutePath("R19", { id: slug })}${q}`, "GET /api/studio/templates/{id}/skeleton");
+    skeleton = isRecord(r19.body) && isRecord(r19.body.skeleton) ? r19.body.skeleton : null;
+  }
+  const slots = skeleton !== null && Array.isArray(skeleton.slots)
+    ? arr(skeleton.slots).filter((s) => typeof s.slotKey === "string").map((s) => ({ slotKey: s.slotKey as string, tiers: Array.isArray(s.tiers) ? s.tiers.filter((t): t is string => typeof t === "string") : [] }))
+    : null;
+  const tier = p["doc.defaultTier"];
+  const language = p["doc.language"];
+  return { slots, defaultTier: typeof tier === "string" && tier !== "" ? tier : SERVER_FALLBACK_TIER, language: typeof language === "string" && language !== "" ? labelLangOf(language) : null };
+}
+
+/**
+ * D-1 (D-597): slot depan yang dikirim = slot yang ada di kerangka templat dan aktif untuk tier efektif (tier kosong =
+ * semua tier; aturan sama dengan `isSlotActive` server). Kerangka tidak diketahui = semua dikirim (perilaku lama).
+ */
+export function frontSlotsForTier<T>(slots: Readonly<Record<string, T>>, shape: TemplateShape, tier: string): { send: Record<string, T>; omitted: string[] } {
+  if (shape.slots === null) return { send: { ...slots }, omitted: [] };
+  const send: Record<string, T> = {};
+  const omitted: string[] = [];
+  for (const [key, payload] of Object.entries(slots)) {
+    const def = shape.slots.find((s) => s.slotKey === key);
+    if (def !== undefined && (def.tiers.length === 0 || def.tiers.includes(tier))) send[key] = payload;
+    else omitted.push(key);
+  }
+  return { send, omitted };
+}
+
+const omittedWarning = (omitted: readonly string[], slug: string, tier: string): ToolWarning => ({
+  code: "FRONT_SLOTS_OMITTED",
+  message: `slot ${omitted.map((k) => tok(k)).join(", ")} tidak dipakai templat ${tok(slug)} untuk tier ${tok(tier)}; isinya dari meta tidak dikirim`,
+});
 
 export interface Sent {
   rev: number | null;
@@ -70,7 +125,7 @@ async function requireOwnLastWrite(ctx: ToolContext, doc: ExistingDoc, me: strin
  * Dry-run R08 setiap slot dan bab (tidak disimpan). Bagian yang tidak sah (mis. gerbang DATUM by-construction) ->
  * CONTENT_INVALID dengan isu server di blok rincian; 0 tulis.
  */
-async function preflight(ctx: ToolContext, built: ReturnType<typeof buildClient>, agentId: string | null, where: Rec): Promise<void> {
+async function preflight(ctx: ToolContext, built: Pick<ReturnType<typeof buildClient>, "chapters"> & { slots: Readonly<Record<string, Rec>> }, agentId: string | null, where: Rec): Promise<void> {
   const parts: Array<[string, Rec]> = [
     ...Object.entries(built.slots).map(([slot, payload]) => [`slot ${slot}`, { $schema: "studio.slot/v2", ...agentPart(agentId), ...where, slot, payload }] as [string, Rec]),
     ...built.chapters.map((chapter) => [`bab ${String(chapter.key)}`, { $schema: "studio.chapter/v2", ...agentPart(agentId), ...where, chapter }] as [string, Rec]),
@@ -201,9 +256,10 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   const mission = str(a, "mission") as string;
   const docKey = str(a, "docKey") as string;
   const template = str(a, "template") as string;
-  if (template === "laporan-kerja-agen") throw new McpToolError("INVALID_ARGUMENT", "laporan kerja ditulis tanpa template (studio_write { mission, docKey, sections }); template hanya untuk dokumen klien");
+  if (CONTRACT_TEMPLATE_SLUGS.has(template)) throw new McpToolError("INVALID_ARGUMENT", "laporan kerja ditulis tanpa template (studio_write { mission, docKey, sections }); template hanya untuk dokumen klien");
   // Semua bentuk disusun dan diperiksa SEBELUM jaringan (META_MISSING, SECTION_MISSING, grafik tak sah = 0 panggilan).
-  const built = buildClient({ meta: isRecord(a.meta) ? (a.meta as Record<string, string>) : {}, title: str(a, "title"), sections: a.sections as ClientSection[], today: wibDate(ctx.now()) });
+  const input = { meta: isRecord(a.meta) ? (a.meta as Record<string, string>) : {}, title: str(a, "title"), sections: a.sections as ClientSection[], today: wibDate(ctx.now()) };
+  let built = buildClient(input);
   const warnings = [...built.warnings];
   const me = requesterOf(agentId);
   const existing = await findMissionDoc(ctx, mission, docKey);
@@ -219,6 +275,16 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   const skipped: string[] = [];
   let server: Rec = {};
   const partRev = new Map<string, number | null>();
+  // D-1: slot depan yang benar-benar dikirim (kerangka templat x tier efektif); diisi di cabang buat/tulis ulang.
+  let slots: Record<string, Rec> = { ...built.slots };
+  const docMetaTier = typeof built.docMeta.tier === "string" ? built.docMeta.tier : null;
+  // S12 (F-1): tanpa meta.language agen, label slot depan dan judul bab cadangan mengikuti bahasa dokumen (templat atau
+  // dokumen yang ada). Disusun ulang dengan masukan yang sama (murni; peringatan sudah dicatat dari susunan pertama).
+  const relabel = (lang: WrapperLang | null | undefined) => {
+    if (built.meta.language !== undefined || lang == null || lang === built.language) return;
+    built = buildClient({ ...input, language: lang });
+    slots = { ...built.slots };
+  };
   const note = (r: Sent, label?: string) => {
     if (!r.unchanged) sentParts++;
     rebased ||= r.rebased;
@@ -229,9 +295,16 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
     }
   };
   if (existing === null) {
-    const slug = await resolveTemplate(ctx, template);
+    const slug = resolveTemplate(template);
+    // D-1: tier efektif dokumen baru = meta.tier bila dikirim, selain itu tier bawaan templat (sama dengan server).
+    const shape = await templateShape(ctx, slug, null);
+    relabel(shape.language);
+    const tier = docMetaTier ?? shape.defaultTier;
+    const front = frontSlotsForTier(built.slots, shape, tier);
+    slots = front.send;
+    if (front.omitted.length > 0) warnings.push(omittedWarning(front.omitted, slug, tier));
     // Semua bagian diuji R08 (dry-run, tidak disimpan) SEBELUM dokumen dibuat: tidak ada dokumen setengah jadi.
-    await preflight(ctx, built, agentId, { target: { mission: { folder: mission }, docKey }, template: { slug }, meta: built.docMeta });
+    await preflight(ctx, { ...built, slots }, agentId, { target: { mission: { folder: mission }, docKey }, template: { slug }, meta: built.docMeta });
     const reply = await http(ctx, "POST", studioRoutePath("R04"), "POST /api/studio/documents", {
       json: { $schema: "studio.doc/v2", ...agentPart(agentId), template: { slug }, mission: { folder: mission }, docKey, meta: built.docMeta },
     });
@@ -268,18 +341,39 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
     const sections = isRecord(content.sections) ? content.sections : {};
     server = sections;
     if (isRecord(sections.record)) throw new McpToolError("INVALID_ARGUMENT", "mission + docKey ini adalah laporan kerja; tulis tanpa template. Tidak ada yang dikirim");
-    await preflight(ctx, built, agentId, { target: { documentId: id }, baseRevisionNo: base });
+    // D-1: kerangka = versi templat dokumen ini (R20 `template`); tier efektif = tier dokumen di server (cadangan tier
+    // bawaan templat). Tanpa rujukan templat di R20: semua slot depan (perilaku lama).
+    const tpl = isRecord(content.template) ? content.template : {};
+    const srvMeta = isRecord(content.meta) ? content.meta : {};
+    // S12 (F-1): bahasa dokumen yang ada = meta.language di server (bahasa templat saat dibuat), cadangan bahasa templat.
+    const srvLang = typeof srvMeta.language === "string" && srvMeta.language !== "" ? labelLangOf(srvMeta.language) : null;
+    relabel(srvLang);
+    let srvTier: string | null = typeof srvMeta.tier === "string" && srvMeta.tier !== "" ? srvMeta.tier : null;
+    if (typeof tpl.slug === "string") {
+      const shape = await templateShape(ctx, tpl.slug, typeof tpl.version === "number" ? tpl.version : null);
+      if (srvLang === null) relabel(shape.language);
+      srvTier ??= shape.defaultTier;
+      const front = frontSlotsForTier(built.slots, shape, srvTier);
+      slots = front.send;
+      if (front.omitted.length > 0) warnings.push(omittedWarning(front.omitted, tpl.slug, srvTier));
+    }
+    // M2 (D-610, D-600 (2)): tier dokumen yang ada tidak diubah lewat tulis ulang (aturan sama dengan studio_edit):
+    // tier baru dapat meninggalkan slot depan tersimpan yang dilarang tier itu. meta.tier hanya berlaku untuk dokumen baru.
+    if (docMetaTier !== null && docMetaTier !== srvTier) {
+      warnings.push({ code: "META_IGNORED", message: `meta.tier ${tok(docMetaTier)} hanya diterapkan saat dokumen dibuat; tier dokumen yang ada${srvTier !== null ? ` (${tok(srvTier)})` : ""} tidak diubah dan menentukan slot depan` });
+    }
+    await preflight(ctx, { ...built, slots }, agentId, { target: { documentId: id }, baseRevisionNo: base });
     // W3-L4 / S2-2: bagian yang akan ditulis ulang (isi berbeda dari server) harus terakhir ditulis pemanggil; tulisan
     // pihak lain yang LEBIH LAMA dari tulisan terakhir pemanggil tidak tertimpa (PART_CHANGED_BY_OTHER, 0 tulis).
     const srvChapters = arr(isRecord(sections.content) ? sections.content.chapters : null);
     const toWrite = [
-      ...Object.entries(built.slots).filter(([slot, payload]) => !sameContent(sections[slot], payload)).map(([slot]) => `slot ${slot}`),
+      ...Object.entries(slots).filter(([slot, payload]) => !sameContent(sections[slot], payload)).map(([slot]) => `slot ${slot}`),
       ...built.chapters.filter((c) => !sameContent(srvChapters.find((x) => String(x.key) === String(c.key)), c)).map((c) => `bab ${String(c.key)}`),
     ];
     const onServer = (p: string) => (p.startsWith("slot ") ? sections[p.slice(5)] !== undefined && sections[p.slice(5)] !== null : srvChapters.some((x) => `bab ${String(x.key)}` === p));
     await requireOwnParts(ctx, id, toWrite, me, onServer);
     const cur = isRecord(content.meta) ? content.meta : {};
-    const diff = Object.fromEntries(Object.entries(built.docMeta).filter(([k, v]) => cur[k] !== v));
+    const diff = Object.fromEntries(Object.entries(built.docMeta).filter(([k, v]) => k !== "tier" && cur[k] !== v));
     if (Object.keys(diff).length > 0) {
       note(await send(ctx, "PATCH", studioRoutePath("R14", { id }), "PATCH /api/studio/documents/{id}/structure", { op: "setMeta", baseRevisionNo: base, ...change, ...agentPart(agentId), meta: diff }), "meta");
     }
@@ -289,10 +383,10 @@ export async function writeClient(a: Args, ctx: ToolContext, agentId: string | n
   // N-1 (siklus 2): bagian yang isinya sudah sama di server dilewati (ulang studio_write sesudah galat di tengah =
   // idempoten, menyelesaikan sisanya); galat di tengah membawa `progress` (bagian tersimpan, revisi terakhir).
   const serverChapters = arr(isRecord(server.content) ? server.content.chapters : null);
-  const planned = [...Object.keys(built.slots).map((k) => `slot ${k}`), ...built.chapters.map((c) => `bab ${String(c.key)}`)];
+  const planned = [...Object.keys(slots).map((k) => `slot ${k}`), ...built.chapters.map((c) => `bab ${String(c.key)}`)];
   const progressOf = () => ({ documentId: id, created, written: [...written], skipped: [...skipped], notWritten: planned.filter((p) => !written.includes(p) && !skipped.includes(p)), revisionNo: lastRev });
   try {
-  for (const [slot, payload] of Object.entries(built.slots)) {
+  for (const [slot, payload] of Object.entries(slots)) {
     if (!created && sameContent(server[slot], payload)) {
       skipped.push(`slot ${slot}`);
       continue;

@@ -16,6 +16,7 @@ import type {
   TableBlock,
 } from "../../../contract";
 import { PROVENANCE_MARKS } from "../../../contract/enums";
+import { fmtFixed, numberConvention, numberPatternSources } from "../../bind/format";
 import { derivedColorTokens, tintHex } from "../../tokens";
 import { findings, notRun, pBool, pRaw, type CheckOutcome, type Finding, type StructCtx } from "./context";
 import { hexesIn, scanProps, type PropScan } from "./props";
@@ -237,8 +238,15 @@ function a08(ctx: StructCtx): CheckOutcome {
   return findings(f, "tidak ada baris kepala berwarna");
 }
 
-/** HS datum_lint.py `is_pure_number`: sel berisi satu angka (boleh disusul penanda pendek). */
-const PURE_NUMBER = /^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?\s*\S{0,8}$/u;
+/**
+ * HS datum_lint.py `is_pure_number`: sel berisi satu angka (boleh disusul
+ * penanda pendek). Pemisah dari entri ID tabel konvensi (engine/bind/format.ts).
+ */
+const ID_NUMBER_PATTERN = numberPatternSources(numberConvention("ID"));
+const PURE_NUMBER = new RegExp(
+  `^-?\\d{1,3}(?:${ID_NUMBER_PATTERN.thousands}\\d{3})*(?:${ID_NUMBER_PATTERN.decimal}\\d+)?\\s*\\S{0,8}$`,
+  "u",
+);
 
 export function isPureNumberCell(text: string): boolean {
   const s = text.trim();
@@ -461,7 +469,7 @@ function a21(ctx: StructCtx): CheckOutcome {
   }
   const f: Finding[] = [...byOwner.values()].map((s) => ({
     pointer: s.pointer,
-    detail: `${s.thin} garis lebih tipis dari 0,18 mm (terkecil sz ${s.minSz} = ${eighthsToMm(s.minSz).toFixed(3).replace(".", ",")} mm) (DT-11)`,
+    detail: `${s.thin} garis lebih tipis dari 0,18 mm (terkecil sz ${s.minSz} = ${fmtFixed(eighthsToMm(s.minSz), 3)} mm) (DT-11)`,
   }));
   const paper = normHex(ctx.params["color.interior.paper"]) ?? "FFFFFF";
   const ink = normHex(ctx.params["color.interior.ink900"]) ?? "000000";
@@ -482,7 +490,7 @@ function a21(ctx: StructCtx): CheckOutcome {
     else tintOwners.set(key, { hex: fill.hex, pct, pointer: fill.pointer, n: 1 });
   }
   for (const s of tintOwners.values()) {
-    f.push({ pointer: s.pointer, detail: `isian ${s.hex} = rona ${s.pct.toFixed(1).replace(".", ",")} % (< 15 %), ${s.n} kali (DT-11, lantai fotokopi)` });
+    f.push({ pointer: s.pointer, detail: `isian ${s.hex} = rona ${fmtFixed(s.pct, 1)} % (< 15 %), ${s.n} kali (DT-11, lantai fotokopi)` });
   }
   return findings(f, `${props.borders.length} garis dan ${props.fills.length} isian memenuhi lantai 0,18 mm / rona 15 %`);
 }

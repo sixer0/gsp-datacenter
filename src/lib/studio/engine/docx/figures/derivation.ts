@@ -31,7 +31,8 @@ import type {
 import { BindDefect, buildDerivationBlock, isVerbatimReproduction, type DerivationBuild, type DerivationRow } from "../../bind";
 import { mmToTw } from "../../tokens";
 import { facesInXml, simpleTableXml } from "../package/xml";
-import { DERIVATION_TITLE_SEPARATOR, FIGURE_LABELS, defaultGlyphRun, figureRole, markGlyph, mergePara, mergeRun, tokenColor } from "./defaults";
+import { DERIVATION_TITLE_SEPARATOR, FIGURE_LABELS, defaultGlyphRun, figureLabels, figureRole, markGlyph, mergePara, mergeRun, tokenColor } from "./defaults";
+import { verdictTagText, wrapperLangOf } from "../../front/texts";
 import { FIGURES_MODULE, failRender } from "./log";
 import { inlineRunsXml, paragraphXml, textRun } from "./ooxml";
 
@@ -97,8 +98,9 @@ function build(block: NormBlock, d: DerivationBlock, ctx: RenderContext): Deriva
   }
 }
 
-function labelText(b: DerivationBuild): string {
-  const head = `${FIGURE_LABELS.derivationPrefix} ${b.id}`;
+/** Label tampilan "Turunan D-4.1 · Judul" (kata depan berbahasa dokumen, S13/F-2; id = alamat, tetap). */
+function labelText(b: DerivationBuild, ctx: RenderContext): string {
+  const head = `${figureLabels(wrapperLangOf(ctx.snapshot?.doc?.meta)).derivationPrefix} ${b.id}`;
   return b.title ? head + DERIVATION_TITLE_SEPARATOR + b.title : head;
 }
 
@@ -128,7 +130,7 @@ function glyphXml(mark: ProvenanceMark | undefined, ctx: RenderContext, r: Roles
 function verdictTagXml(row: DerivationRow, base: RunProps, ctx: RenderContext): string {
   if (row.kind !== "verdict" || !row.tag) return "";
   const color = tokenColor(ctx.tpl, row.pass ? "verd" : "alert");
-  return textRun(`   ${row.tag}`, mergeRun(base, { b: true, color }), ctx.tpl.params);
+  return textRun(`   ${verdictTagText(row.tag, wrapperLangOf(ctx.snapshot?.doc?.meta))}`, mergeRun(base, { b: true, color }), ctx.tpl.params);
 }
 
 // ── nestedTable ──────────────────────────────────────────────────────────
@@ -160,7 +162,7 @@ function nestedTableXml(b: DerivationBuild, d: DerivationBlock, ctx: RenderConte
     ]);
 
   const intro = b.rows.find((row) => row.kind === "text");
-  let cellXml = paragraphXml(mergePara(r.label.para, d.format), textRun(labelText(b), r.label.run ?? {}, p));
+  let cellXml = paragraphXml(mergePara(r.label.para, d.format), textRun(labelText(b, ctx), r.label.run ?? {}, p));
   if (intro) cellXml += paragraphXml(mergePara(r.intro.para, { spacingBeforeTw: 0, spacingAfterTw: 40 }), textRun(intro.label, r.intro.run ?? {}, p));
   if (rows.length > 0) cellXml += simpleTableXml([labelTw, valueTw], rows) + "<w:p/>";
   cellXml += paragraphXml(r.intro.para, textRun(b.note, mergeRun(r.intro.run, d.runDefaults), p));
@@ -193,7 +195,7 @@ function monoLinesXml(b: DerivationBuild, d: DerivationBlock, ctx: RenderContext
   const keep: ParaFormat = { keepNext: true, keepLines: true };
   const exprRun = mergeRun(r.expr.run, d.runDefaults);
 
-  let xml = paragraphXml(mergePara(r.label.para, d.format, rule, keep, { spacingBeforeTw: CELL_MARGIN_TW.top }), textRun(labelText(b), r.label.run ?? {}, p));
+  let xml = paragraphXml(mergePara(r.label.para, d.format, rule, keep, { spacingBeforeTw: CELL_MARGIN_TW.top }), textRun(labelText(b, ctx), r.label.run ?? {}, p));
   for (const row of b.rows) {
     if (row.kind === "text") {
       xml += paragraphXml(mergePara(r.intro.para, rule, keep, { spacingBeforeTw: 0, spacingAfterTw: 40 }), textRun(row.label, r.intro.run ?? {}, p));

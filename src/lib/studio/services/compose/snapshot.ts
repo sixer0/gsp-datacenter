@@ -424,7 +424,7 @@ export function composeV2(input: ComposeInput): ComposeResult {
       }
       case "controlSheet": {
         if (payload === undefined && slot.contentMode === "INPUT") return placeholder();
-        const fp = controlSheetFront(payload as ControlSheetPayloadV2 | undefined, slot, { glyphs, params: paramsOf(k), classification });
+        const fp = controlSheetFront(payload as ControlSheetPayloadV2 | undefined, slot, { glyphs, params: paramsOf(k), classification }, src.meta.language);
         docV1.front = { ...docV1.front, controlSheet: fp };
         addUnit("controlSheet", fKey, slot);
         const pid = structPid(k, fKey);

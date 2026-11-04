@@ -1,0 +1,19 @@
+{
+  "schema": "datum-point-coverage/v1",
+  "source": "docs/2026-10-22_doc_artifact_studio/verification/22_datum_point_coverage.md (S33, revision 2 after G-FIX 1: LB-08 EN N->C, LB-07 EN T/S P->C, GF-17 P->C, GF-08 C->P)",
+  "generatedAt": "2026-11-04",
+  "convention": "coverage = (covered + 0.5 x partial) / applicable; not applicable and out of scope leave the denominator; threshold 85.0 % per pair (U2, D-593)",
+  "outOfScope": ["GF-16", "TR-06", "NC-08", "CL-04", "GF-18", "LB-13"],
+  "pairs": [
+    { "template": "datum-proposal-teknis", "language": "ID", "covered": 11.5, "applicable": 29, "counts": { "covered": 2, "partial": 19, "notCovered": 8 } },
+    { "template": "datum-proposal-teknis-en", "language": "EN", "covered": 13.5, "applicable": 29, "counts": { "covered": 5, "partial": 17, "notCovered": 7 } },
+    { "template": "datum-laporan", "language": "ID", "covered": 11, "applicable": 28, "counts": { "covered": 2, "partial": 18, "notCovered": 8 } },
+    { "template": "datum-laporan-en", "language": "EN", "covered": 13, "applicable": 28, "counts": { "covered": 5, "partial": 16, "notCovered": 7 } },
+    { "template": "datum-laporan-verifikasi", "language": "ID", "covered": 11, "applicable": 28, "counts": { "covered": 2, "partial": 18, "notCovered": 8 } },
+    { "template": "datum-laporan-verifikasi-en", "language": "EN", "covered": 13, "applicable": 28, "counts": { "covered": 5, "partial": 16, "notCovered": 7 } },
+    { "template": "datum-standar", "language": "ID", "covered": 11.5, "applicable": 29, "counts": { "covered": 2, "partial": 19, "notCovered": 8 } },
+    { "template": "datum-standar-en", "language": "EN", "covered": 13.5, "applicable": 29, "counts": { "covered": 5, "partial": 17, "notCovered": 7 } },
+    { "template": "datum-nota", "language": "ID", "covered": 6.5, "applicable": 16, "counts": { "covered": 2, "partial": 9, "notCovered": 5 } },
+    { "template": "datum-nota-en", "language": "EN", "covered": 7.5, "applicable": 16, "counts": { "covered": 3, "partial": 9, "notCovered": 4 } }
+  ]
+}

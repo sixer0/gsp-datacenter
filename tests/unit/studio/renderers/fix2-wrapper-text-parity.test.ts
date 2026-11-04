@@ -40,7 +40,7 @@ describe('engine/front/texts: tabel teks bawaan pembungkus', () => {
     expect(controlSheetBlockHeading(3, 'distribution', 'ID')).toBe('D · Distribusi terkendali');
     expect(controlSheetBlockHeading(1, 'method', 'EN')).toBe('B · Method statement');
     expect(chapterLabelText('3', false, 'ID')).toBe('Bab 3');
-    expect(chapterLabelText('B', true, 'EN')).toBe('Appendix B');
+    expect(chapterLabelText('B', true, 'EN')).toBe('Annex B'); // G-FIX1 LB-08 (D-606): EN:223-247, EN:4326
     expect(appendixOpenerKickerText('A', 'ID')).toBe('Lampiran A');
     expect(defaultPartLabelText('P2', 'ID')).toBe('Bagian II');
     expect(defaultPartLabelText('P1', 'EN')).toBe('Part I');
@@ -65,7 +65,7 @@ describe('engine/front/texts: tabel teks bawaan pembungkus', () => {
     expect(chapterKickerText(undefined, undefined, '2', false, 'EN')).toBe('CHAPTER 2');
     expect(chapterKickerText('BAB {n}', undefined, '2', false, 'EN')).toBe('CHAPTER 2');
     expect(chapterKickerText('Bab {n}', undefined, '2', false, 'EN')).toBe('Bab 2');
-    expect(chapterKickerText('BAB {n}', undefined, 'A', true, 'EN')).toBe('Appendix A');
+    expect(chapterKickerText('BAB {n}', undefined, 'A', true, 'EN')).toBe('Annex A'); // G-FIX1 LB-08 (D-606)
     expect(chapterKickerText('BAB {n}', 'Annex {n}', 'A', true, 'EN')).toBe('Annex A');
   });
 
@@ -73,7 +73,7 @@ describe('engine/front/texts: tabel teks bawaan pembungkus', () => {
     expect(appendixOpenerKickerText('B', 'ID', 'ANEKS {n}')).toBe('ANEKS B');
     expect(appendixOpenerKickerText('B', 'EN', 'Annex {n}')).toBe('Annex B');
     expect(appendixOpenerKickerText('B', 'ID', null)).toBe('Lampiran B');
-    expect(appendixOpenerKickerText('B', 'EN', 'tanpa pola')).toBe('Appendix B');
+    expect(appendixOpenerKickerText('B', 'EN', 'tanpa pola')).toBe('Annex B');
   });
 
   it('O-3: blok kendali dan kolofon sampul auto', () => {
@@ -83,7 +83,7 @@ describe('engine/front/texts: tabel teks bawaan pembungkus', () => {
       ['Penyusun', 'Tim', 'Tier', 'TERBIT'],
       ['Bahasa', 'Indonesia', '', ''],
     ]);
-    expect(controlBlockRowsText({ ...meta, language: 'EN' }, { 'cover.controlBlock.fields': ['REVISI', 'BAHASA'] }, 'EN')).toEqual([['Revision', 'A · 8 October 2026', 'Language', 'English']]);
+    expect(controlBlockRowsText({ ...meta, language: 'EN' }, { 'cover.controlBlock.fields': ['REVISI', 'BAHASA'] }, 'EN')).toEqual([['Revision', 'A · 8 October 2026', 'Language', 'English (UK)']]); // G-FIX1 LB-07 (D-606): EN:18, EN:883
     expect(controlBlockRowsText(meta, { 'cover.controlBlock.fields': ['KUSTODIAN'] }, 'ID')).toBeUndefined();
     expect(colophonTexts(meta, { 'org.nib': '123' })).toEqual({ left: 'PT GEMILANG SATRIA PERKASA · NIB 123', right: '// 20261008 ID T -- TERBITAN 1' });
     expect(colophonTexts(meta, { 'cover.colophon.fields': ['entitas'], 'org.entityName': 'X' })).toEqual({ left: 'X', right: '' });
@@ -261,9 +261,9 @@ describe('paritas teks bawaan pembungkus DOCX = HTML (F-055)', () => {
     expect(html.toc.kicker).toBe('Contents');
     // Label bagian fixture = konten ("Bagian I"); label bab/lampiran = teks bawaan EN.
     // FIX-T2 (D-342 S2): TOC turunan bawaan memuat section (kedalaman 2).
-    expect(html.toc.labels).toEqual(['Bagian I', 'Chapter 1', '1.1', '1.2', 'Chapter 2', '2.1', 'Bagian II', 'Chapter 3', '3.1', 'Appendix A', 'A.1']);
+    expect(html.toc.labels).toEqual(['Bagian I', 'Chapter 1', '1.1', '1.2', 'Chapter 2', '2.1', 'Bagian II', 'Chapter 3', '3.1', 'Annex A', 'A.1']);
     // O-1: kicker bab EN = "CHAPTER {n}" di kedua format.
-    expect(html.kickers).toEqual(['CHAPTER 1', 'CHAPTER 2', 'CHAPTER 3', 'Appendix A']);
+    expect(html.kickers).toEqual(['CHAPTER 1', 'CHAPTER 2', 'CHAPTER 3', 'Annex A']);
   }, 120_000);
 
   it('O-1/O-2: pola templat (bab "Bab {n}" pada EN, lampiran "Annex {n}") sama di kedua format', async () => {

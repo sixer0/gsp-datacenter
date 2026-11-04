@@ -103,7 +103,7 @@ function blockText(node: unknown): string {
   return out.filter((s) => s.length > 0).join("\n");
 }
 
-function isHeadingParagraph(b: Record<string, unknown>): boolean {
+export function isHeadingParagraph(b: Record<string, unknown>): boolean {
   if (b.type !== "paragraph") return false;
   if (typeof b.role === "string" && HEADING_ROLES.has(b.role)) return true;
   const f = b.format;

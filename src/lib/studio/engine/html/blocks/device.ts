@@ -6,7 +6,7 @@
 import type { DeviceBlock, NormBlock, RenderContext, RoleKey } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { docAssetBytes } from "../../bind";
-import { spineTextOf } from "../../front/texts";
+import { classificationMarkText, sealBandTextsOf, spineTextOf, wrapperLangOf } from "../../front/texts";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
 import { el, isObj, paramBool, paramNum, reportBad } from "./common";
 import { attr, finite, num } from "./escape";
@@ -139,12 +139,28 @@ export function datumRuleHtml(ctx: RenderContext, role: RoleKey, widthMm: number
   return el(ctx, "div", { classes: [C.device], role, format, attrs: [["role", "presentation"]] }, datumRuleSvg(ctx, widthMm));
 }
 
-/** Pita segel: kiri = klasifikasi, kanan = kendali salinan (P4S-18/19) bila tidak diisi. */
+/**
+ * Teks bawaan pita segel HTML. ID: kiri = klasifikasi, kanan = kendali salinan (P4S-18/19), perilaku
+ * pratinjau sejak sebelum ronde ini (research/33 B-07/R-5; HTML ID byte-sama). Bahasa lain (S15):
+ * teks bawaan berbahasa dari tabel teks yang sama dengan DOCX (`sealBandTextsOf`: EN bila param =
+ * bawaan registri, pasangan templat menang, copyControl menang di kanan).
+ */
+function sealBandDefaults(ctx: RenderContext): { left?: { text: string }; right?: { text: string } } {
+  const meta = ctx.snapshot?.doc?.meta;
+  const lang = wrapperLangOf(meta);
+  if (meta && lang !== "ID") {
+    const [lt, rt] = sealBandTextsOf(meta, ctx.tpl?.params ?? {}, lang);
+    return { left: lt ? { text: lt } : undefined, right: rt ? { text: rt } : undefined };
+  }
+  return { left: meta?.classification ? { text: classificationMarkText(meta.classification) } : undefined, right: meta?.copyControl ? { text: meta.copyControl } : undefined };
+}
+
+/** Pita segel: kiri/kanan dari blok bila diisi, selain itu teks bawaan (`sealBandDefaults`). */
 export function sealBandHtml(ctx: RenderContext, d: Partial<DeviceBlock>): string {
   if (!paramBool(ctx, "device.sealBand.enabled", true)) return "";
-  const meta = ctx.snapshot?.doc?.meta;
-  const left = d.left ?? (meta?.classification ? { text: meta.classification } : undefined);
-  const right = d.right ?? (meta?.copyControl ? { text: meta.copyControl } : undefined);
+  const defaults = d.left === undefined || d.right === undefined ? sealBandDefaults(ctx) : {};
+  const left = d.left ?? defaults.left;
+  const right = d.right ?? defaults.right;
   const hMm = finite(d.heightMm, 0, 100) ?? finite(paramNum(ctx, "device.sealBand.heightMm", 5), 0, 100) ?? 5;
   return el(
     ctx,

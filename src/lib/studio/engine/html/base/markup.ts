@@ -14,6 +14,7 @@
  *   galai dengan salinan perabot `.st-screen` yang disisipkan `htmlShell`.
  */
 import type { DocMeta, ResolvedTemplate } from "../../../contract";
+import { classificationMarkText, registerWordsText } from "../../front/texts";
 import { classificationCode, list, P, registerDate, str } from "./params";
 
 /**
@@ -83,7 +84,7 @@ export function runningHeadText(
       left.push(f.trim());
     }
   }
-  const cls = classificationLabel(meta);
+  const cls = classificationMarkText(classificationLabel(meta));
   const pos = str(p, "runningHead.classification.position") ?? "right";
   const base: RunningHeadText = {
     left: (pos === "left" ? [cls, ...left] : left).join(" · "),
@@ -125,8 +126,6 @@ const REGISTER_CELLS_FALLBACK: readonly string[] = ["GSP · {nomor}", "REV · {t
 const REGISTER_ORG_CELL_LEGACY = "GSP · {nomor}";
 /** Cadangan P4S-12: spasi tak-putus U+00A0 (BM footer5.xml). */
 const REGISTER_SEPARATOR_FALLBACK = "\u00A0";
-/** Kata label Indonesia yang dilokalkan untuk dokumen EN (paritas DOCX "SHEET n OF N"). */
-const REGISTER_WORDS_EN: Readonly<Record<string, string>> = { LEMBAR: "SHEET", DARI: "OF" };
 
 /**
  * Sel blok register dari `device.registerBlock.cells` (P4S-11), medan tebal
@@ -142,8 +141,9 @@ export function registerCellParts(tpl: ResolvedTemplate, language?: DocMeta["lan
   const raw = list(p, P.registerCells).filter((c): c is string => typeof c === "string" && c.length > 0);
   const cells = (raw.length > 0 ? raw : REGISTER_CELLS_FALLBACK).map((c) => (c === REGISTER_ORG_CELL_LEGACY ? "{org} · {nomor}" : c));
   const sep = str(p, P.registerSeparator) ?? REGISTER_SEPARATOR_FALLBACK;
-  const en = language === "EN";
-  const literal = (t: string): string => (en ? t.replace(/\b[A-Z]+\b/g, (w) => REGISTER_WORDS_EN[w] ?? w) : t).replace(/ /g, sep);
+  // Kata label LEMBAR/DARI: tabel bersama DOCX/HTML `front/texts.ts` (S06 B-11).
+  const lang = language === "EN" ? "EN" : "ID";
+  const literal = (t: string): string => registerWordsText(t, lang).replace(/ /g, sep);
   const bold = new Set(
     list(p, P.registerBold)
       .filter((b): b is string => typeof b === "string")
@@ -177,7 +177,7 @@ export function registerFieldValue(meta: DocMeta, field: "org" | "nomor" | "rev"
     case "tanggal":
       return registerDate(meta.issueDate);
     case "kelas":
-      return classificationLabel(meta).toUpperCase();
+      return classificationMarkText(classificationLabel(meta));
   }
 }
 

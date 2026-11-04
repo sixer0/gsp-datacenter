@@ -8,7 +8,8 @@
 //   node tests/integration/studio/uji-run.mjs whoami           (cetak current_database())
 //   node tests/integration/studio/uji-run.mjs reset            (DROP+CREATE DB uji, migrate deploy, salin templat lama v21)
 //   node tests/integration/studio/uji-run.mjs suite            (reset lalu vitest tests/integration/studio)
-//   node tests/integration/studio/uji-run.mjs fresh-seed       (N2/D-267: DB uji segar, seed dari registri kini + preset/kerangka x2)
+//   node tests/integration/studio/uji-run.mjs fresh-seed       (N2/D-267: DB uji segar, seed dari registri kini + preset/kerangka x2,
+//                                                              lalu S28 --doc-type-templates x2: 10 created, lalu semua unchanged)
 //   node tests/integration/studio/uji-run.mjs -- <perintah...>  (mis. -- npx prisma migrate deploy)
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
@@ -97,7 +98,35 @@ async function reset() {
   return runChild('node', ['tests/integration/studio/v21-legacy-templates.mjs']);
 }
 
+/** Pesan log laporan `--doc-type-templates` (`prisma/seed-doc-type-templates.ts` `docTypeTemplateTxOptions`). */
+const DOC_TYPE_REPORT = 'Templat jenis dokumen DATUM Rev A';
+
+/**
+ * S28: hasil satu jalan `--doc-type-templates` dari baris log JSON seed: penjaga ok dan setiap templat sasaran
+ * ber-`outcome` yang diharapkan (`created` di DB segar, `unchanged` pada jalan ulang) dengan `storedOk`.
+ * Mengembalikan pesan galat, atau null bila sesuai.
+ */
+export function checkDocTypeRun(stdout, expected) {
+  const rows = stdout.split(/\r?\n/).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+  const r = rows.find((x) => x && x.message === DOC_TYPE_REPORT);
+  if (!r) return `log "${DOC_TYPE_REPORT}" tidak ditemukan`;
+  const ctx = r.context ?? {};
+  if (ctx.guard?.ok !== true) return `penjaga tidak ok: ${JSON.stringify({ changed: ctx.guard?.changedTemplates, added: ctx.guard?.addedTemplates, touched: ctx.guard?.sectionTypesTouched })}`;
+  const templates = Array.isArray(ctx.templates) ? ctx.templates : [];
+  if (templates.length === 0) return 'laporan tanpa templat';
+  const bad = templates.filter((t) => t.outcome !== expected || t.storedOk !== true).map((t) => `${t.slug}:${t.outcome}${t.storedOk === true ? '' : ' storedOk=false'}`);
+  if (bad.length > 0) return `diharapkan ${expected} + storedOk untuk ${templates.length} templat; menyimpang: ${bad.join(', ')}`;
+  return null;
+}
+
 // N2 (D-267): seed DB SEGAR dari registri kini (tanpa salinan v21): dasar + preset/kerangka + Manual 000, lalu ulang.
+// S28: lalu --doc-type-templates dua kali (jalan 1 = created, jalan 2 = unchanged; keduanya diperiksa dari log seed).
 async function freshSeed() {
   await dropDb();
   await ensureDb();
@@ -113,6 +142,16 @@ async function freshSeed() {
     console.log(`### exit=${code}`);
     if (code !== 0) return code;
   }
+  for (const expected of ['created', 'unchanged']) {
+    console.log(`### seed-studio --doc-type-templates (harapan: ${expected})`);
+    const out = [];
+    code = await runChild('npx', ['tsx', 'prisma/seed-studio.ts', '--doc-type-templates'], (text) => out.push(text));
+    console.log(`### exit=${code}`);
+    if (code !== 0) return code;
+    const problem = checkDocTypeRun(out.join(''), expected);
+    console.log(`### doc-type-templates ${expected}: ${problem ?? 'OK'}`);
+    if (problem) return 1;
+  }
   return 0;
 }
 
@@ -126,7 +165,8 @@ async function whoami() {
   }
 }
 
-function runChild(cmd, args) {
+/** `onStdout` (opsional) menerima keluaran anak yang SUDAH disaring (tanpa URL/kata sandi). */
+function runChild(cmd, args, onStdout) {
   const u = ujiUrl();
   const red = redactor(u);
   const env = {
@@ -139,7 +179,11 @@ function runChild(cmd, args) {
   };
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd: REPO_ROOT, env, shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.on('data', (d) => process.stdout.write(red(d.toString())));
+    child.stdout.on('data', (d) => {
+      const text = red(d.toString());
+      process.stdout.write(text);
+      if (onStdout) onStdout(text);
+    });
     child.stderr.on('data', (d) => process.stderr.write(red(d.toString())));
     child.on('close', (code) => resolve(code ?? 1));
   });

@@ -113,7 +113,8 @@ const P3: ParamDef[] = [
   // R01 (F-023): "list" + enum = multi-pilih (himpunan kode sah); sebelumnya "enum".
   p3("P3-20", "doc.typeCode", "Kode jenis dokumen", "list", ["KT", "PT", "RAB", "SPH", "SP", "BA", "DS", "STD"], "K", "6.3, E-21", "L1142-1145",
     {
-      enum: ["KT", "PT", "RAB", "SPH", "SP", "BA", "DS", "DEK", "LAP", "MAT", "STD", "NOT", "MOD", "VER"],
+      // S11 (D-590): NDA = kode jenis Manual DATUM Rev A Tabel 3.1; hanya enum, bawaan tidak berubah (paramsSha256 tetap).
+      enum: ["KT", "PT", "RAB", "SPH", "SP", "BA", "DS", "DEK", "LAP", "MAT", "STD", "NOT", "MOD", "VER", "NDA"],
       conflictRef: "K-15",
       classNote:
         "daftar tertutup; default = himpunan DATUM + STD (D-63: nomor benchmark 000/GSP/STD/X/2026); ARSIP menambah DEK, LAP, MAT, STD, NOT, MOD, VER tanpa DS",

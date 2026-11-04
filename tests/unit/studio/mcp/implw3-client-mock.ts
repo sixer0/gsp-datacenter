@@ -19,6 +19,17 @@ const TEMPLATES = [
   { slug: 'datum-gsp', isPreset: false, restricted: false, contractKind: null, updatedAt: '2026-10-30T03:09:22Z', latestVersionNo: 3 },
 ];
 
+const FRONT_TIERS = ['TERBIT', 'SERAH'];
+const SKELETON = [
+  { slotKey: 'cover', sectionType: 'cover', tiers: FRONT_TIERS },
+  { slotKey: 'controlSheet', sectionType: 'controlSheet', tiers: FRONT_TIERS },
+  { slotKey: 'signature', sectionType: 'signatureBlock', tiers: FRONT_TIERS },
+  { slotKey: 'toc', sectionType: 'toc', tiers: FRONT_TIERS },
+  { slotKey: 'content', sectionType: 'chapter', tiers: [] },
+  { slotKey: 'references', sectionType: 'sourceRegister', tiers: [] },
+  { slotKey: 'appendices', sectionType: 'appendix', tiers: [] },
+];
+
 export function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: string; validate?: (b: any) => unknown } = {}) {
   const validate = o.validate ?? (() => ({ valid: true, issues: [] }));
   let rev = 0;
@@ -65,6 +76,8 @@ export function clientServer(o: { exists?: boolean; createdBy?: string; lastWrit
     const sub = (created = false) => ok({ document: { id: DOCID, docNumber: '018/GSP/KT/XI/2026' }, created, unchanged: false, rebased: false, revision: { revisionNo: rev } }, created ? 201 : 200);
     if (init.method === 'GET' && p === '/api/studio/documents') return ok({ documents: content ? [{ id: DOCID, docNumber: '018/GSP/KT/XI/2026', createdBy: o.createdBy ?? `agent:${AGENT}`, currentRevisionNo: rev }] : [] });
     if (init.method === 'GET' && p === '/api/studio/templates') return ok({ templates: TEMPLATES });
+    // D-1 (D-597): R02 kerangka templat + tier bawaan (slot depan bertier TERBIT/SERAH, bawaan TERBIT).
+    if (init.method === 'GET' && p.startsWith('/api/studio/templates/')) return ok({ template: { slug: decodeURIComponent(p.split('/').pop() ?? '') }, version: { versionNo: 3, resolvedParams: { 'doc.defaultTier': 'TERBIT' } }, definition: { skeleton: { slots: SKELETON } } });
     if (init.method === 'POST' && p === '/api/studio/validate') return ok(validate(body));
     if (init.method === 'POST' && p === '/api/studio/documents') {
       rev = 1;

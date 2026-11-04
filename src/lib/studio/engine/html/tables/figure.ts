@@ -32,6 +32,7 @@ import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../fron
 import { classDerivedWidth, rasterPlacedWidthMm } from "../../tokens/raster-width";
 import { symbolSheetSvg, type SymbolSheetOptions } from "../../symbols";
 import { artifactLabel, captionHtml, keyRowHtml, sourceParagraphHtml } from "./apparatus";
+import { artifactLabelText, wrapperLangOf } from "../../front/texts";
 import { attr, escText, safeIdent } from "./escape";
 import { inlinePlain } from "./inline";
 import { base64DataUri, rasterDataUri, sanitizeSvg, toBase64 } from "./svg";
@@ -153,7 +154,7 @@ function resolveGraphic(block: NormBlock, fb: FigureBlock, ctx: RenderContext, l
     `color:${ink}`,
     "font-size:7pt",
   );
-  return { html: `<div class="st-figure-missing" style="${escText(style)}">${escText(`${labels(ctx).figureMissing}: ${label || fb.type}`)}</div>`, source: "missing" };
+  return { html: `<div class="st-figure-missing" style="${escText(style)}">${escText(`${labels(ctx).figureMissing}: ${artifactLabelText(label, wrapperLangOf(ctx.snapshot?.doc?.meta)) || fb.type}`)}</div>`, source: "missing" };
 }
 
 /**

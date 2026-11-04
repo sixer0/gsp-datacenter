@@ -40,12 +40,14 @@ import {
   FIGURE_LABELS,
   FIGURE_LABEL_SPACING,
   defaultGlyphRun,
+  figureLabels,
   figureRole,
   markGlyph,
   mergePara,
   mergeRun,
 } from "./defaults";
 import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../front/alt-text";
+import { apparatusLabelRunText, artifactLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
 import { failRender, warnRender } from "./log";
 import { type FigureImage, type FigureMediaEntry, addMedia, figureImageFromBytes, figureMediaRelId, resolveRasterAsset } from "./media";
 import { DOCPR_ID_BASE, drawingParagraphXml, inlineRunsXml, paragraphXml, textRun } from "./ooxml";
@@ -149,10 +151,16 @@ function checkOneSentence(text: string, block: NormBlock, ctx: RenderContext): v
   }
 }
 
+/** Bahasa label aparatus = bahasa dokumen (S13/F-2). */
+function langOf(ctx: RenderContext): WrapperLang {
+  return wrapperLangOf(ctx.snapshot?.doc?.meta);
+}
+
 export function captionXml(block: NormBlock, cap: Caption, ctx: RenderContext, runDefaults?: RunProps): string {
   const p = ctx.tpl.params;
   const role = figureRole(ctx.tpl, "caption");
-  const label = captionLabel(block, cap, ctx);
+  // D-3: tampilan label berbahasa dokumen; alamat/penomoran tetap ("Gambar n.m").
+  const label = artifactLabelText(captionLabel(block, cap, ctx), langOf(ctx));
   const sep = cap.separator ?? paramStr(p, "render.caption.separator") ?? DEFAULT_CAPTION_SEPARATOR;
   checkOneSentence(inlinePlain(cap.inline), block, ctx);
   const runs =
@@ -161,17 +169,28 @@ export function captionXml(block: NormBlock, cap: Caption, ctx: RenderContext, r
   return paragraphXml(mergePara(role.para, cap.format), runs);
 }
 
+/**
+ * Label yang dikenali di teks penulis: label ID; dokumen berbahasa lain juga label bahasanya
+ * (S13/F-2). Dokumen ID hanya mengenali label ID (perilaku sebelum S13).
+ */
+function knownLabels(pick: (l: typeof FIGURE_LABELS) => string, lang: WrapperLang): string[] {
+  return lang === "ID" ? [pick(FIGURE_LABELS)] : [pick(FIGURE_LABELS), pick(figureLabels(lang))];
+}
+
 /** Buang label awal yang sudah ditulis penulis ("KUNCI ...", "SUMBER ..."). */
-function stripLeadingLabel(text: string, label: string): string {
-  const re = new RegExp(`^\\s*${label}\\b[\\s:]*`);
+function stripLeadingLabel(text: string, labels: readonly string[]): string {
+  const re = new RegExp(`^\\s*(?:${labels.join("|")})\\b[\\s:]*`);
   return text.replace(re, "");
 }
 
 /** Run label aparatus figur di bentuk `runs`: teks hanya "KUNCI", "SUMBER" atau "PROVENANS" (+ spasi/titik dua). */
-const LABEL_RUN_RE = new RegExp(`^\\s*(?:${FIGURE_LABELS.key}|${FIGURE_LABELS.source}|${FIGURE_LABELS.provenance})\\s*:?\\s*$`);
+function labelRunRe(lang: WrapperLang): RegExp {
+  const words = [...knownLabels((l) => l.key, lang), ...knownLabels((l) => l.source, lang), ...knownLabels((l) => l.provenance, lang)];
+  return new RegExp(`^\\s*(?:${words.join("|")})\\s*:?\\s*$`);
+}
 
-function isLabelRun(r: Run): boolean {
-  return "t" in r && LABEL_RUN_RE.test(r.t);
+function isLabelRun(r: Run, re: RegExp): boolean {
+  return "t" in r && re.test(r.t);
 }
 
 /**
@@ -181,10 +200,11 @@ function isLabelRun(r: Run): boolean {
  * tetap menang (dokumen verbatim membawa format lengkap, keluaran tidak
  * berubah); face XOR faceRole lewat `mergeRun`.
  */
-function apparatusRunsXml(i: Inline, base: RunProps, label: RunProps, p: ParamMap): string {
+function apparatusRunsXml(i: Inline, base: RunProps, label: RunProps, p: ParamMap, lang: WrapperLang): string {
   if (!("runs" in i)) return inlineRunsXml(i, base, p);
+  const re = labelRunRe(lang);
   return (i.runs as readonly Run[])
-    .map((r) => (isLabelRun(r) ? textRun((r as { t: string }).t, mergeRun(label, runOwnProps(r)), p) : hfRunXml(r, base, p)))
+    .map((r) => (isLabelRun(r, re) ? textRun(apparatusLabelRunText((r as { t: string }).t, lang), mergeRun(label, runOwnProps(r)), p) : hfRunXml(r, base, p)))
     .join("");
 }
 
@@ -196,9 +216,10 @@ export function keyRowXml(keyRow: FigureCommon["keyRow"], ctx: RenderContext, ru
   // C1 (D-44): bentuk `runs` lengkap, label "KUNCI  " disediakan penulis (sama dengan
   // baris SUMBER berbentuk runs) dan memakai `labelRun` peran (RQ-3); label hanya
   // ditambahkan untuk `text`.
-  if (!("text" in keyRow)) return paragraphXml(role.para, apparatusRunsXml(keyRow, base, mergeRun(role.labelRun), p));
-  const labelXml = textRun(FIGURE_LABELS.key + FIGURE_LABEL_SPACING.keyAfter, mergeRun(role.labelRun), p);
-  return paragraphXml(role.para, labelXml + textRun(stripLeadingLabel(inlinePlain(keyRow), FIGURE_LABELS.key), base, p));
+  const lang = langOf(ctx);
+  if (!("text" in keyRow)) return paragraphXml(role.para, apparatusRunsXml(keyRow, base, mergeRun(role.labelRun), p, lang));
+  const labelXml = textRun(figureLabels(lang).key + FIGURE_LABEL_SPACING.keyAfter, mergeRun(role.labelRun), p);
+  return paragraphXml(role.para, labelXml + textRun(stripLeadingLabel(inlinePlain(keyRow), knownLabels((l) => l.key, lang)), base, p));
 }
 
 function provenanceMarksXml(marks: readonly ProvenanceMark[], ctx: RenderContext, base: RunProps): string {
@@ -224,26 +245,30 @@ export function sourceLineXml(src: SourceLine, ctx: RenderContext, address: stri
   const label = mergeRun(role.labelRun);
   const base = mergeRun(role.run, runDefaults);
   const para = mergePara(role.para, src.format);
+  const lang = langOf(ctx);
+  const L = figureLabels(lang);
+  const provenanceWords = knownLabels((l) => l.provenance, lang);
   if ("runs" in src.inline) {
-    let xml = apparatusRunsXml(src.inline, base, label, p);
-    if (src.provenance?.length && !inlinePlain(src.inline).includes(FIGURE_LABELS.provenance)) {
-      xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + FIGURE_LABELS.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
+    let xml = apparatusRunsXml(src.inline, base, label, p, lang);
+    const plain = inlinePlain(src.inline);
+    if (src.provenance?.length && !provenanceWords.some((w) => plain.includes(w))) {
+      xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + L.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
       xml += provenanceMarksXml(src.provenance, ctx, base);
     }
     return paragraphXml(para, xml);
   }
-  const text = stripLeadingLabel(inlinePlain(src.inline), FIGURE_LABELS.source);
+  const text = stripLeadingLabel(inlinePlain(src.inline), knownLabels((l) => l.source, lang));
   if (text.trim().length === 0) {
     failRender(ctx, "BY_CONSTRUCTION_FAILED", "Baris SUMBER figur kosong (DT-15, lint 29)", address);
   }
-  const segments = text.split(new RegExp(`\\s*\\b${FIGURE_LABELS.provenance}\\b\\s*`));
-  let xml = textRun(FIGURE_LABELS.source + FIGURE_LABEL_SPACING.sourceAfter, label, p) + textRun(segments[0], base, p);
+  const segments = text.split(new RegExp(`\\s*\\b(?:${provenanceWords.join("|")})\\b\\s*`));
+  let xml = textRun(L.source + FIGURE_LABEL_SPACING.sourceAfter, label, p) + textRun(segments[0], base, p);
   for (const seg of segments.slice(1)) {
-    xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + FIGURE_LABELS.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
+    xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + L.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
     xml += textRun(seg, base, p);
   }
   if (segments.length === 1 && src.provenance?.length) {
-    xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + FIGURE_LABELS.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
+    xml += textRun(FIGURE_LABEL_SPACING.provenanceBefore + L.provenance + FIGURE_LABEL_SPACING.provenanceAfter, label, p);
     xml += provenanceMarksXml(src.provenance, ctx, base);
   } else if (segments.length === 1 && p["source.provenanceField.required"] !== false) {
     warnRender(ctx, "P5-23", "Baris SUMBER figur tanpa medan PROVENANS", address);

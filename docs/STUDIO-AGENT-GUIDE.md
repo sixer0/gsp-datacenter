@@ -192,6 +192,16 @@ dan `restricted`.
 |---|---|---|
 | `datum-gsp` | dokumen GSP DATUM (laporan, kajian) | kerangka bawaan 7 slot (tabel di bawah) |
 | `datum-kanonik` | profil DATUM kanonik | |
+| `datum-proposal-teknis` | Proposal teknis (ID) | kode PT, tier bawaan SERAH, kicker sampul PROPOSAL TEKNIS |
+| `datum-proposal-teknis-en` | Technical proposal (EN) | kode PT, tier bawaan SERAH, kicker sampul TECHNICAL PROPOSAL |
+| `datum-laporan` | Laporan (ID) | kode LAP, tier bawaan TERBIT, kicker sampul LAPORAN |
+| `datum-laporan-en` | Report (EN) | kode LAP, tier bawaan TERBIT, kicker sampul REPORT |
+| `datum-laporan-verifikasi` | Laporan verifikasi dan uji (ID) | kode VER, tier bawaan TERBIT, kicker sampul LAPORAN VERIFIKASI |
+| `datum-laporan-verifikasi-en` | Verification and test report (EN) | kode VER, tier bawaan TERBIT, kicker sampul VERIFICATION REPORT |
+| `datum-standar` | Standar (ID) | kode STD, tier bawaan TERBIT, kicker sampul STANDAR |
+| `datum-standar-en` | Standard (EN) | kode STD, tier bawaan TERBIT, kicker sampul STANDARD |
+| `datum-nota` | Nota internal (ID) | kode NOT, tier bawaan NOTA, kicker sampul NOTA INTERNAL |
+| `datum-nota-en` | Internal note (EN) | kode NOT, tier bawaan NOTA, kicker sampul INTERNAL NOTE |
 | `datum-manual-000` | Manual 000 | TERBATAS: pemanggil selain ADMIN mendapat `403 FORBIDDEN` (`details.reason = "TEMPLATE_RESTRICTED"`) |
 
 Kerangka bawaan `datum-gsp` (urutan slot dokumen):

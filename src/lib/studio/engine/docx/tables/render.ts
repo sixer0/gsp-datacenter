@@ -59,6 +59,7 @@ import {
 import { gridMatrix } from "./guards";
 import { hasPlainText, symbolGlyphProps } from "../blocks/semantic";
 import { resolveTokenColor } from "../../tokens";
+import { APPARATUS_TEXT, apparatusLabelRunText, apparatusLabelWords, artifactLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
 import { mmToTw, mmWidthsToTw, solveWidthsImpl, twToMm } from "./widths";
 
 /** Python `_NUM_RE` datum_docx.py: kolom angka bila >= 70 % sel badan cocok. */
@@ -268,17 +269,27 @@ function symbolRuns(runs: Run[], params: ParamMap, role: RoleKey): Run[] {
   });
 }
 
-/** Teks label sumber yang dibawa run konten ("SUMBER  ", "   PROVENANS "). */
-const SOURCE_LABEL_RE = /^\s*(SUMBER|PROVENANS)\s*$/;
+/** Teks label sumber yang dibawa run konten ("SUMBER  ", "   PROVENANS "); kata dari tabel teks aparatus (L4). */
+const SOURCE_LABEL_RE = new RegExp(`^\\s*(${apparatusLabelWords(["source", "provenance"]).join("|")})\\s*$`);
 
 /**
  * Run label sumber dari dokumen (Inline.runs, C1) mendapat `labelRun` peran
  * (mis. spacingTw 12) di bawah properti run itu sendiri; run ber-`face`
  * eksplisit (dokumen verbatim) tidak disentuh.
  */
-function labelRuns(runs: Run[], label: RunProps | undefined): Run[] {
-  if (!label) return runs;
-  return runs.map((r) => ("t" in r && !r.face && SOURCE_LABEL_RE.test(r.t) ? ({ ...label, ...r } as Run) : r));
+function labelRuns(runs: Run[], label: RunProps | undefined, lang: WrapperLang): Run[] {
+  if (!label && lang === "ID") return runs;
+  return runs.map((r) => {
+    if (!("t" in r) || r.face || !SOURCE_LABEL_RE.test(r.t)) return r;
+    // S13/F-2: penanda label ID ("SUMBER  ") tampil berbahasa dokumen; dokumen ID byte-sama.
+    const shown = lang === "ID" ? r : ({ ...r, t: apparatusLabelRunText(r.t, lang) } as Run);
+    return label ? ({ ...label, ...shown } as Run) : shown;
+  });
+}
+
+/** Bahasa label aparatus tabel = bahasa dokumen (S13/F-2). */
+function langOf(env: Env): WrapperLang {
+  return wrapperLangOf(env.ctx?.snapshot?.doc?.meta);
 }
 
 interface CellParts {
@@ -376,17 +387,21 @@ function tcXml(env: Env, b: TableFamilyBlock, cell: Cell, cols: ColumnInfo[], gr
 function sourceRuns(env: Env, src: SourceLine, label: RunProps | undefined, main: RunProps, glyphRun: ReturnType<typeof roleFormat>["glyphRun"]): Run[] {
   // C1 (D-44): Inline.runs lengkap tanpa label/prefiks tambahan; hanya peran label
   // (labelRun) dan glif simbol (R-37) yang diikat ke templat.
-  if ("runs" in src.inline) return symbolRuns(labelRuns(src.inline.runs, label), env.tpl.params, "table.source");
+  const lang = langOf(env);
+  if ("runs" in src.inline) return symbolRuns(labelRuns(src.inline.runs, label, lang), env.tpl.params, "table.source");
   const plain = inlinePlain(src.inline).trimStart();
   const out: Run[] = [];
-  if (!/^SUMBER\b/.test(plain)) {
-    out.push({ t: "SUMBER", ...(label ?? {}) });
+  const word = (k: "source" | "provenance", l: WrapperLang) => APPARATUS_TEXT[k][l].toUpperCase();
+  const known = (k: "source" | "provenance") => (lang === "ID" ? word(k, "ID") : `(?:${word(k, "ID")}|${word(k, lang)})`);
+  if (!new RegExp(`^${known("source")}\\b`).test(plain)) {
+    out.push({ t: word("source", lang), ...(label ?? {}) });
     out.push({ t: " " });
   }
   out.push(...inlineRuns(src.inline));
   const marks = src.provenance ?? [];
-  if (marks.length > 0 && !/\bPROVENANS\b/.test(plain)) {
-    out.push({ t: plain.length > 0 && !/[.\s]$/.test(plain) ? ". PROVENANS " : " PROVENANS " });
+  if (marks.length > 0 && !new RegExp(`\\b${known("provenance")}\\b`).test(plain)) {
+    const pv = word("provenance", lang);
+    out.push({ t: plain.length > 0 && !/[.\s]$/.test(plain) ? `. ${pv} ` : ` ${pv} ` });
     marks.forEach((mk: ProvenanceMark, i) => {
       if (i > 0) out.push({ t: ", " });
       const g = markGlyphRun(env.tpl, mk, glyphRun);
@@ -437,7 +452,9 @@ function captionXml(env: Env, b: TableFamilyBlock, artifactLabel: string | undef
   if (cap.label && artifactLabel && cap.label !== artifactLabel) {
     warn(env, `caption.label "${cap.label}" berbeda dari hasil penomoran "${artifactLabel}"; penomoran dipakai`);
   }
-  const text = artifactLabel ?? cap.label ?? "Tabel";
+  // D-3: tampilan label berbahasa dokumen; alamat/penomoran tetap ("Tabel n.m").
+  const lang = langOf(env);
+  const text = artifactLabelText(artifactLabel ?? cap.label ?? APPARATUS_TEXT.table.ID, lang);
   const sep = cap.separator ?? pStr(env.tpl.params, "render.caption.separator") ?? " ";
   // K-29 pola run "RS19 RS20": pemisah ikut run label (berprops label); tab = w:tab berprops label.
   const runs: Run[] = [];

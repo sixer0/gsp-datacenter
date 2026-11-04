@@ -45,7 +45,7 @@ import type {
   StudioRenderJobStatus,
   StudioTier,
 } from "../../../contract";
-import { Register } from "../../../engine/bind";
+import { registerForSnapshot } from "../../../engine/bind";
 import { measureLayout } from "../../../engine/browser";
 import { assembleDocx } from "../../../engine/docx/assemble";
 import { figureStoreKeys, sheetKey } from "../../../engine/docx/figures";
@@ -348,7 +348,7 @@ async function runPure(
   const base: RenderContext = {
     snapshot,
     tpl,
-    register: new Register(snapshot.register ?? {}),
+    register: registerForSnapshot(snapshot),
     fixedDate,
     figures: figures?.store ?? { get: () => undefined },
     log: job.log.renderLog,

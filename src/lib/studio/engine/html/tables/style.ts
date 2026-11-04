@@ -20,6 +20,7 @@ import type {
   RunProps,
 } from "../../../contract";
 import { PROVENANCE_GLYPHS } from "../../../contract/enums";
+import { apparatusText, wrapperLangOf } from "../../front/texts";
 import { resolveRoleFormat, resolveTokenColor } from "../../tokens";
 import { cssString } from "./escape";
 
@@ -245,11 +246,10 @@ export interface ApparatusLabels {
   figureMissing: string;
 }
 
+/** Label aparatus berbahasa dokumen; satu sumber dengan DOCX (`APPARATUS_TEXT`, `engine/front/texts.ts`, S13/F-2). */
 export function labels(ctx: RenderContext): ApparatusLabels {
-  const en = ctx.snapshot?.doc?.meta?.language === "EN";
-  return en
-    ? { source: "Source", provenance: "Provenance", key: "Key", derivation: "Derivation", figureMissing: "Figure not available" }
-    : { source: "Sumber", provenance: "Provenans", key: "Kunci", derivation: "Turunan", figureMissing: "Gambar tidak tersedia" };
+  const t = apparatusText(wrapperLangOf(ctx.snapshot?.doc?.meta));
+  return { source: t.source, provenance: t.provenance, key: t.key, derivation: t.derivation, figureMissing: t.figureMissing };
 }
 
 // ── Tanda provenans ──────────────────────────────────────────────────────

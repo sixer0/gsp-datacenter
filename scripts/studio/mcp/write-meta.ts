@@ -10,12 +10,14 @@
  */
 import { McpToolError } from "./safety";
 import { isRecord, tok, type ToolWarning } from "./tool-kit";
-import { docMetaOf, frontSlots, labelsOf, metaFieldOf, normalizeMeta, NUMBER_DISPLAY_ONLY, shortRev, type ClientMeta, type MetaField } from "./write-client";
+import { docMetaOf, frontSlots, labelsOf, LEGACY_EN_LABELS, metaFieldOf, normalizeMeta, NUMBER_DISPLAY_ONLY, shortRev, type ClientMeta, type MetaField } from "./write-client";
 import type { Scope } from "./write-client-edit";
 
 type Rec = Record<string, unknown>;
 const plain = (v: unknown): string => (isRecord(v) ? (typeof v.text === "string" ? v.text : Array.isArray(v.runs) ? v.runs.map((r) => (isRecord(r) && typeof r.t === "string" ? r.t : "")).join("") : "") : "");
-const LABEL_SETS = [labelsOf({}), labelsOf({ language: "EN" })];
+// D-6 (S12): label EN lama (sebelum register S12: Author, Prepared, Checked, Approved) tetap dikenali saat membaca dan
+// menambal dokumen EN lama; entri baru memakai label register (`labelsOf`).
+const LABEL_SETS = [labelsOf({}), labelsOf({ language: "EN" }), LEGACY_EN_LABELS];
 
 /** Meta datar (nama kanonik) dari isi server: kebalikan `frontSlots` + `docMetaOf`. */
 export function serverClientMeta(content: Rec): Record<string, string> {
@@ -81,6 +83,11 @@ function wanted(given: Record<string, string>, warn: (w: ToolWarning) => void): 
   if (want.date !== undefined && !ISO_DATE.test(want.date)) {
     warn({ code: "DATE_IGNORED", message: "meta.date bukan YYYY-MM-DD; tanggal tidak diubah" });
     delete want.date;
+  }
+  if (want.tier !== undefined) {
+    // S12: tier menentukan slot depan yang sah (D-1); mengubahnya di sini dapat meninggalkan slot yang dilarang tier baru.
+    warn({ code: "META_IGNORED", message: "meta.tier hanya diterapkan saat dokumen dibuat (studio_write dokumen baru); tier dokumen yang ada tidak diubah" });
+    delete want.tier;
   }
   if (want.source !== undefined) {
     warn({ code: "META_IGNORED", message: "meta.source hanya dipakai tabel/gambar saat studio_write; tidak disimpan di slot depan" });

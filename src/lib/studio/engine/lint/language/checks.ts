@@ -12,6 +12,7 @@
 import type { LintIssue } from "../../../contract";
 import { PROVENANCE_GLYPHS, PROVENANCE_MARKS } from "../../../contract/enums";
 import type { ParamMap } from "../../../contract";
+import { fmtFixed, numberConvention } from "../../bind/format";
 import { numberParam, rangeParam, stringParam } from "./params";
 import type { Layers, TextUnit } from "./prose";
 import { countSemicolons, countSentenceCommas, countWords, opener, splitSentences, wholeWordRe } from "./tokenize";
@@ -46,8 +47,9 @@ const FORBIDDEN_SALUTATIONS: ReadonlyArray<{ label: string; re: RegExp }> = [
 const FORBIDDEN_READER_WORDS: readonly string[] = ["kamu"];
 const DIAG = "DIAGNOSIS; kanal tidak tercatat di meta, diterapkan ke seluruh prosa";
 
+/** Angka pesan lint: semantik toFixed (bukan half-even), desimal entri ID tabel konvensi. */
 export function fmt(n: number, digits = 2): string {
-  return n.toFixed(digits).replace(".", ",");
+  return fmtFixed(n, digits, numberConvention("ID"));
 }
 
 function where(u: { address?: string; blockId: string }): string {

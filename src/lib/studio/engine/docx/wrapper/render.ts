@@ -32,7 +32,7 @@ import type {
 } from "../../../contract";
 import { PROVENANCE_GLYPHS, TABLE_BLOCK_TYPES } from "../../../contract/enums";
 import { StudioEngineError } from "../../../contract/errors";
-import { issueStampTextOf, spineTextOf } from "../../front/texts";
+import { issueStampTextOf, sealBandTextsOf, spineTextOf } from "../../front/texts";
 import { docxBlocks } from "../blocks";
 import { docxFigures } from "../figures";
 import { resolveUnitSetup } from "../package/section";
@@ -318,12 +318,12 @@ export function frontTableXml(b: WrapperBuilder, t: TableBlock & { runDefaults?:
 
 // ── Perangkat halaman ────────────────────────────────────────────────────
 
-/** Teks pita segel bawaan: P4V-14 `wrapper.header` dengan {kelas}; kanan = copyControl. */
+/**
+ * Teks pita segel bawaan: P4V-14 `wrapper.header` dengan {kelas}; kanan = copyControl (satu sumber `front/texts.ts`).
+ * S15: bawaan berbahasa (EN bila bahasa EN dan param = bawaan registri).
+ */
 export function sealBandTexts(b: WrapperBuilder): [string, string] {
-  const meta = b.ctx.snapshot.doc.meta;
-  const pair = pStrList(b.params, "wrapper.header", ["KLASIFIKASI · {kelas}", "SALINAN INDUK · PENGGUNAAN INTERNAL GSP"]);
-  const fill = (s: string | undefined) => (s ?? "").replace(/\{kelas\}/g, meta.classification);
-  return [fill(pair[0]), meta.copyControl ?? fill(pair[1])];
+  return sealBandTextsOf(b.ctx.snapshot.doc.meta, b.params, b.lang);
 }
 
 function sealBandXml(b: WrapperBuilder, d: DeviceBlock): void {
@@ -347,10 +347,10 @@ function sealBandXml(b: WrapperBuilder, d: DeviceBlock): void {
   b.push(tableXml(grid, [{ cells: [left, right] }]));
 }
 
-/** Cap terbit P4S-26: `// {YYYYMMDD} {BAHASA} {KELAS} -- TERBITAN {n}`. */
+/** Cap terbit P4S-26 (`device.issueStamp.format`; S13: format bawaan berbahasa, EN "-- ISSUE {n}"). */
 export function issueStampText(b: WrapperBuilder): string {
   // FIX-2 (O-3): satu sumber bersama HTML (engine/front/texts).
-  return issueStampTextOf(b.ctx.snapshot.doc.meta, b.params);
+  return issueStampTextOf(b.ctx.snapshot.doc.meta, b.params, b.lang);
 }
 
 /** String punggung P4S-24: jenis, subjek, bahasa, revisi, bulan, tahun (FIX-F D-314: satu sumber bersama HTML, engine/front/texts). */

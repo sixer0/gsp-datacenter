@@ -13,9 +13,62 @@
  * peran (`caps` -> `w:caps` / `text-transform`), bukan teks sumber (D-46).
  */
 import type { DocMeta, ParamMap } from "../../contract";
+import { StudioEngineError } from "../../contract/errors";
+import { PARAMS_BY_KEY } from "../../params";
 import { dateParts, longDate, pNum, pStr, pStrList, ROMAN_MONTHS, roman } from "../docx/wrapper/formats";
 
 export type WrapperLang = "ID" | "EN";
+
+/**
+ * S06 (research/33 B-05/B-06): cadangan teks = bawaan registri parameter itu sendiri
+ * (`params/page.ts`), dibaca dari `PARAMS_BY_KEY` seperti `engine/symbols/primitives.ts`,
+ * bukan literal kedua yang bisa menyimpang. Registri tanpa bawaan berbentuk benar = galat
+ * pemrograman, gagal keras saat modul dimuat.
+ */
+function registryDefault<T>(key: string, ok: (v: unknown) => v is T, shape: string): T {
+  const v = PARAMS_BY_KEY.get(key)?.default;
+  if (!ok(v)) throw new StudioEngineError("SCHEMA_INVALID", `engine/front/texts: bawaan registri ${key} tidak ada atau bukan ${shape}`, { key, value: v });
+  return v;
+}
+
+const isString = (v: unknown): v is string => typeof v === "string";
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+
+/** Bawaan registri P4V-14 `wrapper.header` (pasangan kiri/kanan pita segel). */
+const SEAL_BAND_DEFAULT: readonly string[] = registryDefault("wrapper.header", isStringList, "daftar string");
+/** Bawaan registri P4V-14 `device.issueStamp.format`. */
+const ISSUE_STAMP_FORMAT_DEFAULT: string = registryDefault("device.issueStamp.format", isString, "string");
+
+/**
+ * S13 (register research/31 §4.4): pasangan pita segel dan format cap terbit bawaan per bahasa.
+ * Entri ID = bawaan registri (`params/page.ts`, tidak diubah karena masuk `paramsSha256`); entri EN
+ * dipakai hanya bila bahasa EN DAN nilai parameter = bawaan registri (pola kicker bab O-1).
+ */
+const SEAL_BAND_TEXT: Readonly<Record<WrapperLang, readonly string[]>> = {
+  ID: SEAL_BAND_DEFAULT,
+  EN: ["CLASSIFICATION · {kelas}", "MASTER COPY · GSP INTERNAL USE"],
+};
+const ISSUE_STAMP_FORMAT_TEXT: Readonly<Record<WrapperLang, string>> = {
+  ID: ISSUE_STAMP_FORMAT_DEFAULT,
+  EN: "// {YYYYMMDD} {BAHASA} {KELAS} -- ISSUE {n}",
+};
+
+/**
+ * G-FIX1 (D-606) butir (g): penandaan klasifikasi di setiap tempat pembungkus (kepala halaman, sel register,
+ * pita segel `{kelas}`, pasangan Klasifikasi blok kendali sampul; DOCX dan HTML) selalu kapital: spesimen manual
+ * kapital ("TERBATAS"), EG-50 menjaga penandaan Indonesia apa adanya (aturan CR-1, RB-02). SATU helper; nilai
+ * meta tersimpan dan validasinya tidak diubah. Masukan yang sudah kapital keluar byte-identik.
+ */
+export function classificationMarkText(classification: string): string {
+  return classification.toUpperCase();
+}
+
+/** Bahasa pembungkus dari meta (EN atau ID; nilai lain = ID, sama dengan `WrapperBuilder.lang`). */
+export function wrapperLangOf(meta: { readonly language?: DocMeta["language"] } | undefined): WrapperLang {
+  return meta?.language === "EN" ? "EN" : "ID";
+}
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** Tabel teks bawaan pembungkus per bahasa (dulu tabel `L` di `docx/wrapper/pages.ts`). */
 export const WRAPPER_TEXT = {
@@ -26,7 +79,8 @@ export const WRAPPER_TEXT = {
   distribution: { ID: "Distribusi terkendali", EN: "Controlled distribution" },
   tocKicker: { ID: "Daftar Isi", EN: "Contents" },
   chapter: { ID: "Bab", EN: "Chapter" },
-  appendix: { ID: "Lampiran", EN: "Appendix" },
+  // G-FIX1 (D-606) LB-08: kata lampiran EN = "Annex" (manual EN:223-247, EN:4326, EN:4441); ID tetap.
+  appendix: { ID: "Lampiran", EN: "Annex" },
   part: { ID: "Bagian", EN: "Part" },
   tocPlaceholder: { ID: "Perbarui medan untuk menyusun daftar isi.", EN: "Update fields to build the table of contents." },
 } as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
@@ -44,9 +98,38 @@ export function controlSheetBlockHeading(index: number, kind: ControlSheetBlockK
   return `${String.fromCharCode(65 + index)} · ${WRAPPER_TEXT[kind][lang]}`;
 }
 
+/** Blok lembar kendali bertabel (daftar bertipe compose v2). */
+export type ControlSheetTableKind = Exclude<ControlSheetBlockKind, "method">;
+
+/**
+ * S06 (research/33 B-01): kepala kolom daftar bertipe lembar kendali (dulu `REVISION_HEAD`,
+ * `VERIFICATION_HEAD`, `DISTRIBUTION_HEAD` di `services/compose/front.ts`). Entri ID wajib;
+ * bahasa tanpa entri memakai ID (perilaku compose sekarang).
+ */
+export const CONTROL_SHEET_COLUMNS = {
+  // S13: entri EN = register research/31 §4.2 (kosakata manual EN, bentuk data kode).
+  revision: { ID: ["Rev", "Tanggal", "Uraian", "Oleh"], EN: ["Rev", "Date", "Change", "Prepared by"] },
+  verification: { ID: ["Lapis", "Peran", "Nama", "Tanggal"], EN: ["Layer", "Role", "Name", "Date"] },
+  distribution: { ID: ["Salinan", "Pemegang"], EN: ["Copy", "Holder"] },
+} as const satisfies Readonly<Record<ControlSheetTableKind, Readonly<{ ID: readonly string[] } & Partial<Record<WrapperLang, readonly string[]>>>>>;
+
+/** Kepala kolom tabel lembar kendali `kind` untuk bahasa `lang` (cadangan entri ID). */
+export function controlSheetColumnHeads(kind: ControlSheetTableKind, lang: WrapperLang = "ID"): readonly string[] {
+  const entry: Partial<Record<WrapperLang, readonly string[]>> & { ID: readonly string[] } = CONTROL_SHEET_COLUMNS[kind];
+  return entry[lang] ?? entry.ID;
+}
+
 /** Kicker bawaan halaman lembar kendali. */
 export function controlSheetKickerText(lang: WrapperLang): string {
   return WRAPPER_TEXT.controlKicker[lang];
+}
+
+/**
+ * S14 (research/33 B-02): kicker dan judul bawaan lembar kendali = label slot (DF-59). Label yang
+ * sama dengan kicker bawaan ID diterjemahkan untuk dokumen EN; label lain (templat EN, agen) menang.
+ */
+export function controlSheetLabelText(slotLabel: string, lang: WrapperLang): string {
+  return lang !== "ID" && slotLabel === WRAPPER_TEXT.controlKicker.ID ? controlSheetKickerText(lang) : slotLabel;
 }
 
 /** Kicker bawaan halaman daftar isi (tanpa judul bawaan; judul = kenop `render.toc.title`, RQ-8). */
@@ -78,7 +161,7 @@ function validPattern(v: unknown): string | undefined {
 
 /**
  * Kicker bawaan pembuka lampiran (blok `appendix`): pola `appendix.kicker.pattern`
- * bila diset templat (FIX-2 siklus 2, O-2), selain itu "Lampiran A" / "Appendix A".
+ * bila diset templat (FIX-2 siklus 2, O-2), selain itu "Lampiran A" / "Annex A".
  */
 export function appendixOpenerKickerText(key: string, lang: WrapperLang, appendixPattern?: unknown): string {
   const p = validPattern(appendixPattern);
@@ -120,13 +203,41 @@ export function chapterKickerText(chapterPattern: unknown, appendixPattern: unkn
 export const CONTROL_FIELD_LABELS: Readonly<Record<string, Readonly<Record<WrapperLang, string>>>> = {
   "NOMOR DOKUMEN": { ID: "Nomor dokumen", EN: "Document number" },
   REVISI: { ID: "Revisi", EN: "Revision" },
-  PENYUSUN: { ID: "Penyusun", EN: "Author" },
+  PENYUSUN: { ID: "Penyusun", EN: "Prepared by" }, // S13: register research/31 §4.1, D-590
   KUSTODIAN: { ID: "Kustodian", EN: "Custodian" },
   "DITUJUKAN KEPADA": { ID: "Ditujukan kepada", EN: "Addressed to" },
   TIER: { ID: "Tier", EN: "Tier" },
   DASAR: { ID: "Dasar", EN: "Basis" },
   BAHASA: { ID: "Bahasa", EN: "Language" },
 };
+
+/**
+ * S13 (research/33 B-08, register research/31 §4.3): label isi slot depan yang dibangkitkan klien MCP
+ * (`scripts/studio/mcp/write-client.ts`) dan belum ada di tabel di atas: medan klasifikasi blok kendali
+ * eksplisit, peran tanda tangan / lapis rantai verifikasi (EN = D-590 Prepared by / Reviewed by /
+ * Approved by), dan catatan revisi bawaan. Entri ID = nilai klien sebelum S13 (byte-sama).
+ */
+export const FRONT_PAYLOAD_LABELS = {
+  classification: { ID: "Klasifikasi", EN: "Classification" },
+  made: { ID: "Disusun", EN: "Prepared by" },
+  checked: { ID: "Diperiksa", EN: "Reviewed by" },
+  approved: { ID: "Disetujui", EN: "Approved by" },
+  first: { ID: "Terbit pertama", EN: "First issue" },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
+
+/**
+ * Nilai medan BAHASA blok kendali sampul: bahasa dokumen ditulis dalam bahasa pembungkus `lang`.
+ * G-FIX1 (D-606) LB-07: dokumen EN berbahasa pembungkus EN = "English (UK)" (manual EN:18, EN:883);
+ * nilai lain tetap seperti sebelumnya (dokumen ID byte-identik).
+ */
+const LANGUAGE_VALUE_TEXT: Readonly<Record<WrapperLang, Readonly<Record<WrapperLang, string>>>> = {
+  ID: { ID: "Indonesia", EN: "Indonesian" },
+  EN: { ID: "Inggris", EN: "English (UK)" },
+};
+
+function languageValueText(docLanguage: DocMeta["language"], lang: WrapperLang): string {
+  return LANGUAGE_VALUE_TEXT[docLanguage === "EN" ? "EN" : "ID"][lang];
+}
 
 /**
  * Baris blok kendali sampul auto (meta + P4V-12 `cover.controlBlock.fields`): pasangan
@@ -142,7 +253,7 @@ export function controlBlockRowsText(meta: DocMeta, params: ParamMap, lang: Wrap
     "DITUJUKAN KEPADA": meta.audience,
     TIER: meta.tier,
     DASAR: meta.basis,
-    BAHASA: meta.language === "EN" ? (lang === "EN" ? "English" : "Inggris") : lang === "EN" ? "Indonesian" : "Indonesia",
+    BAHASA: languageValueText(meta.language, lang),
   };
   const pairs: Array<[string, string]> = [];
   for (const f of pStrList(params, "cover.controlBlock.fields", Object.keys(CONTROL_FIELD_LABELS))) {
@@ -185,17 +296,51 @@ export function spineTextOf(meta: DocMeta, params: ParamMap): string {
     .join(" · ");
 }
 
-/** Cap terbit P4V-14 `device.issueStamp.format` (dulu isi `issueStampText` DOCX `wrapper/render.ts`). */
-export function issueStampTextOf(meta: DocMeta, params: ParamMap): string {
-  const fmt = pStr(params, "device.issueStamp.format") ?? "// {YYYYMMDD} {BAHASA} {KELAS} -- TERBITAN {n}";
+/**
+ * Cap terbit P4V-14 `device.issueStamp.format` (dulu isi `issueStampText` DOCX `wrapper/render.ts`).
+ * S13: format absen atau = bawaan registri memakai entri bahasa `lang` (bawaan: bahasa meta).
+ */
+export function issueStampTextOf(meta: DocMeta, params: ParamMap, lang: WrapperLang = wrapperLangOf(meta)): string {
+  const given = pStr(params, "device.issueStamp.format") ?? ISSUE_STAMP_FORMAT_DEFAULT;
+  const fmt = given === ISSUE_STAMP_FORMAT_DEFAULT ? ISSUE_STAMP_FORMAT_TEXT[lang] : given;
   const d = dateParts(meta.issueDate);
   const ymd = d ? `${d.y}${String(d.m).padStart(2, "0")}${String(d.d).padStart(2, "0")}` : meta.issueDate.replace(/-/g, "");
   const n = meta.issueNumber ?? pNum(params, "device.issueStamp.issueNumber") ?? 1;
   return fmt
     .replace(/\{YYYYMMDD\}/g, ymd)
     .replace(/\{BAHASA\}/g, meta.language)
-    .replace(/\{KELAS\}/g, meta.classification.trim().charAt(0).toUpperCase())
+    .replace(/\{KELAS\}/g, classificationMarkText(meta.classification.trim().charAt(0)))
     .replace(/\{n\}/g, String(n));
+}
+
+/**
+ * Teks pita segel bawaan P4V-14 `wrapper.header` (dulu isi `sealBandTexts` DOCX `wrapper/render.ts`):
+ * `{kelas}` = klasifikasi; kanan = `meta.copyControl` bila ada. Cadangan = bawaan registri (S06 B-05).
+ * S13: pasangan absen atau = bawaan registri memakai entri bahasa `lang` (bawaan: bahasa meta);
+ * pasangan lain yang diset templat menang di bahasa apa pun.
+ */
+export function sealBandTextsOf(meta: DocMeta, params: ParamMap, lang: WrapperLang = wrapperLangOf(meta)): [string, string] {
+  const given = pStrList(params, "wrapper.header", SEAL_BAND_DEFAULT);
+  const pair = sameList(given, SEAL_BAND_DEFAULT) ? SEAL_BAND_TEXT[lang] : given;
+  // I39-1: fungsi pengganti = nilai disisipkan literal ("$&", "$$" dll. tidak diperluas).
+  const kelas = classificationMarkText(meta.classification);
+  const fill = (s: string | undefined) => (s ?? "").replace(/\{kelas\}/g, () => kelas);
+  return [fill(pair[0]), meta.copyControl ?? fill(pair[1])];
+}
+
+/**
+ * S06 (research/33 B-11): kata label Indonesia pada pola sel blok register yang dilokalkan per
+ * bahasa (dulu `REGISTER_WORDS_EN` tersalin di DOCX `package/header-footer.ts` dan HTML
+ * `html/base/markup.ts`). ID tanpa entri = tanpa terjemahan.
+ */
+export const REGISTER_WORDS: Readonly<Partial<Record<WrapperLang, Readonly<Record<string, string>>>>> = {
+  EN: { LEMBAR: "SHEET", DARI: "OF" },
+};
+
+/** Teks literal pola sel register dengan kata label berhuruf besar dilokalkan ke `lang`. */
+export function registerWordsText(text: string, lang: WrapperLang): string {
+  const words = REGISTER_WORDS[lang];
+  return words ? text.replace(/\b[A-Z]+\b/g, (w) => words[w] ?? w) : text;
 }
 
 /** Kolofon sampul auto P4V-13: kiri = entitas + "NIB …" (dipisah " · "), kanan = cap terbit. */
@@ -213,4 +358,79 @@ export function colophonTexts(meta: DocMeta, params: ParamMap): { left: string; 
 /** Label bagian bawaan dari id bagian (angka di id, cadangan 1): "Bagian I" / "Part I". */
 export function defaultPartLabelText(partId: string, lang: WrapperLang): string {
   return `${WRAPPER_TEXT.part[lang]} ${roman(Number(String(partId).replace(/\D/g, "")) || 1)}`;
+}
+
+// ── Label aparatus tabel/figur/turunan (S13 + D-597 D-2/D-3, D-598 F-2) ──
+
+/**
+ * Label aparatus per bahasa, SATU sumber untuk DOCX (`docx/figures/*`, `docx/tables/render.ts`) dan
+ * HTML (`html/tables/style.ts` `labels`). Bentuk sumber = huruf campur seperti HTML; DOCX mencetak
+ * SUMBER/PROVENANS/KUNCI kapital literal (BM K-33/K-34), jadi memakai `.toUpperCase()` entri yang
+ * sama ("Sumber" -> "SUMBER", byte-identik dengan literal lama). `table`/`figure`/`derivation` =
+ * kata depan label artefak; alamat API (`contract/address.ts`) tetap berkata ID, terjemahan hanya
+ * tampilan (D-3). Vonis = tag bawaan pembangun turunan (`bind/derivation.ts`).
+ */
+export const APPARATUS_TEXT = {
+  source: { ID: "Sumber", EN: "Source" },
+  provenance: { ID: "Provenans", EN: "Provenance" },
+  key: { ID: "Kunci", EN: "Key" },
+  derivation: { ID: "Turunan", EN: "Derivation" },
+  table: { ID: "Tabel", EN: "Table" },
+  figure: { ID: "Gambar", EN: "Figure" },
+  figureMissing: { ID: "Gambar tidak tersedia", EN: "Figure not available" },
+  verdictPass: { ID: "MEMENUHI", EN: "COMPLIES" },
+  verdictFail: { ID: "TIDAK MEMENUHI", EN: "DOES NOT COMPLY" },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
+
+export type ApparatusTextKey = keyof typeof APPARATUS_TEXT;
+
+/** Semua label aparatus untuk bahasa `lang`. */
+export function apparatusText(lang: WrapperLang): Record<ApparatusTextKey, string> {
+  const out = {} as Record<ApparatusTextKey, string>;
+  for (const k of Object.keys(APPARATUS_TEXT) as ApparatusTextKey[]) out[k] = APPARATUS_TEXT[k][lang];
+  return out;
+}
+
+const ARTIFACT_WORDS: ReadonlyArray<"table" | "figure" | "derivation"> = ["table", "figure", "derivation"];
+
+/**
+ * Label artefak tampilan (D-3): kata depan alamat ID ("Tabel", "Gambar", "Turunan") diganti kata
+ * bahasa `lang`; label lain dan dokumen ID apa adanya. Alamat/penomoran tidak diubah.
+ */
+export function artifactLabelText(label: string, lang: WrapperLang): string {
+  if (lang === "ID") return label;
+  for (const w of ARTIFACT_WORDS) {
+    const id = APPARATUS_TEXT[w].ID;
+    if (label === id || label.startsWith(`${id} `)) return APPARATUS_TEXT[w][lang] + label.slice(id.length);
+  }
+  return label;
+}
+
+/** Tag vonis tampilan: tag bawaan ID (MEMENUHI / TIDAK MEMENUHI) diterjemahkan; tag kiriman apa adanya. */
+export function verdictTagText(tag: string, lang: WrapperLang): string {
+  if (lang === "ID") return tag;
+  if (tag === APPARATUS_TEXT.verdictPass.ID) return APPARATUS_TEXT.verdictPass[lang];
+  if (tag === APPARATUS_TEXT.verdictFail.ID) return APPARATUS_TEXT.verdictFail[lang];
+  return tag;
+}
+
+/** Kata label aparatus kapital untuk `keys` dalam bahasa `lang`: satu sumber bagi pengenal run label (L4). */
+export function apparatusLabelWords(keys: readonly ApparatusTextKey[], lang: WrapperLang = "ID"): string[] {
+  return keys.map((k) => APPARATUS_TEXT[k][lang].toUpperCase());
+}
+
+const RUN_LABEL_KEYS: ReadonlyArray<"source" | "provenance" | "key"> = ["source", "provenance", "key"];
+const RUN_LABEL_RE = new RegExp(`^(\\s*)(${apparatusLabelWords(RUN_LABEL_KEYS).join("|")})(\\s*:?\\s*)$`);
+
+/**
+ * Run label aparatus berbentuk `runs` (compose menyisipkan "SUMBER  " / "KUNCI  " sebagai penanda
+ * struktural, `services/compose/inline.ts`): kata ID kapital diganti kata `lang` kapital saat
+ * tampil, spasi pengapit tetap. Teks lain, dan semua teks dokumen ID, apa adanya.
+ */
+export function apparatusLabelRunText(text: string, lang: WrapperLang): string {
+  if (lang === "ID") return text;
+  const m = RUN_LABEL_RE.exec(text);
+  if (!m) return text;
+  const k = RUN_LABEL_KEYS.find((x) => APPARATUS_TEXT[x].ID.toUpperCase() === m[2]);
+  return k ? m[1] + APPARATUS_TEXT[k][lang].toUpperCase() + m[3] : text;
 }

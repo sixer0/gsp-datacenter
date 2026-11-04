@@ -3,12 +3,19 @@
  * Indonesia (SG-L4-05, D05), waktu dan zona (D19), kalimat (D11), warna (A12,
  * A21). Murni, tanpa I/O.
  */
+import { numberConvention, numberPatternSources } from "../../bind/format";
+
+/** Pemisah dan pola angka dari entri ID tabel konvensi (engine/bind/format.ts). */
+const ID_NUMBER = numberConvention("ID");
+const ID_NUMBER_PATTERN = numberPatternSources(ID_NUMBER);
+const DATUM_GROUPED_RE = new RegExp(`^-?${ID_NUMBER_PATTERN.grouped}$`);
+const DATUM_PLAIN_RE = new RegExp(`^-?${ID_NUMBER_PATTERN.plain}$`);
 
 /** "1.500.000" -> 1500000; "2,5" -> 2.5; "12" -> 12; selain itu NaN. */
 export function parseDatumNumber(s: string): number {
   const t = s.trim().replace(/\s/g, "");
-  if (/^-?\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(t) || /^-?\d+(?:,\d+)?$/.test(t)) {
-    return Number(t.replace(/\./g, "").replace(",", "."));
+  if (DATUM_GROUPED_RE.test(t) || DATUM_PLAIN_RE.test(t)) {
+    return Number(t.split(ID_NUMBER.thousandsSeparator).join("").replace(ID_NUMBER.decimalSeparator, "."));
   }
   return NaN;
 }
@@ -123,7 +130,10 @@ export interface TerbilangPair {
 /** Pasangan "angka [satuan] (terbilang)" di teks; hanya yang kurungnya terbilang sah. */
 export function findTerbilangPairs(text: string): TerbilangPair[] {
   const out: TerbilangPair[] = [];
-  const re = /(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)\s*(?:[%\p{L}.]{0,12}\s*)?\(([\p{L}\s,-]{3,240})\)/gu;
+  const re = new RegExp(
+    `(${ID_NUMBER_PATTERN.grouped}|${ID_NUMBER_PATTERN.plain})\\s*(?:[%\\p{L}.]{0,12}\\s*)?\\(([\\p{L}\\s,-]{3,240})\\)`,
+    "gu",
+  );
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
     const value = parseDatumNumber(m[1]);
     const words = parseTerbilang(m[2]);

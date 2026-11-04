@@ -11,8 +11,9 @@
 import type { DerivationBlock, Inline, ProvenanceMark } from "../../contract";
 import { evalArith } from "./arith";
 import { BindDefect } from "./defect";
-import { fmt, withUnit } from "./format";
+import { DEFAULT_NUMBER_LANGUAGE, fmt, withUnit, type NumberLanguage } from "./format";
 import { Register } from "./register";
+import { APPARATUS_TEXT } from "../front/texts";
 import type { RegisterApi } from "../../contract";
 
 /** Toleransi bawaan Python `Derivation.result(tol=0.51)`. */
@@ -94,18 +95,25 @@ export class Derivation {
   readonly width: number;
   readonly rows: DerivationRow[] = [];
   note?: string;
+  /**
+   * Bahasa konvensi angka baris tercetak (S17): bahasa `Register`, selain itu
+   * `opts.language`, bawaan ID. Pesan cacat tetap berangka ID (teks operator
+   * berbahasa Indonesia, sama dengan pesan lint D-11).
+   */
+  readonly language: NumberLanguage;
   private checked = false;
 
   constructor(
     id: string,
     title: string,
     private readonly register: RegisterApi,
-    opts: { width?: number; note?: string } = {},
+    opts: { width?: number; note?: string; language?: NumberLanguage } = {},
   ) {
     this.id = id;
     this.title = title;
     this.width = opts.width ?? DERIVATION_DEFAULT_WIDTH;
     this.note = opts.note;
+    this.language = register instanceof Register ? register.language : (opts.language ?? DEFAULT_NUMBER_LANGUAGE);
   }
 
   /** Label untuk pesan cacat: `<id> · <judul>` (renderer menyusun caption sendiri). */
@@ -137,12 +145,12 @@ export class Derivation {
     let mark = opts.mark;
     if (key !== undefined && key !== null) {
       const e = this.register.get(key);
-      s = withUnit(fmt(e.v, opts.dec ?? e.dec), unit ? e.unit : null);
+      s = withUnit(fmt(e.v, opts.dec ?? e.dec, this.language), unit ? e.unit : null, this.language);
       mark = mark ?? e.mark;
     } else if (typeof opts.value === "string") {
       s = opts.value;
     } else if (typeof opts.value === "number") {
-      s = fmt(opts.value, opts.dec ?? 0);
+      s = fmt(opts.value, opts.dec ?? 0, this.language);
     } else {
       throw new BindDefect(`${this.label}: baris "${uraian}" tanpa kunci register maupun nilai.`);
     }
@@ -171,7 +179,7 @@ export class Derivation {
       );
     }
     const e = this.register.get(key);
-    const s = withUnit(fmt(e.v, opts.dec ?? e.dec), (opts.unit ?? true) ? e.unit : null);
+    const s = withUnit(fmt(e.v, opts.dec ?? e.dec, this.language), (opts.unit ?? true) ? e.unit : null, this.language);
     this.rows.push({ kind: "result", label: uraian, value: s, key, mark: e.mark, expr, mono: monoLine(uraian, s, this.width) });
     this.checked = true;
     return this;
@@ -188,9 +196,9 @@ export class Derivation {
     opts: { ok?: string; bad?: string; dec?: number; direction?: "lessOrEqual" | "greaterOrEqual" } = {},
   ): this {
     const e = this.register.get(key);
-    const s = withUnit(fmt(e.v, opts.dec ?? e.dec), e.unit);
+    const s = withUnit(fmt(e.v, opts.dec ?? e.dec, this.language), e.unit, this.language);
     const pass = (opts.direction ?? "lessOrEqual") === "lessOrEqual" ? e.v <= limit : e.v >= limit;
-    const tag = pass ? (opts.ok ?? "MEMENUHI") : (opts.bad ?? "TIDAK MEMENUHI");
+    const tag = pass ? (opts.ok ?? APPARATUS_TEXT.verdictPass[this.language]) : (opts.bad ?? APPARATUS_TEXT.verdictFail[this.language]); // S13/F-2: tabel teks berbahasa
     this.rows.push({ kind: "verdict", label: uraian, value: s, key, mark: e.mark, tag, pass, mono: `${monoLine(uraian, s, this.width)}   ${tag}` });
     return this;
   }

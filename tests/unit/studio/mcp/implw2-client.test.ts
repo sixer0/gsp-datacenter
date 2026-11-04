@@ -100,8 +100,30 @@ const TEMPLATES = [
   { slug: 'datum-gsp', isPreset: false, restricted: false, contractKind: null, updatedAt: '2026-10-30T03:09:22Z', latestVersionNo: 3 },
 ];
 
-function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: string; validate?: (b: any) => unknown; fail?: (method: string, path: string, body: any) => { status: number; body?: unknown } | undefined } = {}) {
-  const validate = o.validate ?? (() => ({ valid: true, issues: [] }));
+// D-1 (D-597): kerangka 7 slot bawaan (prisma/seed-studio.ts SKELETON_SLOTS) = bentuk R02 `definition.skeleton`; slot depan
+// bertier TERBIT/SERAH. Tier bawaan per slug templat tiruan (R02 `version.resolvedParams["doc.defaultTier"]`).
+const FRONT_TIERS = ['TERBIT', 'SERAH'];
+const SKELETON: Array<{ slotKey: string; sectionType: string; tiers: string[]; contentMode?: string; repeatable?: boolean }> = [
+  { slotKey: 'cover', sectionType: 'cover', tiers: FRONT_TIERS },
+  { slotKey: 'controlSheet', sectionType: 'controlSheet', tiers: FRONT_TIERS },
+  { slotKey: 'signature', sectionType: 'signatureBlock', tiers: FRONT_TIERS },
+  { slotKey: 'toc', sectionType: 'toc', tiers: FRONT_TIERS, contentMode: 'AUTO' },
+  { slotKey: 'content', sectionType: 'chapter', tiers: [], repeatable: true },
+  { slotKey: 'references', sectionType: 'sourceRegister', tiers: [] },
+  { slotKey: 'appendices', sectionType: 'appendix', tiers: [], repeatable: true },
+];
+const DEFAULT_TIER: Record<string, string> = { 'datum-gsp': 'TERBIT', 'datum-kanonik': 'TERBIT', 'uji-nota': 'NOTA' };
+const slotActive = (slot: string, tier: string) => {
+  const s = SKELETON.find((x) => x.slotKey === slot);
+  return s !== undefined && (s.tiers.length === 0 || s.tiers.includes(tier));
+};
+
+function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: string; validate?: (b: any) => unknown; fail?: (method: string, path: string, body: any) => { status: number; body?: unknown } | undefined; seedMeta?: Record<string, unknown>; seedTemplate?: { slug: string; version: number } } = {}) {
+  let tier = 'TERBIT';
+  // Server menolak slot yang tidak aktif untuk tier dokumen (structure.ts SLOT_FORBIDDEN_FOR_TIER), di R08 dan R13.
+  const tierOfBody = (b: any): string => b?.meta?.tier ?? (b?.template ? DEFAULT_TIER[b.template.slug] : tier) ?? 'TERBIT';
+  const tierGate = (b: any) => (typeof b?.slot === 'string' && !slotActive(b.slot, tierOfBody(b)) ? { valid: false, issues: [{ checkId: 'SLOT_FORBIDDEN_FOR_TIER', pointer: `/slot/${b.slot}` }] } : null);
+  const validate = (b: any) => tierGate(b) ?? (o.validate ?? (() => ({ valid: true, issues: [] })))(b);
   let rev = 0;
   let content: any = null;
   const writers = new Map<string, number>();
@@ -110,7 +132,8 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
   const seed = () => {
     rev = 4;
     content = {
-      meta: { title: 'Kajian Lama', author: 'Tim Kajian GSP', docNumber: '018/GSP/KT/XI/2026', rev: 'A' },
+      ...(o.seedTemplate ? { template: o.seedTemplate } : {}),
+      meta: { title: 'Kajian Lama', author: 'Tim Kajian GSP', docNumber: '018/GSP/KT/XI/2026', rev: 'A', ...(o.seedMeta ?? {}) },
       sections: {
         cover: { type: 'cover', control: [[{ text: 'Nomor dokumen' }, { text: 'GSP-W2-001' }, { text: 'Revisi' }, { text: 'A · 2026-11-03' }]] },
         controlSheet: { type: 'controlSheet', title: { text: 'Lembar Kendali GSP-W2-001' }, revisionHistory: [{ rev: 'A', date: '2026-11-03', what: 'Terbit pertama', by: 'Tim Kajian GSP' }] },
@@ -126,7 +149,10 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
       },
     };
   };
-  if (o.exists) seed();
+  if (o.exists) {
+    seed();
+    tier = String(content.meta.tier ?? 'TERBIT');
+  }
   const scopeOf = (path: string, b: any): string => (path.endsWith('/structure') ? 'meta' : b?.slot ? `slot:${b.slot}` : b?.chapter ? `chapter:${b.chapter.key}` : `pid:${path.split('/').pop()}`);
   const write = (scope: string, by: string, mutate: () => void) => {
     mutate();
@@ -146,8 +172,14 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
     const sub = (created = false) => ok({ document: { id: DOCID, docNumber: '018/GSP/KT/XI/2026' }, created, unchanged: false, rebased: false, revision: { revisionNo: rev } }, created ? 201 : 200);
     if (init.method === 'GET' && p === '/api/studio/documents') return ok({ documents: content ? [{ id: DOCID, docNumber: '018/GSP/KT/XI/2026', createdBy: o.createdBy ?? `agent:${AGENT}`, currentRevisionNo: rev }] : [] });
     if (init.method === 'GET' && p === '/api/studio/templates') return ok({ templates: TEMPLATES });
+    if (init.method === 'GET' && p.startsWith('/api/studio/templates/')) {
+      const slug = decodeURIComponent(p.slice('/api/studio/templates/'.length));
+      if (DEFAULT_TIER[slug] === undefined) return reply({ status: 404, body: { error: 'templat tidak ada', code: 'TEMPLATE_NOT_FOUND' } });
+      return ok({ template: { slug, latestVersionNo: 3 }, version: { versionNo: Number(u.searchParams.get('version') ?? 3), resolvedParams: { 'doc.defaultTier': DEFAULT_TIER[slug] } }, definition: { skeleton: { slots: SKELETON } } });
+    }
     if (init.method === 'POST' && p === '/api/studio/validate') return ok(validate(body));
     if (init.method === 'POST' && p === '/api/studio/documents') {
+      tier = body.meta?.tier ?? DEFAULT_TIER[body.template?.slug] ?? 'TERBIT';
       rev = 1;
       content = { meta: { ...body.meta, docNumber: '018/GSP/KT/XI/2026' }, sections: { content: { type: 'chapter', chapters: [] } } };
       return sub(true);
@@ -159,6 +191,7 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
     }
     const by = `agent:${body?.agentId ?? 'x'}`;
     if (init.method === 'POST' && p === '/api/studio/slots') {
+      if (!slotActive(body.slot, tier)) return reply({ status: 422, body: { error: 'slot tidak berlaku untuk tier', code: 'SLOT_FORBIDDEN_FOR_TIER' } });
       write(scope, by, () => (content.sections[body.slot] = body.payload));
       return sub();
     }
@@ -189,7 +222,7 @@ function clientServer(o: { exists?: boolean; createdBy?: string; lastWriter?: st
     if (init.method === 'GET' && p === `/api/studio/documents/${DOCID}`) return ok({ document: { id: DOCID, docNumber: '018/GSP/KT/XI/2026', createdBy: o.createdBy ?? `agent:${AGENT}`, currentRevisionNo: rev }, revision: { revisionNo: rev, createdBy: lastBy } });
     if (init.method === 'GET' && p === `/api/studio/documents/${DOCID}/content`) return ok({ document: { id: DOCID }, revisionNo: rev, content: structuredClone(content) });
     if (p === `/api/studio/documents/${DOCID}/completeness`) {
-      const complete = ['cover', 'controlSheet', 'signature'].every((k) => content.sections[k]) && content.sections.content.chapters.length > 0;
+      const complete = ['cover', 'controlSheet', 'signature'].filter((k) => slotActive(k, tier)).every((k) => content.sections[k]) && content.sections.content.chapters.length > 0;
       // IMPL-W4 S2-2r: penulis per bagian (R15) = pemanggil, agar tulis ulang dokumen sendiri tidak dianggap penulis tak tercatat.
       const me = `agent:${AGENT}`;
       const slots = ['cover', 'controlSheet', 'signature'].map((k) => ({ slotKey: k, lastFilledBy: content.sections[k] ? me : null }));
@@ -419,6 +452,101 @@ describe('siklus 2: N-1 progress + ulang idempoten, I-6, I-7', () => {
     const r = await call('studio_write', WRITE_ARGS);
     expect(r.data.error.code).toBe('BASIS_MISSING');
     expect(r.data.error.message).toContain('studio_edit');
+    expect(writes(m.calls)).toEqual([]);
+  });
+});
+
+describe('S10: template "latest" = konstanta default datum-gsp (D-590)', () => {
+  const NEWER = { slug: 'datum-nota', isPreset: false, restricted: false, contractKind: null, archived: false, updatedAt: '2026-11-04T09:00:00Z', latestVersionNo: 1 };
+
+  it('templat datum-* klien yang lebih baru tidak menggeser latest: tetap datum-gsp', async () => {
+    const m = clientServer({ fail: (method, p) => (method === 'GET' && p === '/api/studio/templates' ? { status: 200, body: { templates: [...TEMPLATES, NEWER] } } : undefined) });
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', WRITE_ARGS);
+    expect(r.isError, r.text).toBeFalsy();
+    const create = m.calls.find((c) => c.method === 'POST' && new URL(c.url).pathname === '/api/studio/documents')!.body;
+    expect(create.template).toEqual({ slug: 'datum-gsp' });
+    expect(r.data.warnings.find((w: any) => w.code === 'TEMPLATE_RESOLVED').message).toContain('datum-gsp');
+  });
+
+  it('slug templat jenis kontrak (registri C58) ditolak tanpa jaringan, pesan sama', async () => {
+    const m = clientServer();
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'laporan-kerja-agen' });
+    expect(r.data.error.code).toBe('INVALID_ARGUMENT');
+    expect(r.data.error.message).toContain('laporan kerja ditulis tanpa template (studio_write { mission, docKey, sections }); template hanya untuk dokumen klien');
+    expect(m.calls).toEqual([]);
+  });
+});
+
+describe('D-1 (D-597): slot depan mengikuti kerangka templat untuk tier efektif', () => {
+  const frontSent = (calls: Call[]) => calls.filter((c) => c.method === 'POST' && new URL(c.url).pathname === '/api/studio/slots').map((c) => c.body.slot);
+  const frontChecked = (calls: Call[]) => calls.filter((c) => c.method === 'POST' && c.url.endsWith('/validate') && typeof c.body.slot === 'string').map((c) => c.body.slot);
+
+  it('templat bertier bawaan NOTA: muatan agen yang sama, slot depan tidak dikirim, tanpa galat', async () => {
+    const m = clientServer();
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'uji-nota' });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(frontChecked(m.calls)).toEqual([]);
+    expect(frontSent(m.calls)).toEqual([]);
+    expect(r.data.completeness.status).toBe('COMPLETE');
+    expect(r.data.warnings.map((w: any) => w.code)).toContain('FRONT_SLOTS_OMITTED');
+  });
+
+  it('datum-gsp dengan meta.tier NOTA (dokumen yang ada): tulis ulang tidak gagal pada slot depan', async () => {
+    const m = clientServer({ exists: true, seedMeta: { tier: 'NOTA' }, seedTemplate: { slug: 'datum-gsp', version: 3 } });
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp' });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(r.data.ok, r.text).not.toBe(false);
+    expect(frontChecked(m.calls)).toEqual([]);
+    expect(frontSent(m.calls)).toEqual([]);
+    const r02 = m.calls.find((c) => c.method === 'GET' && new URL(c.url).pathname === '/api/studio/templates/datum-gsp');
+    expect(new URL(r02!.url).searchParams.get('version')).toBe('3');
+  });
+
+  it('M2 (D-610, D-600 (2)): dokumen TERBIT yang ada + meta.tier NOTA lewat studio_write -> tier diabaikan dengan META_IGNORED, tier server tetap menyusun slot depan', async () => {
+    const m = clientServer({ exists: true, seedMeta: { tier: 'TERBIT' }, seedTemplate: { slug: 'datum-gsp', version: 3 } });
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp', meta: { ...META, tier: 'nota' } });
+    expect(r.isError, r.text).toBeFalsy();
+    const metaPatches = m.calls.filter((c) => c.method === 'PATCH' && c.url.endsWith('/structure') && c.body.op === 'setMeta').map((c) => c.body.meta);
+    expect(metaPatches.some((x: any) => 'tier' in x)).toBe(false);
+    expect(m.content().meta.tier).toBe('TERBIT');
+    // Tier server (TERBIT) menentukan D-1: ketiga slot depan diuji dan dikirim, tanpa FRONT_SLOTS_OMITTED.
+    expect(frontChecked(m.calls)).toEqual(['cover', 'controlSheet', 'signature']);
+    expect(frontSent(m.calls)).toEqual(['cover', 'controlSheet', 'signature']);
+    const codes = (r.data.warnings ?? []).map((w: any) => w.code);
+    expect(codes).toContain('META_IGNORED');
+    expect(codes).not.toContain('FRONT_SLOTS_OMITTED');
+  });
+
+  it('M2: meta.tier sama dengan tier dokumen yang ada -> tanpa META_IGNORED, tanpa setMeta tier', async () => {
+    const m = clientServer({ exists: true, seedMeta: { tier: 'TERBIT' }, seedTemplate: { slug: 'datum-gsp', version: 3 } });
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp', meta: { ...META, tier: 'terbit' } });
+    expect(r.isError, r.text).toBeFalsy();
+    const metaPatches = m.calls.filter((c) => c.method === 'PATCH' && c.url.endsWith('/structure') && c.body.op === 'setMeta').map((c) => c.body.meta);
+    expect(metaPatches.some((x: any) => 'tier' in x)).toBe(false);
+    expect((r.data.warnings ?? []).map((w: any) => w.code)).not.toContain('META_IGNORED');
+  });
+
+  it('TERBIT tidak berubah: datum-gsp mengirim ketiga slot depan, tanpa peringatan baru', async () => {
+    const m = clientServer();
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'datum-gsp' });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(frontSent(m.calls)).toEqual(['cover', 'controlSheet', 'signature']);
+    expect(frontChecked(m.calls)).toEqual(['cover', 'controlSheet', 'signature']);
+    expect((r.data.warnings ?? []).map((w: any) => w.code)).not.toContain('FRONT_SLOTS_OMITTED');
+  });
+
+  it('templat tidak ada -> galat R02 sebelum dokumen dibuat (0 tulis)', async () => {
+    const m = clientServer();
+    const { call } = await connect({ fetch: m.f as any, env });
+    const r = await call('studio_write', { ...WRITE_ARGS, template: 'tidak-ada' });
+    expect(r.data.error.code, r.text).toBe('TEMPLATE_NOT_FOUND');
     expect(writes(m.calls)).toEqual([]);
   });
 });

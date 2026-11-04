@@ -167,13 +167,14 @@ describe.skipIf(!ACTIVE)(`SR-49 integrasi DB Studio (${UJI_DB})`, () => {
 
   // ── F0 ────────────────────────────────────────────────────────────────
   describe.sequential('F0 penjaga DB dan migrasi', () => {
-    it('koneksi Prisma uji = gsp_agent_hq_v21_uji; 7 migrasi selesai; tabel struktur ada', async () => {
+    it('koneksi Prisma uji = gsp_agent_hq_v21_uji; 8 migrasi selesai; tabel struktur ada', async () => {
       const db = await dbName();
       E.database = db;
       expect(db).toBe(UJI_DB);
       const mig = await prisma.$queryRawUnsafe('select migration_name, finished_at is not null as done, rolled_back_at is null as live from "_prisma_migrations" order by migration_name');
       E.steps.migrations = mig.map((m: Any) => `${m.migration_name}:${m.done && m.live ? 'applied' : 'NOT'}`);
-      expect(mig).toHaveLength(7);
+      // 8 migrasi: ke-8 = 20261030220000_add_studio_contract (commit 2a6f78e, 2026-10-30, delta aditif DC-04).
+      expect(mig).toHaveLength(8);
       expect(mig.every((m: Any) => m.done && m.live)).toBe(true);
       expect(mig.map((m: Any) => m.migration_name)).toEqual(expect.arrayContaining(['20261022120000_add_studio', '20261023200000_add_studio_structure']));
       const tables = await prisma.$queryRawUnsafe(`select table_name as t from information_schema.tables where table_schema='public' and table_name like 'Studio%' order by 1`);
@@ -296,7 +297,9 @@ describe.skipIf(!ACTIVE)(`SR-49 integrasi DB Studio (${UJI_DB})`, () => {
     it('verifikasi independen: proyeksi resolvedParams versi baru ke kunci versi lama = versi lama (di luar Δ)', async () => {
       const deltaBySlug: Record<string, string[]> = {
         'datum-kanonik': [],
-        'datum-gsp': ['device.registerBlock.boldFields'],
+        // render.rail.renderer: table3col (v1, warisan profil Manual 000) -> framePr = Δ disengaja,
+        // D-327 (FIX-H4/FIX-HZ3), commit c2620b3 (2026-10-30), seed-studio.ts PRESET_MIGRATIONS datum-gsp delta.
+        'datum-gsp': ['device.registerBlock.boldFields', 'render.rail.renderer'],
       };
       const out: Any[] = [];
       for (const slug of ['datum-kanonik', 'datum-gsp', 'datum-manual-000']) {

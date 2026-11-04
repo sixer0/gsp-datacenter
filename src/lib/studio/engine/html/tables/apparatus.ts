@@ -5,7 +5,8 @@
  * (`render.caption.separator`) + teks; SUMBER = label kapital (`labelRun`
  * peran `table.source`/`figure.source`) + isi + `PROVENANS` glif bertanda.
  */
-import type { Caption, NormBlock, ProvenanceMark, RenderContext, RoleKey, RunProps, SourceLine } from "../../../contract";
+import type { Caption, Inline, NormBlock, ProvenanceMark, RenderContext, RoleKey, RunProps, SourceLine } from "../../../contract";
+import { apparatusLabelRunText, artifactLabelText, wrapperLangOf } from "../../front/texts";
 import { escText } from "./escape";
 import { inlineHtml, inlinePlain, paraHtml } from "./inline";
 import { color, css, fontFamily, hexCss, labels, markColor, markGlyph, pBool, pNum, pStr, role, ruleCss, runCss } from "./style";
@@ -17,9 +18,20 @@ export function artifactLabel(block: NormBlock, ctx: RenderContext, caption?: Ca
   return ctx.snapshot?.numbering?.[block.blockId] ?? "";
 }
 
-/** Paragraf caption (di atas objek). */
-export function captionHtml(caption: Caption | undefined, label: string, ctx: RenderContext, extra?: string): string {
+/**
+ * Inline aparatus untuk tampilan: run penanda label ID ("SUMBER  ", "KUNCI  " dari compose) memakai
+ * kata bahasa dokumen (S13/F-2). Dokumen ID: objek yang sama dikembalikan (HTML ID byte-sama).
+ */
+function localizedApparatus<T extends Inline | undefined>(x: T, ctx: RenderContext): T {
+  const lang = wrapperLangOf(ctx.snapshot?.doc?.meta);
+  if (lang === "ID" || !x || !("runs" in x)) return x;
+  return { ...x, runs: x.runs.map((r) => ("t" in r ? { ...r, t: apparatusLabelRunText(r.t, lang) } : r)) } as T;
+}
+
+/** Paragraf caption (di atas objek). Label tampil berbahasa dokumen (D-3); alamat tetap. */
+export function captionHtml(caption: Caption | undefined, rawLabel: string, ctx: RenderContext, extra?: string): string {
   if (!caption) return "";
+  const label = artifactLabelText(rawLabel, wrapperLangOf(ctx.snapshot?.doc?.meta));
   const p = ctx.tpl.params;
   const rf = role(ctx, "caption");
   const labelRun: RunProps = { ...(rf.labelRun ?? rf.run ?? {}), ...(caption.labelProps ?? {}) };
@@ -57,7 +69,8 @@ export function provenanceHtml(marks: readonly ProvenanceMark[], ctx: RenderCont
  * Isi baris SUMBER (tanpa elemen pembungkus). Label `SUMBER` ditambahkan bila
  * teks sumber belum diawali kata itu (benchmark kadang menulisnya literal).
  */
-export function sourceInner(src: SourceLine, ctx: RenderContext, roleKey: RoleKey): string {
+export function sourceInner(source: SourceLine, ctx: RenderContext, roleKey: RoleKey): string {
+  const src: SourceLine = { ...source, inline: localizedApparatus(source.inline, ctx) };
   const p = ctx.tpl.params;
   const rf = role(ctx, roleKey);
   const L = labels(ctx);
@@ -88,7 +101,8 @@ export function sourceParagraphHtml(src: SourceLine | undefined, ctx: RenderCont
 }
 
 /** Baris KUNCI figur (peran `figure.keyRow`). */
-export function keyRowHtml(keyRow: Parameters<typeof inlineHtml>[0], ctx: RenderContext): string {
+export function keyRowHtml(keyRowIn: Parameters<typeof inlineHtml>[0], ctx: RenderContext): string {
+  const keyRow = localizedApparatus(keyRowIn, ctx);
   if (!keyRow) return "";
   const p = ctx.tpl.params;
   const rf = role(ctx, "figure.keyRow");

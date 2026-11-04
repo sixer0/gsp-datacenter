@@ -11,7 +11,7 @@ import type {
   StudioDiagramV1,
   TableBlock,
 } from "../../../contract";
-import { BindDefect, Register, auditRetired, auditText, checkResult } from "../../bind";
+import { BindDefect, Register, auditRetired, auditText, checkResult, numberLanguageOf } from "../../bind";
 import { CHART_BY_CODE } from "../../../registry/charts";
 import { isCustomChart, resolveCustomChart, type StudioChartInput } from "../../chart/core/custom";
 import { ESSENTIAL_KNOBS } from "../../../registry/essentials";
@@ -22,7 +22,8 @@ import { findings, notRun, pBool, pNum, pStrList, pTierBool, type CheckOutcome, 
 import { releasedBlockingChecks } from "./enforcement";
 import { findTerbilangPairs, hasDate, parseDatumNumber, sentenceCount, timesWithoutZone } from "./text";
 import { blockText, cellText, isFigureType, isTableType, textOf, type WalkItem } from "./walk";
-import { isWrongRightTable } from "../scan/walk";
+import { isHeadingParagraph, isWrongRightTable } from "../scan/walk";
+import type { AuditTextContext } from "../../bind/audit";
 import { explicitCoverApparatus } from "../../front/apparatus";
 
 // ── Bantu ─────────────────────────────────────────────────────────────────
@@ -31,6 +32,14 @@ interface TextUnit {
   pointer: string;
   text: string;
   item?: WalkItem;
+  /** Judul (bab, subbab, bagian, paragraf berperan judul): nomor di awal baris = penomoran struktural (D01). */
+  heading?: boolean;
+}
+
+/** Konteks audit D01 satu unit teks (D-605 (2): penomoran struktural tidak diaudit). */
+function auditContext(t: TextUnit): AuditTextContext {
+  if (t.heading) return "heading";
+  return t.item && isHeadingParagraph(t.item.block as Record<string, unknown>) ? "heading" : "body";
 }
 
 /**
@@ -60,11 +69,12 @@ function texts(ctx: StructCtx): TextUnit[] {
   const out: TextUnit[] = [];
   for (const item of ctx.walk.items) out.push({ pointer: item.pointer, text: blockText(item.block), item });
   for (const u of ctx.walk.units) {
-    out.push({ pointer: `${u.pointer}/title`, text: [textOf(u.chapter.kicker), textOf(u.chapter.title)].join("\n") });
-    (u.chapter.sections ?? []).forEach((s, si) => out.push({ pointer: `${u.pointer}/sections/${si}/title`, text: textOf(s.title) }));
+    out.push({ pointer: `${u.pointer}/title`, text: [textOf(u.chapter.kicker), textOf(u.chapter.title)].join("\n"), heading: true });
+    (u.chapter.sections ?? []).forEach((s, si) => out.push({ pointer: `${u.pointer}/sections/${si}/title`, text: textOf(s.title), heading: true }));
   }
+  // Satu unit per bagian (label, judul, lede) seperti semula; konteks judul berlaku per baris.
   (ctx.doc.parts ?? []).forEach((p, pi) =>
-    out.push({ pointer: `/parts/${pi}`, text: [textOf(p.label), textOf(p.title), textOf(p.lede)].join("\n") }),
+    out.push({ pointer: `/parts/${pi}`, text: [textOf(p.label), textOf(p.title), textOf(p.lede)].join("\n"), heading: true }),
   );
   const data = ctx.doc.front?.cover?.data as Record<string, unknown> | undefined;
   if (data) {
@@ -80,7 +90,7 @@ function texts(ctx: StructCtx): TextUnit[] {
 
 function makeRegister(ctx: StructCtx): { reg?: RegisterApi; error?: string } {
   try {
-    return { reg: new Register(ctx.register) };
+    return { reg: new Register(ctx.register, numberLanguageOf(ctx.doc.meta?.language)) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
@@ -131,7 +141,7 @@ function d01(ctx: StructCtx): CheckOutcome {
   let units = 0;
   for (const t of proseTexts(ctx)) {
     units++;
-    for (const a of auditText(t.text, reg, allow)) f.push({ pointer: t.pointer, detail: `${lbl(t.item, t.pointer)}: ${a.detail ?? a.text} (DT-23)` });
+    for (const a of auditText(t.text, reg, allow, { context: auditContext(t) })) f.push({ pointer: t.pointer, detail: `${lbl(t.item, t.pointer)}: ${a.detail ?? a.text} (DT-23)` });
   }
   return findings(f, `${units} unit teks diaudit terhadap ${reg.keys().length} besaran register; 0 angka tak terlacak`);
 }
