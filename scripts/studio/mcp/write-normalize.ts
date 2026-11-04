@@ -5,6 +5,7 @@
  * skema (string, larik, jumlah blok) tetap ditegakkan ajv sesudahnya. Kunci yang dibuang hanya dicetak sebagai token
  * aman (`tok`). Murni: tanpa I/O.
  */
+import { McpToolError } from "./safety";
 import { isRecord, tok, type Args, type ToolWarning } from "./tool-kit";
 
 type Rec = Record<string, unknown>;
@@ -234,13 +235,44 @@ function normalizeMetaArg(a: Args, n: Notes): void {
   }
 }
 
+/** IMPL-W8 B: butir edits berbentuk tepat `{ meta: {...} }` (satu kunci, nilai objek). */
+const isMetaItem = (e: unknown): e is { meta: Rec } => isRecord(e) && Object.keys(e).length === 1 && isRecord(e.meta);
+const sameMetaValue = (x: unknown, y: unknown): boolean =>
+  (x === null || typeof x !== "object") && (y === null || typeof y !== "object") ? String(x) === String(y) : JSON.stringify(x) === JSON.stringify(y);
+
+/**
+ * IMPL-W8 B (R11B): agen menaruh `{ meta: { status } }` sebagai butir `edits`. Butir berbentuk persis itu diangkat ke
+ * `meta` puncak (saluran meta IMPL-W4); medan sama bernilai beda (puncak vs butir, atau antarbutir) -> INVALID_ARGUMENT
+ * (dilempar sebelum jaringan, 0 tulis). `edits` yang habis dihapus (suntingan meta saja). Bentuk lain tidak disentuh.
+ */
+function liftMetaItems(a: Args, n: Notes): void {
+  if (!Array.isArray(a.edits) || (a.meta !== undefined && !isRecord(a.meta))) return;
+  const items = a.edits.filter(isMetaItem);
+  if (items.length === 0) return;
+  const meta: Rec = isRecord(a.meta) ? { ...a.meta } : {};
+  for (const it of items) {
+    for (const [k, v] of Object.entries(it.meta)) {
+      if (k === "__proto__") continue;
+      if (meta[k] !== undefined && !sameMetaValue(meta[k], v)) {
+        throw new McpToolError("INVALID_ARGUMENT", `meta bentrok: medan ${tok(k, "(kunci-tak-aman)")} diberi nilai berbeda di meta dan di butir { meta } edits; kirim satu nilai di argumen meta. Tidak ada yang ditulis`);
+      }
+      meta[k] = v;
+    }
+  }
+  a.meta = meta;
+  a.edits = a.edits.filter((e) => !isMetaItem(e));
+  if ((a.edits as unknown[]).length === 0) delete a.edits;
+  n.list.push({ code: "META_LIFTED_FROM_EDITS", message: `${items.length} butir { meta } di edits dipindah ke argumen meta; kirim meta sebagai argumen meta, bukan butir edits` });
+}
+
 export function normalizeEditArgs(a: Args): ToolWarning[] {
   const n = new Notes();
-  // IMPL-W4 butir 2: saluran meta (status/verdict/... laporan kerja; title/number/rev/date/... dokumen klien).
-  normalizeMetaArg(a, n);
   alias(a, ["changes", "patches", "patch", "edit"], "edits", n, "args");
   alias(a, ["doc_key", "key"], "docKey", n, "args");
   if (isRecord(a.edits)) a.edits = [a.edits];
+  liftMetaItems(a, n);
+  // IMPL-W4 butir 2: saluran meta (status/verdict/... laporan kerja; title/number/rev/date/... dokumen klien).
+  normalizeMetaArg(a, n);
   if (Array.isArray(a.edits)) {
     a.edits = a.edits.map((e, i) => {
       if (!isRecord(e)) return e;

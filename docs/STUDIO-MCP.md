@@ -738,6 +738,26 @@ dan mengganti daftar dengan tabel ditolak pagar struktur (`CONTENT_INJECTION`, b
   `structuredContent.verify.tableCount`; daftar judul di blok tak tepercaya diberi `[tabel N]` per judul (bila daftar
   judul tidak dicetak ulang: satu baris `tabel per judul: ...`).
 
+### 5.u Ronde 11 (IMPL-W8): argumen terbungkus ganda dan meta di dalam edits
+
+Bukti R11B: jembatan klien Hermes mengirim `{ "arguments": { documentId, edits }, "name": "mcp__studio__studio_edit" }`
+(argumen asli satu tingkat lebih dalam) dan menaruh `{ "meta": { "status": "complete" } }` sebagai butir `edits`. Dua
+penolakan `INVALID_ARGUMENT` itu memakan ~36 dtk ulangan.
+
+- **Buka pembungkus (semua alat, `tool-kit.ts` `unwrapToolArgs`, dipanggil di `executeTool`).** Bila argumen punya
+  kunci `arguments` bernilai objek biasa dan kunci puncak lain hanya `name` (atau tidak ada), argumen diganti objek
+  bersarang itu, SATU tingkat saja (pembungkus ketiga tidak dibuka dan gagal seperti biasa). `name` harus sama dengan
+  alat yang dipanggil (`studio_x` atau `mcp__studio__studio_x`); nama lain/bukan teks = tidak dibuka (gagal seperti
+  dulu). Peringatan `ARGS_UNWRAPPED`.
+- **Angkat meta (`studio_edit`, `write-normalize.ts` `liftMetaItems`).** Butir `edits` berbentuk persis `{ meta: {...} }`
+  (satu kunci, nilai objek) dipindah ke `meta` puncak. Medan yang sama bernilai beda (meta puncak vs butir, atau
+  antarbutir) -> `INVALID_ARGUMENT` yang menyebut medannya, 0 panggilan jaringan, 0 tulis. `edits` yang habis =
+  suntingan meta saja (saluran meta IMPL-W4). Peringatan `META_LIFTED_FROM_EDITS`.
+- **Tidak berubah.** Normalisasi lain, validasi skema ajv, pagar (guardLine/assertEditShape/`CONTENT_INJECTION`) dan
+  cek pemilik berjalan SESUDAH dua langkah ini seperti sebelumnya; tidak ada bentuk masukan lain yang dilonggarkan.
+  Kedua kode masuk kelas informasional (senyap di hasil ringkas `studio_write`/`studio_edit`, tampil dengan
+  `detail: true`; alat baca tetap mencetaknya).
+
 ## 6. Keamanan
 
 - Tujuan jaringan dibatasi ke asal `STUDIO_BASE_URL`; pengalihan 3xx tidak pernah diikuti, termasuk

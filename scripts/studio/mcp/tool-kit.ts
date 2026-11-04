@@ -114,8 +114,9 @@ export interface ToolWarning {
  * IMPL-W6: peringatan INFORMASIONAL = mesin sudah menanganinya sendiri dan agen tidak perlu bertindak. Disembunyikan dari
  * hasil ringkas (bawaan) studio_write/studio_edit; tetap tampil dengan `detail: true`. Peringatan lain tidak berubah.
  * IMPL-W7: ROWS_COALESCED_TO_TABLE (baris datar berurutan digabung jadi tabel) ikut kelas ini.
+ * IMPL-W8: ARGS_UNWRAPPED (pembungkus `arguments` dibuka) dan META_LIFTED_FROM_EDITS (butir `{ meta }` diangkat) juga.
  */
-export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED", "ROWS_COALESCED_TO_TABLE"]);
+export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED", "ROWS_COALESCED_TO_TABLE", "ARGS_UNWRAPPED", "META_LIFTED_FROM_EDITS"]);
 
 /** Saring peringatan informasional untuk hasil ringkas; `detail: true` mengembalikan daftar utuh. */
 export function quietWarnings(warnings: readonly ToolWarning[], detail: boolean): ToolWarning[] {
@@ -188,6 +189,19 @@ export const strs = (a: Args, k: string): string[] | null => (Array.isArray(a[k]
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * IMPL-W8 A (R11B): jembatan klien kadang membungkus argumen dua kali: `{ arguments: {...}, name: "mcp__studio__x" }`.
+ * Dibuka SATU tingkat (tidak pernah berulang) hanya bila `arguments` objek biasa dan kunci puncak lain hanya `name`
+ * (atau tidak ada) yang sama dengan alat yang dipanggil (`x` atau `mcp__studio__x`). Selain itu masukan dikembalikan
+ * apa adanya (identitas sama) sehingga gagal seperti sebelumnya. Validasi skema dan pagar berjalan sesudahnya.
+ */
+export function unwrapToolArgs(toolName: string, args: unknown): { args: unknown; warning: ToolWarning | null } {
+  if (!isRecord(args) || !isRecord(args.arguments)) return { args, warning: null };
+  if (Object.keys(args).some((k) => k !== "arguments" && k !== "name")) return { args, warning: null };
+  if (args.name !== undefined && args.name !== toolName && args.name !== `mcp__studio__${toolName}`) return { args, warning: null };
+  return { args: args.arguments, warning: { code: "ARGS_UNWRAPPED", message: "argumen terbungkus { arguments, name } dibuka satu tingkat; kirim argumen alat langsung sebagai objek" } };
 }
 
 /** Nama berkas virtual untuk laporan yang dikirim sebagai teks (tidak pernah ada di disk). */

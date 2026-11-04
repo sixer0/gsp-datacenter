@@ -76,6 +76,7 @@ import {
   plainAgentId,
   query,
   quietWarnings,
+  unwrapToolArgs,
   READ,
   requireSecret,
   S,
@@ -1110,7 +1111,9 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
   // L-2 (review 18): gerbang toolset juga di sini (pertahanan berlapis untuk pemanggil dalam proses), bukan hanya di handler server.
   const toolsets = deps.config.toolsets;
   if (Array.isArray(toolsets) && !tool.toolsets.some((ts) => toolsets.includes(ts))) throw new McpToolError("TOOL_INACTIVE", `alat ${name} tidak aktif (STUDIO_MCP_TOOLSETS=${toolsets.join(",")})`);
-  const args: Args = isRecord(rawArgs) ? structuredClone(rawArgs) : rawArgs === undefined ? {} : (rawArgs as Args);
+  // IMPL-W8 A: pembungkus `{ arguments, name }` dari jembatan klien dibuka satu tingkat SEBELUM normalisasi/skema/pagar.
+  const unwrapped = unwrapToolArgs(name, isRecord(rawArgs) ? structuredClone(rawArgs) : rawArgs === undefined ? {} : rawArgs);
+  const args = unwrapped.args as Args;
   const validate = validators.get(name) as ValidateFunction;
   const cids: string[] = [];
   const guarded = guardedFetch(deps.config.origin, deps.fetchImpl);
@@ -1123,7 +1126,7 @@ export async function executeTool(name: string, rawArgs: unknown, deps: ToolDeps
   };
   const ctx: ToolContext = { deps, callId, fsLog, fetch, cids, session: deps.session ?? new McpSession(), now: deps.now ?? Date.now };
   try {
-    const prepared = tool.prepare !== undefined && isRecord(args) ? tool.prepare(args) : [];
+    const prepared = [...(unwrapped.warning !== null ? [unwrapped.warning] : []), ...(tool.prepare !== undefined && isRecord(args) ? tool.prepare(args) : [])];
     if (!validate(args)) throw new McpToolError("INVALID_ARGUMENT", "argumen tidak sah menurut skema alat", { details: argIssues(validate.errors) });
     const out = await tool.run(args, ctx);
     ctx.session.noteOutcome(null);

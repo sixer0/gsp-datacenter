@@ -51,7 +51,7 @@ Kirim `documentId` dan SEMUA perubahan langkah itu dalam satu `edits`, urut sepe
 2. Butir baru: `{"section":"Rincian kerja","addRow":["X-B5: <uraian>","berjalan"]}`.
 3. Fakta baru: `{"section":"Bukti","append":["<paragraf>","<paragraf>"]}` (begitu juga bagian lain). Jangan merantai `after`; pakai `append`.
 4. Kalimat yang berubah: `{"find":"<SELURUH kalimat lama>","replace":"<kalimat baru utuh>"}`. Jangan mengganti potongan kalimat; potongan mudah menghasilkan kalimat rancu. Paragraf yang berubah banyak: `find` = seluruh paragraf. Tanda baca saja: cukup tanda baca + kata di sebelahnya.
-5. Status laporan atau medan record: `"meta":{"status":"complete"}` di panggilan yang sama.
+5. Status laporan atau medan record: `"meta":{"status":"complete"}` di panggilan yang sama, sebagai kunci tingkat atas di samping `edits` (bukan sebagai butir di dalam `edits`): `{"documentId":"...","edits":[...],"meta":{"status":"complete"}}`.
 
 Satu fakta = satu suntingan: teks yang di-`append` jangan juga dimasukkan ke `replace`. Suntingan diterapkan berurutan. Yang alamatnya tidak ketemu dikembalikan di `notApplied` (dengan kandidat), sisanya sudah tersimpan: kirim ulang HANYA yang di `notApplied`. Jangan membaca ulang dokumen sebelum menyunting; baca (`studio_document_get`) hanya bila kandidat `notApplied` tidak cocok. Sesudah suntingan tersimpan, ringkasan verifikasi di hasil sudah cukup; jangan membaca ulang dokumen untuk memeriksa.
 
