@@ -26,7 +26,7 @@ import { MAX_INPUT_BYTES } from "./config";
 import { checkOwnership, findMissionDoc, guardReportSubmit, requesterOf, type ExistingDoc } from "./doc-tools";
 import { McpToolError, virtualFs } from "./safety";
 import { bool, http, isRecord, neutralizeDeep, obj, plainAgentId, requireSecret, S, str, tok, untrustedBlock, untrustedFields, VIRTUAL_FILE, type Args, type ToolContext, type ToolDef, type ToolOutput, type ToolWarning } from "./tool-kit";
-import { buildWorkReport, recordMetaFields, wibStamp, workReportChapters, type SectionInput } from "./write-content";
+import { buildWorkReport, isRefsHeading, recordMetaFields, wibStamp, workReportChapters, type SectionInput } from "./write-content";
 import { requireOwnParts } from "./write-parts";
 import { normalizeEditArgs, normalizeWriteArgs } from "./write-normalize";
 import { isPositionEdit, paragraphsOf, positionToFind } from "./write-position";
@@ -471,11 +471,22 @@ const EDITS = {
   description: "find/replace (replace \"\" = hapus paragraf utuh); after/insert; cell (row = sel mana pun di baris); append = blok seperti studio_write di akhir section; addRow = baris atau baris[] ke tabel terakhir section (table = nomor/teks keterangan); figure/chart (klien). Urut: tiap suntingan melihat hasil sebelumnya; alamat yang hilang dicari di isi tersimpan.",
 } as const;
 
-/** Galat konversi hasil sunting: pesannya dapat mengutip isi dokumen -> hanya di blok rincian. */
-function reparseOrThrow(md: string, documentId: string, content: unknown, stage: string): Map<string, unknown> {
+/**
+ * Galat konversi hasil sunting: pesannya dapat mengutip isi dokumen -> hanya di blok rincian. IMPL-W9 A: `refs` = suntingan
+ * menambah tabel Rujukan; galat konverter MD_REPORT_INVALID (hubungan/documentId/pid tak sah) memakai kode yang SAMA
+ * dengan jalur studio_write (bukan EDIT_INVALID), 0 tulis.
+ */
+function reparseOrThrow(md: string, documentId: string, content: unknown, stage: string, refs = false): Map<string, unknown> {
   try {
     return reparse(md, documentId, content);
   } catch (e) {
+    const code = isRecord(e) && typeof e.code === "string" ? e.code : null;
+    if (refs && code === "MD_REPORT_INVALID") {
+      throw new McpToolError("MD_REPORT_INVALID", `${stage}: bagian Rujukan tidak dapat dipetakan ke refs (hubungan basis|evidence|output|supersedes, dokumen = documentId, paragraf = pid); tidak ada yang ditulis. Pesan konverter ada di blok rincian`, {
+        untrusted: true,
+        details: { code, message: e instanceof Error ? e.message : String(e) },
+      });
+    }
     throw new McpToolError("EDIT_INVALID", `${stage}: teks dokumen sesudah sunting tidak dapat dikonversi; tidak ada yang ditulis. Pesan konverter ada di blok rincian`, {
       untrusted: true,
       details: { code: isRecord(e) && typeof e.code === "string" ? e.code : null, message: e instanceof Error ? e.message : String(e) },
@@ -513,7 +524,9 @@ function chapterParagraphs(ch: unknown): { blocks: number; paras: string[]; kind
  */
 export function assertEditShape(before: Map<string, unknown>, after: Map<string, unknown>, plan: EditPlan): void {
   const bad: string[] = [];
-  const keysB = [...before.keys()].sort();
+  // IMPL-W9 A: bab baku yang dibuat `append` boleh muncul (isinya diperiksa di bawah).
+  const created = plan.created ?? new Set<string>();
+  const keysB = [...before.keys(), ...[...created].filter((k) => !before.has(k))].sort();
   const keysA = [...after.keys()].sort();
   if (keysB.join("|") !== keysA.join("|")) bad.push(`himpunan bab/bagian berubah (${keysB.join(",")} -> ${keysA.join(",")})`);
   const rb = isRecord(before.get("record")) ? (before.get("record") as Record<string, unknown>) : {};
@@ -556,6 +569,24 @@ export function assertEditShape(before: Map<string, unknown>, after: Map<string,
       return false;
     });
     if (lost.length > 0) bad.push(`${k}: ${lost.length} paragraf append berubah/tertelan sesudah konversi`);
+  }
+  for (const k of created) {
+    // IMPL-W9 A: bab baru hanya berisi blok append (jumlah, jenis bukan paragraf urut, teks paragraf utuh).
+    if (before.has(k) || !after.has(k)) continue;
+    const a = chapterParagraphs(after.get(k));
+    const app = plan.appended?.get(k) ?? [];
+    const want = app.flatMap((x) => x.kinds);
+    const expect = plan.paraDelta.get(k)?.delta ?? 0;
+    if (a.blocks !== expect) bad.push(`${k} (baru): jumlah blok ${a.blocks}, diharapkan ${expect}`);
+    if (a.kinds.join("|") !== want.join("|")) bad.push(`${k} (baru): jenis blok ${a.kinds.join(",") || "-"}, diharapkan ${want.join(",") || "-"}`);
+    const left = new Map<string, number>();
+    for (const t of a.paras.map(loose)) left.set(t, (left.get(t) ?? 0) + 1);
+    const lost = app.flatMap((x) => x.paras).map(loose).filter((t) => t !== "").filter((t) => {
+      if ((left.get(t) ?? 0) === 0) return true;
+      left.set(t, (left.get(t) as number) - 1);
+      return false;
+    });
+    if (lost.length > 0) bad.push(`${k} (baru): ${lost.length} paragraf append berubah/tertelan sesudah konversi`);
   }
   if (bad.length > 0) {
     throw new McpToolError("CONTENT_INJECTION", `hasil sunting mengubah struktur dokumen di luar satuan yang disunting (${bad.join("; ")}); tidak ada yang ditulis. Sunting teks biasa; medan record lewat baris medannya, butir lewat sel tabel. Rincian di blok`, {
@@ -607,20 +638,21 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
   // IMPL-W5 E5: status butir tersimpan (status tak terpetakan di sel -> status ini, butir tidak hilang).
   const rec0 = server.get("record");
   const prevItemStatus = new Map((isRecord(rec0) && Array.isArray(rec0.items) ? rec0.items.filter(isRecord) : []).map((i) => [String(i.key ?? "").toLowerCase(), String(i.status ?? "")] as [string, string]));
-  const { plan, notApplied, errors } = applyEdits(edited, ops, (w) => warnings.push(w), { prevItemStatus });
+  // IMPL-W9 A: append ke section laporan baku yang belum ada membuat section itu (dokumen klien tidak lewat sini).
+  const { plan, notApplied, errors } = applyEdits(edited, ops, (w) => warnings.push(w), { prevItemStatus, createMissing: true });
   // E4: semua suntingan gagal alamat -> perilaku lama (ok:false, galat pertama, 0 tulis).
   if (ops.length > 0 && notApplied.length === ops.length) throw errors[0];
   for (const n of notApplied) n.edit = (index[n.edit - 1] ?? n.edit - 1) + 1;
   patchRecordHeader(edited, metaFields, plan, (w) => warnings.push(w));
   let md = assemble(edited, title, doc.id, rev);
-  let after = reparseOrThrow(md, doc.id, content, "sunting");
+  let after = reparseOrThrow(md, doc.id, content, "sunting", plan.refsAppended === true);
   const diff = () => [...new Set([...before.keys(), ...after.keys()])].filter((p) => !sameContent(before.get(p), after.get(p))).sort((x, y) => PART_ORDER(x) - PART_ORDER(y));
   let changed = diff();
   if (changed.length > 0 && metaFields.reportedAt === undefined && exact.has("record")) {
     // IMPL-W5 E6: revisi ini dicap jam server (ReportedAt) bila agen tidak memberi reportedAt.
     patchRecordHeader(edited, { reportedAt: wibStamp(ctx.now()) }, plan, () => undefined);
     md = assemble(edited, title, doc.id, rev);
-    after = reparseOrThrow(md, doc.id, content, "sunting");
+    after = reparseOrThrow(md, doc.id, content, "sunting", plan.refsAppended === true);
     changed = diff();
   }
   assertEditShape(before, after, plan);
@@ -632,7 +664,7 @@ async function editWorkReport(a: Args, ctx: ToolContext, doc: ExistingDoc, agent
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
-  const unsafe = changed.filter((p) => !exact.has(p));
+  const unsafe = changed.filter((p) => !exact.has(p) && plan.created?.has(p) !== true);
   if (unsafe.length > 0) {
     throw new McpToolError("EDIT_UNSAFE", `bagian ${unsafe.map((p) => tok(p.replace(/ /g, "-"))).join(", ")} memuat bentuk yang tidak dapat ditulis ulang lewat teks tanpa kehilangan isi; tidak ada yang ditulis. Sunting bagian itu dengan studio_write (tulis ulang utuh)`, {
       details: { parts: unsafe, revisionNo: rev },
@@ -672,11 +704,13 @@ export function prepareStructEdits(edits: Args[]): void {
       const v = e.append;
       const blocks: unknown[] = Array.isArray(v) && !(v.length > 0 && v.every(isCells)) ? v : [v];
       if (blocks.length > 400) throw new McpToolError("INVALID_ARGUMENT", `edit ${i + 1}: append maks 400 blok`, { pointer: `/edits/${i}/append` });
+      // IMPL-W9 A: {ref} hanya untuk append ke bagian Rujukan laporan kerja (tabel rujukan disusun mesin).
+      const toRefs = typeof e.section === "string" && isRefsHeading(e.section);
       blocks.forEach((b, k) => {
-        const ref = isRecord(b) && b.ref !== undefined;
+        const ref = isRecord(b) && b.ref !== undefined && !toRefs;
         if (ref || !blockValid(b)) {
           const err = blockValid.errors?.[0];
-          throw new McpToolError("INVALID_ARGUMENT", `edit ${i + 1}: append blok ${k + 1} ${ref ? "{ref} tidak didukung append" : `tidak sah (${tok(err?.instancePath || "/", "/")} ${String(err?.message ?? "").slice(0, 120)})`}; blok: string, [[baris]], {table}, {chart}, {list}, {subheading}. Tidak ada yang ditulis`, { pointer: `/edits/${i}/append` });
+          throw new McpToolError("INVALID_ARGUMENT", `edit ${i + 1}: append blok ${k + 1} ${ref ? "{ref} hanya untuk append ke section Rujukan" : `tidak sah (${tok(err?.instancePath || "/", "/")} ${String(err?.message ?? "").slice(0, 120)})`}; blok: string, [[baris]], {table}, {chart}, {list}, {subheading}. Tidak ada yang ditulis`, { pointer: `/edits/${i}/append` });
         }
       });
       e.append = blocks;

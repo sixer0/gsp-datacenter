@@ -679,7 +679,7 @@ studio_edit { "documentId": "<id>", "edits": [
 ```
 
 - **append.** Blok = kosakata `studio_write` (string, `[[baris]]`, `{table, caption?, source?, unit?}`, `{list}`, `{subheading}`;
-  klien juga `{chart}`; `{ref}` tidak). Section = judul (samar, tanpa nomor) atau "bab N" (= section terakhir bab itu). Laporan:
+  klien juga `{chart}`; `{ref}` hanya ke Rujukan laporan, IMPL-W9 5.t). Section = judul (samar, tanpa nomor) atau "bab N" (= section terakhir bab itu). Laporan:
   susunan + escape sama dengan `studio_write` (`blockLines`, `guardLine`), tabel butir lewat konversi record yang sama;
   `assertEditShape` mengharapkan jenis blok append (tabel/daftar) di akhir section sasaran dan teks paragraf append utuh
   sesudah konversi (selain itu `CONTENT_INJECTION`). Klien: pembangun bab `studio_write` (`chapterOf`), sumber/satuan tidak
@@ -757,6 +757,35 @@ penolakan `INVALID_ARGUMENT` itu memakan ~36 dtk ulangan.
   cek pemilik berjalan SESUDAH dua langkah ini seperti sebelumnya; tidak ada bentuk masukan lain yang dilonggarkan.
   Kedua kode masuk kelas informasional (senyap di hasil ringkas `studio_write`/`studio_edit`, tampil dengan
   `detail: true`; alat baca tetap mencetaknya).
+
+### 5.t Ronde 12 (IMPL-W9): append membuat section baku; vonis dari token awal
+
+Bukti R12B: `studio_edit { section: "Rujukan", append: [[["hubungan","dokumen","paragraf"],["bukti","<documentId>","<pid>"]]] }`
+atas laporan tanpa Rujukan -> `TEXT_NOT_FOUND`, agen menulis ulang seluruh laporan; meta verdict `"PASS (CHECK 1-8)"` ->
+`VERDICT_DROPPED`.
+
+- **Section baku dibuat (laporan kerja saja).** `{section, append}` ke section yang tidak ada, tetapi dipetakan pemetaan judul
+  `studio_write` (`mapHeading`: alias registri + alias tambahan + kata utuh, mis. "Risks" -> Isu terbuka) ke bab outline
+  (Ringkasan, Rincian kerja, Bukti, Isu terbuka, Langkah berikut) atau ke Rujukan, membuat section itu di posisi bakunya
+  (bab menurut kunci; Rujukan di akhir laporan) lalu menambahkan blok; peringatan `SECTION_CREATED`. Bab baku yang sudah ada
+  dengan judul lain -> blok ditambahkan ke bab itu (`HEADING_MAPPED`). Pagar bentuk (`assertEditShape`) memeriksa bab baru:
+  isinya hanya blok append (jumlah, jenis, teks paragraf). Nama yang tidak terpetakan tetap `TEXT_NOT_FOUND`; `addRow` tidak
+  membuat section (hanya menyasar Rujukan yang sudah ada). Dokumen klien: tidak berubah (tanpa pembuatan section).
+- **Rujukan.** Rujukan laporan = `## Rujukan` di ekor bagian record. Blok append: tabel (larik baris atau `{table}`,
+  keterangan tidak dipakai, sama dengan `studio_write`) atau `{ref: {rel, documentId, pid?, revision?}}` (-> satu tabel
+  hubungan | dokumen | paragraf | revisi); blok teks ditolak `EDIT_INVALID` (studio_write memindahnya ke bab "Catatan
+  rujukan"; append tidak membuat bab itu). Konversi ke `record.refs` = konverter laporan yang sama (hubungan
+  basis|evidence|output|supersedes dan padanannya, documentId 20-40 huruf kecil/angka, pid pola PID); tak sah ->
+  `MD_REPORT_INVALID` (kode yang sama dengan jalur studio_write; pesan konverter di blok rincian), 0 tulis. Kiriman = bagian
+  record lewat jalur update ber-basis (pagar record dan cek server jalur update tetap). Append kedua ke Rujukan yang sudah ada
+  menambah baris (tanpa section kedua).
+- **Vonis (studio_write meta dan saluran meta studio_edit).** Nilai persis/alias utuh seperti dulu (tanpa peringatan). Selain
+  itu token awal (huruf, `_`, `-`, dipisah spasi; berhenti di tanda baca/angka; frasa terpanjang lebih dulu, maks 4 kata)
+  dicocokkan: `"PASS (CHECK 1-8)"`, `"pass: ..."`, `"NEEDS-REVIEW, ..."`, `"needs review (2)"`, `"LULUS - ..."` -> kode enum,
+  peringatan `VERDICT_NORMALIZED` (pesan memuat teks asli). Alias Indonesia: lulus -> PASS, gagal -> FAIL, perlu/butuh
+  tinjauan -> NEEDS_REVIEW, waspada -> CAUTION (ditambah passed/failed). Tanpa token awal terpetakan (`"xyz"`, `"(PASS)"`,
+  `"8/8 lulus"`) tetap `VERDICT_DROPPED`.
+- `SECTION_CREATED` dan `VERDICT_NORMALIZED` masuk kelas informasional (senyap di hasil ringkas, tampil dengan `detail: true`).
 
 ## 6. Keamanan
 
@@ -889,6 +918,10 @@ penolakan `INVALID_ARGUMENT` itu memakan ~36 dtk ulangan.
 - IMPL-W7: `implw7-rows.test.ts` (baris datar R12B -> satu tabel butir + 4 butir record lewat studio_write dan append;
   suntingan sel sesudahnya; klien studio_write dan append; larik tunggal tetap daftar; dua run lebar berbeda -> dua tabel;
   ROWS_COALESCED_TO_TABLE senyap di ringkas; jumlah tabel tercetak HTML/DOCX). Asap DEV: `scripts/studio/mcp/smoke-implw7.ts`.
+- IMPL-W9: `implw9-section-verdict.test.ts` (append membuat Rujukan dengan rujukan sah -> refs + posisi baku; pid tak sah ->
+  MD_REPORT_INVALID sama dengan studio_write, 0 tulis; bab Isu terbuka/alias Risks dibuat; non-baku dan dokumen klien tetap
+  TEXT_NOT_FOUND; vonis token awal + alias Indonesia; VERDICT_DROPPED tetap; ringkas vs detail). Asap DEV:
+  `scripts/studio/mcp/smoke-implw9.ts`.
 - Asap stdio: `scripts/studio/mcp/smoke.ts`, `scripts/studio/mcp/smoke-documents.ts` (bagian 5), dan
   `scripts/studio/mcp/smoke-figures.ts` (FIG-03b: buat dokumen, bab JSON dengan grafik padat, pratinjau, pratinjau inline,
   unduh SVG, revisi berbasis sesi, pratinjau ulang dengan isu lebih sedikit, revisi basis lama -> 409), dan

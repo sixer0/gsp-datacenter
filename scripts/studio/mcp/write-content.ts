@@ -315,8 +315,32 @@ const VERDICT_ALIASES: Readonly<Record<string, string>> = {
   caution: "CAUTION", "lulus dengan catatan": "CAUTION", "lolos dengan catatan": "CAUTION", catatan: "CAUTION", waspada: "CAUTION", "hati hati": "CAUTION", "perlu perhatian": "CAUTION",
   fail: "FAIL", gagal: "FAIL", "tidak lulus": "FAIL", "tidak lolos": "FAIL",
   "needs review": "NEEDS_REVIEW", "perlu tinjauan": "NEEDS_REVIEW", "perlu review": "NEEDS_REVIEW", "perlu ditinjau": "NEEDS_REVIEW",
+  // IMPL-W9 butir B: padanan tambahan untuk token awal ("BUTUH TINJAUAN", "passed").
+  "butuh tinjauan": "NEEDS_REVIEW", "butuh review": "NEEDS_REVIEW", passed: "PASS", failed: "FAIL",
 };
 const VERDICT_CODES = ["PASS", "CAUTION", "FAIL", "NEEDS_REVIEW"];
+
+/** Vonis persis (kode atau alias utuh) -> kode registri; undefined = bukan nilai utuh yang dikenal. */
+function verdictExact(raw: string): string | undefined {
+  const up = raw.trim().toUpperCase().replace(/[- ]/g, "_");
+  return VERDICT_ALIASES[statusKey(raw)] ?? (VERDICT_CODES.includes(up) ? up : undefined);
+}
+
+/**
+ * IMPL-W9 butir B (R12B "PASS (CHECK 1-8)" -> VERDICT_DROPPED): token awal nilai vonis (huruf, `_`, `-`, dipisah spasi;
+ * berhenti di tanda baca/angka) dicocokkan dengan kode/alias, frasa terpanjang lebih dulu (maks 4 kata), jadi
+ * "lulus dengan catatan minor" -> CAUTION dan "tidak lulus ..." -> FAIL. Tanpa token awal yang terpetakan -> undefined.
+ */
+function verdictLeading(raw: string): string | undefined {
+  const m = /^\s*([\p{L}_-]+(?:\s+[\p{L}_-]+)*)/u.exec(raw);
+  if (m === null) return undefined;
+  const words = statusKey(m[1]).split(" ").filter((w) => w !== "");
+  for (let n = Math.min(words.length, 4); n >= 1; n--) {
+    const hit = verdictExact(words.slice(0, n).join(" "));
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}
 const CARD_RE = /^t_[0-9a-f]{8}$/;
 
 const REPORTED_AT_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2}| ?WIB)?)?$/;
@@ -379,8 +403,11 @@ export const wibStamp = (now: number): string => `${new Date(now + 7 * 3600_000)
  */
 function normalizeOptionalFields(v: Partial<Record<string, string>>, warn: (w: ToolWarning) => void): void {
   if (v.verdict !== undefined) {
-    const up = v.verdict.toUpperCase().replace(/[- ]/g, "_");
-    const vd = VERDICT_ALIASES[statusKey(v.verdict)] ?? (VERDICT_CODES.includes(up) ? up : undefined);
+    let vd = verdictExact(v.verdict);
+    if (vd === undefined) {
+      vd = verdictLeading(v.verdict);
+      if (vd !== undefined) warn({ code: "VERDICT_NORMALIZED", message: `meta.verdict "${v.verdict}" ditulis sebagai ${vd} (token awal; pilihan: PASS, CAUTION, FAIL, NEEDS_REVIEW)` });
+    }
     if (vd === undefined) warn({ code: "VERDICT_DROPPED", message: `meta.verdict "${v.verdict}" tidak dikenal; tidak ditulis (pilihan: PASS, CAUTION, FAIL, NEEDS_REVIEW)` });
     if (vd !== undefined) v.verdict = vd;
     else delete v.verdict;
@@ -563,7 +590,32 @@ const REL_ALIASES: Readonly<Record<string, string>> = {
   supersedes: "supersedes", menggantikan: "supersedes", mengganti: "supersedes", replaces: "supersedes",
 };
 const REF_DOC_RE = /^[a-z0-9]{20,40}$/;
-const isRefsHeading = (h: string) => REFS_HEADINGS.has(stripNumber(h).toLowerCase().replace(/\s+/g, " ").trim());
+/**
+ * IMPL-W9 butir A: blok `append` ke bagian Rujukan laporan kerja -> tabel rujukan. Tabel (larik baris / `{table}`)
+ * diteruskan apa adanya seperti `arrangeRefs` studio_write (keterangan tabel tidak dipakai); `{ref}` -> satu tabel
+ * hubungan | dokumen | paragraf | revisi. Validasi hubungan/documentId/pid = konverter laporan (jalur yang sama dengan
+ * studio_write). Blok lain ditolak (studio_write memindahnya ke bab "Catatan rujukan"; append tidak membuat bab itu).
+ */
+export function refsAppendTables(blocks: readonly Block[], where: string): Rows[] {
+  const out: Rows[] = [];
+  const rows: Rows = [];
+  blocks.forEach((b, k) => {
+    const o = b as unknown as Record<string, unknown>;
+    if (isRows(b)) out.push(b);
+    else if (isObj(o) && isRows(o.table)) out.push(o.table as Rows);
+    else if (isObj(o) && isObj(o.ref)) {
+      const r = o.ref as unknown as RefInput;
+      const rel = String(r.rel).trim();
+      rows.push([REL_ALIASES[rel.toLowerCase()] ?? rel, String(r.documentId).trim(), r.pid ?? "", r.revision !== undefined ? String(r.revision) : ""]);
+    } else {
+      throw new McpToolError("EDIT_INVALID", `${where} blok ${k + 1}: bagian Rujukan hanya memuat tabel rujukan ([["hubungan","dokumen","paragraf","revisi"], [...]]) atau {ref}; tambahkan teks ke bab lain. Tidak ada yang ditulis`);
+    }
+  });
+  if (rows.length > 0) out.push([["hubungan", "dokumen", "paragraf", "revisi"], ...rows]);
+  return out;
+}
+
+export const isRefsHeading = (h: string): boolean => REFS_HEADINGS.has(stripNumber(h).toLowerCase().replace(/\s+/g, " ").trim());
 
 /**
  * Blok `{ref}` di bagian mana pun -> satu tabel Rujukan (hubungan | dokumen | paragraf | revisi) di akhir; teks di

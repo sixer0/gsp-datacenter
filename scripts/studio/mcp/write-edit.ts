@@ -7,7 +7,7 @@
 import type { ReportPartMarkdown } from "../../../src/lib/studio/services/draft/md-report";
 import { McpToolError } from "./safety";
 import type { ToolWarning } from "./tool-kit";
-import { blockLines, cellText, expectedParagraphs, guardLine, isRows, itemStatusOf, paragraphLines, stableKey, type Block, type Cell } from "./write-content";
+import { blockLines, cellText, expectedParagraphs, guardLine, isRefsHeading, isRows, itemStatusOf, mapHeading, paragraphLines, refsAppendTables, stableKey, workReportChapters, type Block, type Cell } from "./write-content";
 import { exactView, findCell, findSection, findText, fold, notAppliedOf, spansHaveMarkup, spliceSpans, type MatchUnit, type NotApplied, type Tier } from "./write-match";
 
 export type Region = keyof ReportPartMarkdown;
@@ -218,6 +218,10 @@ export interface EditPlan {
   paraDelta: Map<string, { removedMax: number; delta: number }>;
   /** IMPL-W5 E1: blok yang ditambahkan `append` per bagian: indeks section (-1 = pembuka bab), jenis blok bukan paragraf, teks paragraf. */
   appended?: Map<string, Array<{ section: number; kinds: string[]; paras: string[] }>>;
+  /** IMPL-W9 A: bab baku yang dibuat `append` (belum ada di dokumen). */
+  created?: Set<string>;
+  /** IMPL-W9 A: `append` ke bagian Rujukan (tabel rujukan -> record.refs lewat konverter). */
+  refsAppended?: boolean;
 }
 
 const FIELD_NAMES: Readonly<Record<string, string>> = { status: "status", owner: "owner", reportedat: "reportedAt", verdict: "verdict", initiator: "initiator", taskref: "taskRef", cardids: "cardIds" };
@@ -324,7 +328,15 @@ function blockShape(b: Block): { kinds: string[]; paras: string[] } {
 export interface ApplyOptions {
   /** IMPL-W5 E5: status butir tersimpan (kunci huruf kecil -> kode); status tak terpetakan memakai status ini. */
   prevItemStatus?: ReadonlyMap<string, string>;
+  /**
+   * IMPL-W9 A (laporan kerja saja): `append` ke section yang tidak ada tetapi dipetakan (pemetaan judul studio_write)
+   * ke section laporan baku (bab outline atau Rujukan) membuat section itu di posisi bakunya (`SECTION_CREATED`).
+   */
+  createMissing?: boolean;
 }
+
+/** Urutan baku bagian laporan (record, bab menurut kunci, references) = urutan `serializeParts`. */
+const partRank = (p: string): number => (p === "record" ? 0 : p === "references" ? 9999 : Number(p.replace(/^bab /, "")) || 5000);
 
 /**
  * Terapkan suntingan berurutan (setiap suntingan melihat hasil sebelumnya). Mengembalikan bagian tersentuh + rencana.
@@ -334,7 +346,7 @@ export interface ApplyOptions {
  */
 export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w: ToolWarning) => void, opts: ApplyOptions = {}): { touched: Set<number>; plan: EditPlan; notApplied: NotApplied[]; errors: unknown[] } {
   const touched = new Set<number>();
-  const plan: EditPlan = { fields: new Set(), itemCells: false, refCells: false, paraDelta: new Map(), appended: new Map() };
+  const plan: EditPlan = { fields: new Set(), itemCells: false, refCells: false, paraDelta: new Map(), appended: new Map(), created: new Set() };
   const notApplied: NotApplied[] = [];
   const errors: unknown[] = [];
   const delta = (pi: number, removed: number, d: number) => {
@@ -389,6 +401,77 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
       },
       label,
     );
+  /** IMPL-W9 A: Rujukan laporan kerja = `## Rujukan` di ekor bagian record (bukan section bab). */
+  const refsSection = (): SecRef | null => {
+    const pi = parts.findIndex((p) => p.part === "record");
+    if (pi < 0) return null;
+    const tail = parts[pi].md.tail;
+    const isHead = (l: string) => /^#{1,6}\s+/.test(l);
+    const head = tail.findIndex((l) => isHead(l) && isRefsHeading(l.replace(/^#{1,6}\s+/, "")));
+    if (head < 0) return null;
+    const next = tail.findIndex((l, i) => i > head && isHead(l));
+    return { part: pi, region: "tail", head, end: next < 0 ? tail.length : next, title: "Rujukan", ordinal: 0 };
+  };
+  /** Bagian baru di akhir larik (posisi baku diterapkan sesudah semua suntingan); larik paralel ikut diperpanjang. */
+  const addPart = (name: string): number => {
+    parts.push({ part: name, md: { header: [], intro: [], body: [], tail: [] } });
+    snapshot.push({ header: [], intro: [], body: [], tail: [] });
+    stored.push({ part: name, md: { header: [], intro: [], body: [], tail: [] } });
+    trusted.push(new Map());
+    ids.push({ header: [], intro: [], body: [], tail: [] });
+    return parts.length - 1;
+  };
+  /**
+   * IMPL-W9 A: section laporan baku untuk `target` yang tidak ditemukan sebagai judul: Rujukan (ekor record) atau bab
+   * outline lewat `mapHeading` (pemetaan judul studio_write, mis. "Risks" -> Isu terbuka). Bab yang sudah ada dengan
+   * judul lain -> section terakhirnya. Belum ada -> dibuat dengan judul outline (`SECTION_CREATED`). null = tidak baku.
+   */
+  const standardSection = (target: string, label: string): SecRef | null => {
+    if (isRefsHeading(target)) {
+      const found = refsSection();
+      if (found !== null) return found;
+      const pi = parts.findIndex((p) => p.part === "record");
+      if (pi < 0) return null;
+      const head = parts[pi].md.tail.length;
+      splice(pi, "tail", head, 0, ["## Rujukan", ""]);
+      trust(pi, "## Rujukan");
+      warn({ code: "SECTION_CREATED", message: `${label}: section Rujukan belum ada; dibuat di posisi bakunya (akhir laporan) lalu blok ditambahkan` });
+      return { part: pi, region: "tail", head, end: head + 2, title: "Rujukan", ordinal: 0 };
+    }
+    const m = workReportChapters();
+    const h = mapHeading(target.replace(/\s+/g, " ").trim(), m);
+    const title = h.key !== null ? m.titles.get(h.key) : undefined;
+    if (h.key === null || title === undefined) return null;
+    const name = `bab ${h.key}`;
+    const pi = parts.findIndex((p) => p.part === name);
+    if (pi >= 0) {
+      const last = sectionsOf(parts).filter((x) => x.part === pi).pop();
+      if (last !== undefined) warn({ code: "HEADING_MAPPED", message: `${label}: section "${target.slice(0, 80)}" dipetakan ke bab laporan ${last.title.slice(0, 80)}` });
+      return last ?? null;
+    }
+    const line = `## ${title}`;
+    const npi = addPart(name);
+    splice(npi, "body", 0, 0, [line, ""]);
+    trust(npi, line);
+    plan.created?.add(name);
+    warn({ code: "SECTION_CREATED", message: `${label}: section ${title} belum ada; dibuat di posisi bakunya (bab ${h.key}) lalu blok ditambahkan` });
+    return { part: npi, region: "body", head: 0, end: 2, title, ordinal: 0 };
+  };
+  /** Section sasaran append/addRow: judul/bab yang ada; IMPL-W9: Rujukan di ekor record, atau section baku dibuat. */
+  const targetSection = (target: string, label: string, create: boolean): SecRef => {
+    if (opts.createMissing === true && isRefsHeading(target)) {
+      const r = create ? standardSection(target, label) : refsSection();
+      if (r !== null) return r;
+    }
+    try {
+      return secResolve(target, label);
+    } catch (err) {
+      if (!create || opts.createMissing !== true || !(err instanceof McpToolError) || err.code !== "TEXT_NOT_FOUND") throw err;
+      const made = standardSection(target, label);
+      if (made === null) throw err;
+      return made;
+    }
+  };
   let changed = false;
   const cellSet = (u: Unit, next: string) => {
     const lines = parts[u.part].md[u.region];
@@ -409,10 +492,23 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
   const applyOne = (e: EditOp, label: string): void => {
     if ("append" in e) {
       // IMPL-W5 E1: blok di akhir section, urut; susunan + escape sama dengan studio_write (blockLines).
-      const sec = secResolve(e.section, label);
+      const sec = targetSection(e.section, label, true);
       const pname = parts[sec.part].part;
       if (pname === "references") throw new McpToolError("EDIT_INVALID", `${label}: append tidak berlaku untuk bagian Rujukan; pakai addRow. Tidak ada yang ditulis`);
       const lines = parts[sec.part].md[sec.region];
+      if (pname === "record" && sec.region === "tail") {
+        // IMPL-W9 A: tabel rujukan di bagian Rujukan (ekor record); record.refs disusun konverter seperti studio_write.
+        let end = sec.end;
+        while (end > sec.head + 1 && lines[end - 1].trim() === "") end--;
+        const rows = refsAppendTables(e.append, label).flatMap((t) => ["", ...blockLines(t, warn, label, new Set())]);
+        if (rows.length === 0) throw new McpToolError("EDIT_INVALID", `${label}: append tanpa isi; tidak ada yang ditulis`);
+        for (const l of rows) trust(sec.part, l);
+        splice(sec.part, sec.region, end, 0, [...rows, ""]);
+        plan.refCells = true;
+        plan.refsAppended = true;
+        touched.add(sec.part);
+        return;
+      }
       let at = sec.end;
       while (at > sec.head + 1 && lines[at - 1].trim() === "") at--;
       const used = usedKeys();
@@ -440,7 +536,8 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
     }
     if ("addRow" in e) {
       // IMPL-W5 E2: baris baru di tabel section (bawaan tabel terakhir); lebar = jumlah kolom tabel.
-      const sec = secResolve(e.section, label);
+      // IMPL-W9: Rujukan yang sudah ada (ekor record) juga dapat menjadi sasaran; addRow tidak membuat section.
+      const sec = targetSection(e.section, label, false);
       const lines = parts[sec.part].md[sec.region];
       const tables = tablesIn(lines, sec.head + 1, sec.end);
       const t = pickTable(tables, e.table, label);
@@ -585,7 +682,12 @@ export function applyEdits(parts: EditPart[], edits: readonly EditOp[], warn: (w
   if (edits.length > 0 && notApplied.length === edits.length) throw errors[0];
   normalizeItemStatuses(parts, snapshot, trust, opts.prevItemStatus ?? new Map(), warn);
   reguard(parts, snapshot, trusted);
-  return { touched, plan, notApplied, errors };
+  if ((plan.created?.size ?? 0) === 0) return { touched, plan, notApplied, errors };
+  // IMPL-W9 A: bagian baru ke posisi bakunya (urutan bab), indeks `touched` dipetakan ulang.
+  const order = parts.map((p, i) => ({ p, i })).sort((x, y) => partRank(x.p.part) - partRank(y.p.part) || x.i - y.i);
+  const moved = new Map(order.map((o, k) => [o.i, k] as [number, number]));
+  parts.splice(0, parts.length, ...order.map((o) => o.p));
+  return { touched: new Set([...touched].map((i) => moved.get(i) as number)), plan, notApplied, errors };
 }
 
 /** E2: tabel sasaran addRow: bawaan terakhir; angka = urutan 1..n di section; teks = keterangan atau baris judul. */

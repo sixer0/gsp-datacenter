@@ -116,7 +116,7 @@ export interface ToolWarning {
  * IMPL-W7: ROWS_COALESCED_TO_TABLE (baris datar berurutan digabung jadi tabel) ikut kelas ini.
  * IMPL-W8: ARGS_UNWRAPPED (pembungkus `arguments` dibuka) dan META_LIFTED_FROM_EDITS (butir `{ meta }` diangkat) juga.
  */
-export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED", "ROWS_COALESCED_TO_TABLE", "ARGS_UNWRAPPED", "META_LIFTED_FROM_EDITS"]);
+export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED", "ROWS_COALESCED_TO_TABLE", "ARGS_UNWRAPPED", "META_LIFTED_FROM_EDITS", "SECTION_CREATED", "VERDICT_NORMALIZED"]);
 
 /** Saring peringatan informasional untuk hasil ringkas; `detail: true` mengembalikan daftar utuh. */
 export function quietWarnings(warnings: readonly ToolWarning[], detail: boolean): ToolWarning[] {

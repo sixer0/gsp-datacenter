@@ -31,7 +31,8 @@ const INFO = ['ITEM_KEY_COLUMN_ADDED', 'ITEM_KEY_GENERATED'];
 describe('IMPL-W6: peringatan informasional senyap di hasil ringkas', () => {
   it('kelas informasional berisi dua kode ITEM_KEY_* (+ ROWS_COALESCED_TO_TABLE, IMPL-W7); quietWarnings tidak menyentuh peringatan lain', () => {
     // IMPL-W7: ROWS_COALESCED_TO_TABLE ikut kelas informasional. IMPL-W8: ARGS_UNWRAPPED + META_LIFTED_FROM_EDITS juga.
-    expect([...INFORMATIONAL_WARNING_CODES].sort()).toEqual([...INFO, 'ROWS_COALESCED_TO_TABLE', 'ARGS_UNWRAPPED', 'META_LIFTED_FROM_EDITS'].sort());
+    // IMPL-W9: SECTION_CREATED + VERDICT_NORMALIZED juga.
+    expect([...INFORMATIONAL_WARNING_CODES].sort()).toEqual([...INFO, 'ROWS_COALESCED_TO_TABLE', 'ARGS_UNWRAPPED', 'META_LIFTED_FROM_EDITS', 'SECTION_CREATED', 'VERDICT_NORMALIZED'].sort());
     const all = [{ code: 'ITEM_KEY_GENERATED', message: 'a' }, { code: 'HEADING_MAPPED', message: 'b' }, { code: 'ITEM_KEY_COLUMN_ADDED', message: 'c' }];
     expect(quietWarnings(all, false).map((w) => w.code)).toEqual(['HEADING_MAPPED']);
     expect(quietWarnings(all, true)).toEqual(all);
