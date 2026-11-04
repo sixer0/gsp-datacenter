@@ -13,6 +13,7 @@ type Rec = Record<string, unknown>;
 class Notes {
   private readonly ignored = new Set<string>();
   private readonly mapped = new Set<string>();
+  private readonly coalesced: string[] = [];
   readonly list: ToolWarning[] = [];
   ignore(where: string, key: string): void {
     this.ignored.add(`${where}.${tok(key, "(kunci-tak-aman)")}`);
@@ -20,7 +21,11 @@ class Notes {
   map(from: string, to: string): void {
     this.mapped.add(`${from} -> ${to}`);
   }
+  coalesce(where: string): void {
+    this.coalesced.push(where);
+  }
   done(): ToolWarning[] {
+    if (this.coalesced.length > 0) this.list.push({ code: "ROWS_COALESCED_TO_TABLE", message: `larik datar berurutan selebar sama digabung menjadi tabel (baris pertama = judul kolom): ${this.coalesced.slice(0, 12).join("; ")}. Bentuk kanonik tabel = satu blok [[judul...], [baris...]]` });
     if (this.mapped.size > 0) this.list.push({ code: "ARG_MAPPED", message: `bentuk varian dipetakan: ${[...this.mapped].slice(0, 12).join("; ")}` });
     if (this.ignored.size > 0) this.list.push({ code: "ARG_IGNORED", message: `properti tak dikenal diabaikan (tidak ditolak): ${[...this.ignored].slice(0, 12).join(", ")}` });
     return this.list;
@@ -54,6 +59,38 @@ const cell = (c: unknown): unknown => (typeof c === "string" || typeof c === "nu
 const isRowsLike = (v: unknown): v is unknown[][] => Array.isArray(v) && v.length > 0 && v.every((r) => Array.isArray(r));
 const rows = (v: unknown[][]): unknown[][] => v.map((r) => r.map(cell));
 const textOf = (v: unknown): string | null => (typeof v === "string" ? v : typeof v === "number" ? String(v) : null);
+
+/**
+ * IMPL-W7 (ronde 10 R12B): larik datar skalar dengan >= 2 sel. Agen yang menjatuhkan satu tingkat kurung tabel mengirim
+ * setiap baris sebagai blok sendiri; dua atau lebih blok seperti ini BERURUTAN dengan lebar sama = satu tabel.
+ */
+const isFlatRow = (b: unknown): b is Array<string | number> => Array.isArray(b) && b.length >= 2 && b.every((x) => typeof x === "string" || typeof x === "number");
+
+/**
+ * IMPL-W7: gabungkan run >= 2 larik datar berurutan selebar sama menjadi satu blok tabel (Cell[][], urutan baris tetap,
+ * baris pertama = judul kolom seperti blok tabel biasa). Perubahan lebar memutus run (tiap run digabung sendiri); larik
+ * bersarang, larik lebar 1, dan blok lain tidak ikut. Larik datar tunggal tidak disentuh (tetap jadi daftar di
+ * `normalizeBlock`). Mengembalikan pasangan blok + indeks asal (untuk jalur peringatan).
+ */
+function coalesceRows(blocks: readonly unknown[], n: Notes, where: string): Array<{ b: unknown; k: number }> {
+  const out: Array<{ b: unknown; k: number }> = [];
+  for (let i = 0; i < blocks.length; ) {
+    const first = blocks[i];
+    if (isFlatRow(first)) {
+      let j = i + 1;
+      while (j < blocks.length && isFlatRow(blocks[j]) && (blocks[j] as unknown[]).length === first.length) j++;
+      if (j - i >= 2) {
+        out.push({ b: (blocks.slice(i, j) as unknown[][]).map((r) => r.map(cell)), k: i });
+        n.coalesce(`${where}[${i}..${j - 1}] ${j - i} baris x ${first.length} kolom`);
+        i = j;
+        continue;
+      }
+    }
+    out.push({ b: first, k: i });
+    i++;
+  }
+  return out;
+}
 
 const TABLE_KEYS = ["table", "caption", "source", "unit"];
 const CHART_KEYS = ["type", "categories", "series", "caption", "source", "unit", "stacked"];
@@ -148,10 +185,11 @@ function normalizeSection(s: unknown, i: number, n: Notes): unknown {
   if (o.blocks === undefined) o.blocks = [];
   if (Array.isArray(o.blocks)) {
     // Bagian bersarang {heading, blocks} di dalam blok -> {subheading} + bloknya (diratakan).
-    o.blocks = o.blocks.flatMap((b, k) => {
+    o.blocks = coalesceRows(o.blocks, n, `${where}.blocks`).flatMap(({ b, k }) => {
       if (isRecord(b) && Array.isArray(b.blocks) && (textOf(b.heading) ?? textOf(b.title)) !== null) {
         n.map(`${where}.blocks[${k}]{heading,blocks}`, "{subheading} + blok");
-        return [{ subheading: (textOf(b.heading) ?? textOf(b.title)) as string }, ...(b.blocks as unknown[]).map((x, j) => normalizeBlock(x, n, `${where}.blocks[${k}].blocks[${j}]`))];
+        const inner = `${where}.blocks[${k}].blocks`;
+        return [{ subheading: (textOf(b.heading) ?? textOf(b.title)) as string }, ...coalesceRows(b.blocks as unknown[], n, inner).map(({ b: x, k: j }) => normalizeBlock(x, n, `${inner}[${j}]`))];
       }
       return [normalizeBlock(b, n, `${where}.blocks[${k}]`)];
     });
@@ -218,7 +256,8 @@ export function normalizeEditArgs(a: Args): ToolWarning[] {
         alias(o, ["heading", "chapter", "bab", "under"], "section", n, where);
         const v = o.append;
         const rowsLike = Array.isArray(v) && v.length > 0 && v.every((r) => Array.isArray(r) && r.every((c) => typeof c === "string" || typeof c === "number"));
-        o.append = Array.isArray(v) && !rowsLike ? v.map((b, k) => (typeof b === "string" ? b : normalizeBlock(b, n, `${where}.append[${k}]`))) : typeof v === "string" || rowsLike ? v : normalizeBlock(v, n, `${where}.append`);
+        // IMPL-W7: larik yang SELURUHNYA baris (rowsLike) tetap satu tabel seperti dulu; selain itu run baris datar digabung.
+        o.append = Array.isArray(v) && !rowsLike ? coalesceRows(v, n, `${where}.append`).map(({ b, k }) => (typeof b === "string" ? b : normalizeBlock(b, n, `${where}.append[${k}]`))) : typeof v === "string" || rowsLike ? v : normalizeBlock(v, n, `${where}.append`);
         if (typeof o.section === "number") o.section = String(o.section);
         prune(o, ["section", "append"], n, where);
         return o;

@@ -532,7 +532,7 @@ mengunci server 60 s sesudah 3 berturut-turut. Log stderr tetap `ok:false` + `co
 
 **Kelonggaran skema (`write-normalize.ts`).** Sebelum validasi: `{paragraph|text|p: "..."}` -> paragraf, `{rows}` /
 `{table: {rows, header}}` -> tabel, `{items|bullets}` -> daftar, `{heading}` (atau `{heading, blocks}` bersarang) ->
-`{subheading}`, larik teks -> daftar, sel boolean/null -> teks, nilai meta angka -> teks, `title|name` -> `heading`,
+`{subheading}`, larik teks tunggal -> daftar (>= 2 larik teks berurutan selebar sama -> satu tabel, IMPL-W7 5.v), sel boolean/null -> teks, nilai meta angka -> teks, `title|name` -> `heading`,
 `content|paragraphs` -> `blocks`. Properti tak dikenal dibuang dengan peringatan `ARG_IGNORED` (pemetaan: `ARG_MAPPED`).
 Kunci meta dinormalkan (camelCase, `_`, `-`) lalu dicari aliasnya (`tanggal` -> date, `nomor` -> number, `revisi`/`revision`
 -> rev); kunci tak dikenal = peringatan, tidak pernah ditolak. Batas ukuran skema tetap ditegakkan.
@@ -715,6 +715,29 @@ studio_edit { "documentId": "<id>", "edits": [
 - **Ukuran deskripsi.** `tools/list` dua alat tulis (JSON nama + deskripsi + skema): 8.158 -> 9.053 B (+11,0 %); skema
   blok `append` divalidasi saat dijalankan (ajv, skema `BLOCK` studio_write) agar tidak diulang di `tools/list`.
 
+### 5.v Ronde 10 (IMPL-W7): baris datar berurutan -> tabel
+
+Bukti R12B: agen menjatuhkan satu tingkat kurung tabel, jadi setiap baris tabel dikirim sebagai blok sendiri
+(`[["judul","status"], ["R12-B1: ...","berjalan"], ..., "paragraf"]`). Dulu tiap larik datar menjadi daftar dan
+digabung diam-diam menjadi satu daftar berbutir; tabel butir dan butir record hilang, suntingan sel sesudahnya gagal,
+dan mengganti daftar dengan tabel ditolak pagar struktur (`CONTENT_INJECTION`, benar).
+
+- **Aturan (`write-normalize.ts` `coalesceRows`).** Untuk `sections[].blocks` `studio_write` (laporan kerja dan dokumen
+  klien, termasuk blok bersarang `{heading, blocks}`) dan larik `append` `studio_edit` (laporan dan klien): run 2 blok atau
+  lebih yang BERURUTAN, masing-masing larik datar skalar (teks/angka) dengan lebar SAMA >= 2, digabung menjadi SATU blok
+  tabel `Cell[][]` (urutan baris tetap, baris pertama = judul kolom, sama persis dengan blok tabel kanonik). Perubahan
+  lebar memutus run (tiap run selebar sama >= 2 digabung sendiri); larik bersarang, larik lebar 1, dan blok lain tidak
+  ikut. Peringatan `ROWS_COALESCED_TO_TABLE` (kelas informasional, disembunyikan di hasil ringkas, tampil dengan
+  `detail: true`).
+- **Tidak berubah.** Larik datar TUNGGAL (bukan bagian run) tetap daftar (`ARG_MAPPED`). `append` yang SELURUHNYA larik
+  baris (`[[..],[..]]`) tetap satu tabel seperti IMPL-W5.
+- **Tabel hasil gabungan = tabel biasa.** Kolom status -> tabel butir (kolom `key`, kunci stabil `K-<sha8>`, alias status,
+  butir record). Dokumen klien: gerbang sumber DATUM-10 sama; jalur `append` klien tidak membawa `meta.source`, jadi tabel
+  append tanpa `{table, caption, source}` -> `SOURCE_MISSING` (0 tulis), sama dengan kiriman kanonik.
+- **Ringkasan verifikasi.** Baris `verifikasi:` memuat `N tabel` (tabel tercetak di berkas, termasuk tabel templat);
+  `structuredContent.verify.tableCount`; daftar judul di blok tak tepercaya diberi `[tabel N]` per judul (bila daftar
+  judul tidak dicetak ulang: satu baris `tabel per judul: ...`).
+
 ## 6. Keamanan
 
 - Tujuan jaringan dibatasi ke asal `STUDIO_BASE_URL`; pengalihan 3xx tidak pernah diikuti, termasuk
@@ -843,6 +866,9 @@ studio_edit { "documentId": "<id>", "edits": [
   `tests/unit/studio/renderers/implw5-chart-gutter.test.ts` (tepi kiri label >= 0,2 mm dengan metrik nyata untuk K-01 data
   r6, label 24 karakter, P-01; PNG 300 dpi tanpa tinta kolom x=0..2); `implw5-footer-display.test.ts` (kaki halaman DOCX
   nomor tampilan + REV 1; kontrol tanpa blok kendali = perilaku lama). Asap DEV: `scripts/studio/mcp/smoke-implw5.ts`.
+- IMPL-W7: `implw7-rows.test.ts` (baris datar R12B -> satu tabel butir + 4 butir record lewat studio_write dan append;
+  suntingan sel sesudahnya; klien studio_write dan append; larik tunggal tetap daftar; dua run lebar berbeda -> dua tabel;
+  ROWS_COALESCED_TO_TABLE senyap di ringkas; jumlah tabel tercetak HTML/DOCX). Asap DEV: `scripts/studio/mcp/smoke-implw7.ts`.
 - Asap stdio: `scripts/studio/mcp/smoke.ts`, `scripts/studio/mcp/smoke-documents.ts` (bagian 5), dan
   `scripts/studio/mcp/smoke-figures.ts` (FIG-03b: buat dokumen, bab JSON dengan grafik padat, pratinjau, pratinjau inline,
   unduh SVG, revisi berbasis sesi, pratinjau ulang dengan isu lebih sedikit, revisi basis lama -> 409), dan

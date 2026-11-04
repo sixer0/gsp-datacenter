@@ -21,7 +21,7 @@ Judul bagian persis lima ini, urut. Tambah `Rujukan` hanya bila laporan merujuk 
 | Bagian | Isi |
 |---|---|
 | `Ringkasan` | tujuan, keputusan, dan satu kalimat status laporan pada langkah itu |
-| `Rincian kerja` | tabel butir `[["judul","status"], ...]` (judul = kode + uraian butir), lalu paragraf rincian |
+| `Rincian kerja` | tabel butir sebagai SATU blok berisi larik baris `[["judul","status"],["X-B1: ...","berjalan"]]` (judul = kode + uraian butir), lalu paragraf rincian |
 | `Bukti` | paragraf atau tabel bukti; nilai kunci (sha, jumlah, path) ditulis utuh |
 | `Isu terbuka` | paragraf; bila sumber tidak menyebut, tulis bahwa itu tidak ada di sumber |
 | `Langkah berikut` | paragraf; sama seperti di atas |

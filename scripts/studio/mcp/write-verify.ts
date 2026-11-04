@@ -24,9 +24,12 @@ const MAX_CAPTIONS = 40;
 const MAX_FIGURES = 12;
 
 export interface Printed {
-  headings: Array<{ l: number; t: string; k?: string }>;
+  /** `tb` (IMPL-W7) = jumlah tabel tercetak sesudah judul ini dan sebelum judul berikutnya (hanya bila > 0). */
+  headings: Array<{ l: number; t: string; k?: string; tb?: number }>;
   captions: string[];
   pages: number | null;
+  /** IMPL-W7: jumlah tabel tercetak di seluruh berkas (termasuk tabel templat seperti blok kendali). */
+  tables: number;
 }
 
 const unxml = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_m, d: string) => String.fromCodePoint(Number(d))).replace(/&amp;/g, "&");
@@ -62,20 +65,39 @@ function firstAtLeast(list: readonly number[], x: number): number {
  * W4-L2: elemen `<nama ...>isi</nama>` tanpa regex kuadratik. Posisi penutup per nama dikumpulkan sekali, tiap pembuka
  * mencari penutup berikutnya dengan pencarian biner; pembuka tanpa penutup dilewati. Paling banyak MAX_ELEMENTS.
  */
-function elements(src: string, open: RegExp, names: readonly string[]): Array<{ name: string; inner: string }> {
+function elements(src: string, open: RegExp, names: readonly string[]): Array<{ name: string; inner: string; at: number }> {
   const closes = new Map(names.map((n) => [n, positions(src, `</${n}>`)]));
-  const out: Array<{ name: string; inner: string }> = [];
+  const out: Array<{ name: string; inner: string; at: number }> = [];
   open.lastIndex = 0;
   for (let m = open.exec(src); m !== null && out.length < MAX_ELEMENTS; m = open.exec(src)) {
     const name = m[1];
     const start = m.index + m[0].length;
     const end = firstAtLeast(closes.get(name) ?? [], start);
     if (end < 0) continue;
-    out.push({ name, inner: src.slice(start, end) });
+    out.push({ name, inner: src.slice(start, end), at: m.index });
     open.lastIndex = end + name.length + 3;
   }
   return out;
 }
+
+/**
+ * IMPL-W7: hitung tabel tercetak (posisi pembuka `tableAt`) dan bagikan ke judul terdekat sebelumnya (`headAt`, urut
+ * naik, paralel dengan `headings`). Tabel sebelum judul pertama hanya masuk total.
+ */
+function countTables(tableAt: readonly number[], headAt: readonly number[], headings: Printed["headings"]): number {
+  let h = -1;
+  for (const t of tableAt) {
+    while (h + 1 < headAt.length && headAt[h + 1] < t) h++;
+    if (h >= 0) headings[h].tb = (headings[h].tb ?? 0) + 1;
+  }
+  return tableAt.length;
+}
+const openTags = (src: string, re: RegExp): number[] => {
+  const out: number[] = [];
+  re.lastIndex = 0;
+  for (let m = re.exec(src); m !== null && out.length < MAX_ELEMENTS; m = re.exec(src)) out.push(m.index);
+  return out;
+};
 
 /** Judul + keterangan tercetak dari byte DOCX. Entri > MAX_ENTRY_BYTES tidak didekompresi (VERIFY_TOO_LARGE). */
 export function docxPrinted(bytes: Uint8Array): Printed {
@@ -91,20 +113,23 @@ export function docxPrinted(bytes: Uint8Array): Printed {
   const xml = files["word/document.xml"] ? strFromU8(files["word/document.xml"]) : "";
   const app = files["docProps/app.xml"] ? strFromU8(files["docProps/app.xml"]) : "";
   const headings: Printed["headings"] = [];
+  const headAt: number[] = [];
   const captions: string[] = [];
   let prev = "";
-  for (const { inner: p } of elements(xml, /<(w:p)(?=[ >])[^>]*>/g, ["w:p"])) {
+  for (const { inner: p, at } of elements(xml, /<(w:p)(?=[ >])[^>]*>/g, ["w:p"])) {
     const raw = unxml((p.match(/<w:t(?: [^>]*)?>[^<]*<\/w:t>|<w:tab\/>/g) ?? []).map((t) => (t === "<w:tab/>" ? "\t" : t.replace(/<[^>]+>/g, ""))).join(""));
     if (raw.trim() === "") continue;
     const lvl = /<w:outlineLvl w:val="(\d)"/.exec(p);
     if (lvl !== null && headings.length < MAX_HEADINGS) {
       const l = Number(lvl[1]);
       headings.push({ l, t: squash(raw), ...(l === 0 && KICKER_RE.test(prev.trim()) ? { k: squash(prev) } : {}) });
+      headAt.push(at);
     } else if (lvl === null && CAPTION_RE.test(raw) && captions.length < MAX_CAPTIONS) captions.push(squash(raw));
     prev = raw;
   }
   const pg = /<Pages>(\d+)<\/Pages>/.exec(app);
-  return { headings, captions, pages: pg !== null ? Number(pg[1]) : null };
+  const tables = countTables(openTags(xml, /<w:tbl[\s>]/g), headAt, headings);
+  return { headings, captions, pages: pg !== null ? Number(pg[1]) : null, tables };
 }
 
 const stripTags = (s: string) => squash(unxml(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")));
@@ -114,16 +139,20 @@ export function htmlPrinted(bytes: Uint8Array): Printed {
   if (bytes.length > MAX_ENTRY_BYTES) throw tooLarge("HTML");
   const html = Buffer.from(bytes).toString("utf8");
   const headings: Printed["headings"] = [];
+  const headAt: number[] = [];
   const captions: string[] = [];
   let prev = "";
-  for (const { name: tag, inner } of elements(html, /<(h[23]|p|figcaption|caption)\b[^>]*>/g, ["h2", "h3", "p", "figcaption", "caption"])) {
+  for (const { name: tag, inner, at } of elements(html, /<(h[23]|p|figcaption|caption)\b[^>]*>/g, ["h2", "h3", "p", "figcaption", "caption"])) {
     const text = stripTags(inner);
     if (text === "") continue;
-    if ((tag === "h2" || tag === "h3") && headings.length < MAX_HEADINGS) headings.push({ l: tag === "h2" ? 0 : 1, t: text, ...(tag === "h2" && KICKER_RE.test(prev) ? { k: prev } : {}) });
-    else if ((tag === "figcaption" || tag === "caption") && captions.length < MAX_CAPTIONS) captions.push(text);
+    if ((tag === "h2" || tag === "h3") && headings.length < MAX_HEADINGS) {
+      headings.push({ l: tag === "h2" ? 0 : 1, t: text, ...(tag === "h2" && KICKER_RE.test(prev) ? { k: prev } : {}) });
+      headAt.push(at);
+    } else if ((tag === "figcaption" || tag === "caption") && captions.length < MAX_CAPTIONS) captions.push(text);
     prev = tag === "p" ? text : "";
   }
-  return { headings, captions, pages: null };
+  const tables = countTables(openTags(html, /<table[\s>]/g), headAt, headings);
+  return { headings, captions, pages: null, tables };
 }
 
 const sha256 = (b: Uint8Array) => crypto.createHash("sha256").update(b).digest("hex");
@@ -196,10 +225,16 @@ export async function verifySummary(ctx: ToolContext, v: VerifyInput): Promise<V
       const printed = String(v.render.format).toUpperCase() === "DOCX" ? docxPrinted(bytes) : htmlPrinted(bytes);
       data.headings = printed.headings;
       data.captions = printed.captions;
+      data.tableCount = printed.tables;
       if (printed.pages !== null) data.pages = printed.pages;
       const same = v.priorTitles !== undefined && v.detail !== true && v.priorTitles === titlesOf(content);
       if (same) data.headingsUnchanged = true;
-      lines.push(...(same ? [`judul: ${printed.headings.length}, tidak berubah oleh suntingan ini (daftar: detail: true)`] : printed.headings.map((h) => `${"  ".repeat(Math.min(h.l, 2))}${h.k ? `${h.k} | ` : ""}${h.t}`)), ...printed.captions.map((c) => `keterangan: ${c}`));
+      // IMPL-W7: jumlah tabel per judul (" [tabel N]"); bila daftar judul tidak dicetak, satu baris "tabel per judul".
+      const withTables = printed.headings.filter((h) => (h.tb ?? 0) > 0);
+      lines.push(
+        ...(same ? [`judul: ${printed.headings.length}, tidak berubah oleh suntingan ini (daftar: detail: true)`, ...(withTables.length > 0 ? [`tabel per judul: ${withTables.map((h) => `${h.t} [tabel ${h.tb}]`).join("; ")}`] : [])] : printed.headings.map((h) => `${"  ".repeat(Math.min(h.l, 2))}${h.k ? `${h.k} | ` : ""}${h.t}${(h.tb ?? 0) > 0 ? ` [tabel ${h.tb}]` : ""}`)),
+        ...printed.captions.map((c) => `keterangan: ${c}`),
+      );
     }
     const figs = v.kind === "client" ? figuresOf(content).slice(0, MAX_FIGURES) : [];
     if (figs.length > 0) {
@@ -226,7 +261,7 @@ export async function verifySummary(ctx: ToolContext, v: VerifyInput): Promise<V
   const parts = [
     `verifikasi: rev tersimpan ${tok(data.storedRevision)}`,
     file !== null ? `berkas ${tok(file.fileId)} ${tok(file.format)} sha256 ${String(file.sha256).slice(0, 16)} ${file.shaMatch === true ? "cocok (dihitung ulang dari unduhan)" : "TIDAK cocok"}` : "tanpa berkas",
-    ...(Array.isArray(data.headings) ? [`${(data.headings as unknown[]).length} judul`, `${(data.captions as unknown[]).length} keterangan`] : []),
+    ...(Array.isArray(data.headings) ? [`${(data.headings as unknown[]).length} judul`, `${(data.captions as unknown[]).length} keterangan`, `${tok(data.tableCount)} tabel`] : []),
     ...(typeof data.pages === "number" ? [`${data.pages} halaman`] : []),
     ...(figs.length > 0 ? [`figur ${figs.length}: ${issuesTotal} isu tata letak${issuesTotal > 0 ? ` (${figs.filter((f) => (f.layoutIssues as number) > 0).map((f) => tok(f.pid)).join(", ")})` : ""}`] : []),
     ...(isRecord(data.record) && typeof data.record.status === "string" ? [`status tersimpan ${tok(data.record.status)}`] : []),

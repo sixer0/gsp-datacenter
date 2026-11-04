@@ -113,8 +113,9 @@ export interface ToolWarning {
 /**
  * IMPL-W6: peringatan INFORMASIONAL = mesin sudah menanganinya sendiri dan agen tidak perlu bertindak. Disembunyikan dari
  * hasil ringkas (bawaan) studio_write/studio_edit; tetap tampil dengan `detail: true`. Peringatan lain tidak berubah.
+ * IMPL-W7: ROWS_COALESCED_TO_TABLE (baris datar berurutan digabung jadi tabel) ikut kelas ini.
  */
-export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED"]);
+export const INFORMATIONAL_WARNING_CODES: ReadonlySet<string> = new Set(["ITEM_KEY_COLUMN_ADDED", "ITEM_KEY_GENERATED", "ROWS_COALESCED_TO_TABLE"]);
 
 /** Saring peringatan informasional untuk hasil ringkas; `detail: true` mengembalikan daftar utuh. */
 export function quietWarnings(warnings: readonly ToolWarning[], detail: boolean): ToolWarning[] {

@@ -29,8 +29,9 @@ const codesOf = (r: any): string[] => (r.data.warnings ?? []).map((w: any) => w.
 const INFO = ['ITEM_KEY_COLUMN_ADDED', 'ITEM_KEY_GENERATED'];
 
 describe('IMPL-W6: peringatan informasional senyap di hasil ringkas', () => {
-  it('kelas informasional hanya berisi dua kode ITEM_KEY_*; quietWarnings tidak menyentuh peringatan lain', () => {
-    expect([...INFORMATIONAL_WARNING_CODES].sort()).toEqual(INFO);
+  it('kelas informasional berisi dua kode ITEM_KEY_* (+ ROWS_COALESCED_TO_TABLE, IMPL-W7); quietWarnings tidak menyentuh peringatan lain', () => {
+    // IMPL-W7: ROWS_COALESCED_TO_TABLE ikut kelas informasional.
+    expect([...INFORMATIONAL_WARNING_CODES].sort()).toEqual([...INFO, 'ROWS_COALESCED_TO_TABLE'].sort());
     const all = [{ code: 'ITEM_KEY_GENERATED', message: 'a' }, { code: 'HEADING_MAPPED', message: 'b' }, { code: 'ITEM_KEY_COLUMN_ADDED', message: 'c' }];
     expect(quietWarnings(all, false).map((w) => w.code)).toEqual(['HEADING_MAPPED']);
     expect(quietWarnings(all, true)).toEqual(all);
