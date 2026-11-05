@@ -431,7 +431,7 @@ function EditorBody({
               draft={presetLayer}
               loaded={loadedPresetLayer}
               parentValues={version.resolvedParams ?? EMPTY}
-              parentLabel="nilai gaya saat ini"
+              parentLabel="gaya saat ini"
               computed={version.resolvedParams ?? EMPTY}
               onChange={setPresetLayer}
               onErrors={setAdvErrors}
@@ -506,7 +506,7 @@ function EditorBody({
                   draft={def.advanced}
                   loaded={loadedDef.advanced}
                   parentValues={baseline}
-                  parentLabel="bawaan gaya"
+                  parentLabel="gaya bawaan"
                   computed={version.resolvedParams ?? EMPTY}
                   onChange={(next) => setDef((p) => ({ ...p, advanced: next }))}
                   onErrors={setAdvErrors}

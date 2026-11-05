@@ -19,9 +19,11 @@
 import { requestJson, withQuery, type StudioApiError } from "@/components/studio/shared/http";
 import { RETRY_DELAYS_MS } from "@/components/studio/shared/retry";
 import type { TemplateDetail, ValidateResponse } from "@/lib/studio/contract/types/api";
+import type { ParamValue } from "@/lib/studio/contract/types/common";
 import type { StudioDocV1 } from "@/lib/studio/contract/types/doc";
 import type { ParamDef } from "@/lib/studio/contract/types/params";
 import type { StudioTemplateV2 } from "@/lib/studio/contract/types/v2/template";
+import { PARAM_DOC_LANGUAGE } from "./preview-language";
 
 const SRC = "template-preview";
 
@@ -38,17 +40,26 @@ export function isAbort(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
-/** Slug dan nomor versi efektif templat (validate merujuk templat lewat slug). */
+/**
+ * Slug dan nomor versi efektif templat (validate merujuk templat lewat slug), ditambah bahasa dokumen
+ * terresolusi `version.resolvedParams["doc.language"]` (tersedia untuk semua peran, lihat route R02)
+ * untuk memilih dokumen contoh pratinjau (addendum USER 2026-11-05).
+ */
 export async function fetchTemplateRef(
   templateId: string,
   versionNo: number | undefined,
   signal?: AbortSignal,
-): Promise<{ slug: string; versionNo: number; name: string }> {
+): Promise<{ slug: string; versionNo: number; name: string; language: ParamValue | undefined }> {
   const detail = await requestJson<TemplateDetail>(withQuery(`/api/studio/templates/${encodeURIComponent(templateId)}`, { version: versionNo }), {
     signal,
     source: `${SRC}.template-ref`,
   });
-  return { slug: detail.template.slug, versionNo: detail.version.versionNo, name: detail.template.name };
+  return {
+    slug: detail.template.slug,
+    versionNo: detail.version.versionNo,
+    name: detail.template.name,
+    language: detail.version.resolvedParams?.[PARAM_DOC_LANGUAGE],
+  };
 }
 
 /** Dry-run validasi + pratinjau HTML; tidak menyimpan apa pun. */

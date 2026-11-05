@@ -200,6 +200,39 @@ function controlSheetBody(lang: Lang, opts: { bandR?: string; distRows?: string[
   ].join('');
 }
 
+/**
+ * C25: kepala kolom lembar kendali bentuk manual (D-635 (5)): revisi `ID:29` / `EN:29`, rantai verifikasi
+ * `ID:39` / `EN:38`, distribusi `ID:58` / `EN:62` (manual_id.txt / manual_en.txt, research/38 §3.2). Teks
+ * sumber huruf campuran; kapital tampilan datang dari format peran (research/38 §3).
+ */
+const MANUAL = {
+  ID: { rev: ['Rev', 'Tanggal', 'Penyusun', 'Perubahan', 'Status'], ver: ['Lapis', 'Metode', 'Objek', 'Hasil'], dist: ['Salinan', 'Pemegang', 'Media', 'Kembali'] },
+  EN: { rev: ['Rev', 'Date', 'Prepared by', 'Change', 'Status'], ver: ['Layer', 'Method', 'Object', 'Result'], dist: ['Copy', 'Holder', 'Medium', 'Return'] },
+} as const;
+
+/** Lembar kendali bentuk manual seperti keluaran C10 (`compose/front.ts`): baris revisi [rev, tanggal, penyusun, perubahan, STATUS]. */
+function manualControlSheetBody(
+  lang: Lang,
+  o: { rev?: string[]; ver?: string[]; dist?: string[]; bandR?: string; distRows?: string[][] } = {},
+): string {
+  const x = TXT[lang];
+  const m = MANUAL[lang];
+  return [
+    band(x.bandL, o.bandR ?? x.bandR),
+    para(x.cs, { caps: true }),
+    para(x.cs),
+    para(x.blocks[0]),
+    textTable([o.rev ?? [...m.rev], ['A', '2026-11-04', 'A. Pratama', lang === 'ID' ? 'Terbit pertama' : 'First issue', lang === 'ID' ? 'Berlaku' : 'In force']]),
+    para(x.blocks[1]),
+    textTable([o.ver ?? [...m.ver], ['1', '', '', '']]),
+    para(x.blocks[2]),
+    para(lang === 'ID' ? 'Metode uji.' : 'Test method.'),
+    para(x.blocks[3]),
+    textTable([o.dist ?? [...m.dist], ...(o.distRows ?? [['1', 'Manajer Aset', '', '']])]),
+    textTable([[...x.sig], ['', '', ''], ['A. Pratama', 'B. Santoso', 'C. Wibowo']]),
+  ].join('');
+}
+
 const tocBody = (lang: Lang, levels = '1-2') => band(TXT[lang].bandL, TXT[lang].bandR) + para(TXT[lang].toc, { caps: true }) + tocField(levels);
 
 interface Variant {
@@ -518,6 +551,43 @@ describe('CS lembar kendali', () => {
     expect(statusOf('CS-04', buildTerbit('EN', { controlSheet: en }), pairFor('EN'))).toBe('fail');
     const id = controlSheetBody('ID').replace(textTable([[...TXT.ID.rev], ['A', '2026-11-04', 'Terbit pertama', 'A. Pratama']]), textTable([['Rev', 'Tanggal', 'Uraian', 'Penyusun'], ['A', '2026-11-04', 'Terbit pertama', 'A. Pratama']]));
     expect(statusOf('CS-04', buildTerbit('ID', { controlSheet: id }), pairFor('ID'))).toBe('fail');
+  });
+
+  it('CS-04 (C25): bentuk manual ID:29/39/58 dan EN:29/38/62 = pass; bentuk mesin tetap pass', () => {
+    for (const lang of ['ID', 'EN'] as const) {
+      expect(statusOf('CS-04', buildTerbit(lang, { controlSheet: manualControlSheetBody(lang) }), pairFor(lang))).toBe('pass');
+      expect(statusOf('CS-04', buildTerbit(lang), pairFor(lang))).toBe('pass');
+    }
+  });
+
+  it('CS-04 (C25): bentuk manual rusak, bercampur dengan bentuk mesin, atau berbahasa lain = fail', () => {
+    // Kolom PERUBAHAN diganti kepala mesin "Uraian": bukan daftar manual ID:29 maupun daftar mesin.
+    const broken = manualControlSheetBody('ID', { rev: ['Rev', 'Tanggal', 'Penyusun', 'Uraian', 'Status'] });
+    expect(statusOf('CS-04', buildTerbit('ID', { controlSheet: broken }), pairFor('ID'))).toBe('fail');
+    // Satu parameter bentuk (controlSheet.columns.form) untuk ketiga tabel: revisi manual + rantai mesin = fail.
+    const mixed = manualControlSheetBody('EN', { ver: [...TXT.EN.ver] });
+    const r = check('CS-04', buildTerbit('EN', { controlSheet: mixed }), pairFor('EN'));
+    expect(r.status).toBe('fail');
+    expect(r.evidence).toMatch(/verification/);
+    // Kepala manual ID di dokumen EN.
+    const foreign = manualControlSheetBody('EN', { rev: [...MANUAL.ID.rev] });
+    expect(statusOf('CS-04', buildTerbit('EN', { controlSheet: foreign }), pairFor('EN'))).toBe('fail');
+    // Distribusi manual tanpa kolom KEMBALI (EN:62).
+    const short = manualControlSheetBody('EN', { dist: ['Copy', 'Holder', 'Medium'] });
+    expect(statusOf('CS-04', buildTerbit('EN', { controlSheet: short }), pairFor('EN'))).toBe('fail');
+  });
+
+  it('CS-04 (C25): DOCX bentuk manual lulus seluruh aturan structure_a yang berlaku (CS-07, CS-10 membaca kolom yang sama)', () => {
+    const index = buildRuleIndex({ structure_a: rules, structure_b: [], language: [], clash: [] });
+    for (const lang of ['ID', 'EN'] as const) {
+      const rep = runConformance({ docx: buildTerbit(lang, { controlSheet: manualControlSheetBody(lang) }), pair: pairFor(lang), index, implementedOnly: true });
+      const bad = rep.outcomes.filter((o) => o.module === 'structure_a' && o.applicable && o.status !== 'pass').map((o) => `${o.id}:${o.status}`);
+      expect(bad).toEqual(['CS-10:na']);
+      const held = buildTerbit(lang, {
+        controlSheet: manualControlSheetBody(lang, { bandR: lang === 'ID' ? 'SALINAN 2 · PENGGUNAAN INTERNAL GSP' : 'COPY 2 · GSP INTERNAL USE', distRows: [['2', 'Kepala Gardu', '', '']] }),
+      });
+      expect(statusOf('CS-10', held, pairFor(lang, 'TERBIT', { hasCopyControl: true }))).toBe('pass');
+    }
   });
 
   it('CS-07: riwayat revisi tanpa baris data = fail', () => {

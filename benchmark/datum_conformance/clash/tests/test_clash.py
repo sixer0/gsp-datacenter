@@ -466,3 +466,144 @@ def test_cli_refuses_hostile_docx_before_conversion_with_exit_2(tmp_path):
     record = json.loads((out.parent / "clash_error.json").read_text(encoding="utf-8"))
     assert "DocxLimitError" in record["message"] and "DOCTYPE" in record["message"]
     assert not out.exists() and not (tmp_path / "never.pdf").exists()
+
+
+# -- G-06: NOTA classification line under the register number (ID:611-613, EN:647-649) ------
+# Geometry measured on the C16 NOTA output (LibreOffice 24.2, C:/tmp/c25/r/N_ID.pdf p.2): register row
+# between rules y 777.70 / 795.40, cell separators x 215.5 / 334.5 / 453.6 (y 778.2..795.1), row baseline
+# 789.40, Mono 6 pt; the classification paragraph starts at the number cell's text edge x 68.15, baseline 802.35.
+
+REG_ROW_BASE, CL_BASE, NUM_X = 789.4, 802.35, 68.15
+
+
+def nota_register(page) -> None:
+    page.insert_text((LEFT, 45), "PT GEMILANG SATRIA PERKASA - BAB 1", fontsize=6.5)
+    for i in range(10):
+        page.insert_text((LEFT, 120 + i * 13.5), "Kajian ini menghitung biaya pemeliharaan peralatan.", fontsize=9.5)
+    page.draw_line((68.1, 777.7), (538.6, 777.7), width=1.0)
+    page.draw_line((68.1, 795.4), (538.6, 795.4), width=0.5)
+    for x in (215.5, 334.5, 453.6):
+        page.draw_line((x, 778.2), (x, 795.1), width=0.5)
+    page.insert_text((NUM_X, REG_ROW_BASE), "GSP \u00b7 017/GSP/KT/XI/2026", fontsize=6)
+    page.insert_text((222.6, REG_ROW_BASE), "REV A \u00b7 04-XI-2026", fontsize=6)
+    page.insert_text((341.65, REG_ROW_BASE), "LEMBAR 2 DARI 5", fontsize=6)
+    page.insert_text((502.9, REG_ROW_BASE), "TERBATAS", fontsize=6)
+
+
+@pytest.mark.parametrize("line", ["Klasifikasi : TERBATAS", "Classification: TERBATAS"])
+def test_nota_classification_line_under_the_number_is_allowed(tmp_path, line):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, CL_BASE), line, fontsize=6)
+    assert clash.analyze(make_pdf(tmp_path / "cl.pdf", draw))["clashes"] == []
+
+
+@pytest.mark.parametrize("line", ["Catatan tambahan register", "CATATAN TAMBAHAN", "Klasifikasi : terbatas"])
+def test_other_second_line_in_register_zone_is_still_flagged(tmp_path, line):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, CL_BASE), line, fontsize=6)
+    report = clash.analyze(make_pdf(tmp_path / "other.pdf", draw))
+    assert kinds(report) == ["overflow"]
+    assert report["clashes"][0]["text"] == line and "wrap" in report["clashes"][0]["detail"]
+
+
+def test_classification_line_not_under_the_number_cell_is_flagged(tmp_path):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((222.6, CL_BASE), "Klasifikasi : TERBATAS", fontsize=6)   # under cell 2 (revision)
+    report = clash.analyze(make_pdf(tmp_path / "cell2.pdf", draw))
+    assert kinds(report) == ["overflow"] and "wrap" in report["clashes"][0]["detail"]
+
+
+def test_classification_line_overlapping_the_register_row_is_flagged(tmp_path):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, 792.5), "Klasifikasi : TERBATAS", fontsize=6)    # em box 786.5..792.5 hits the row
+    report = clash.analyze(make_pdf(tmp_path / "ovl.pdf", draw))
+    assert "overlap" in kinds(report) and "overflow" in kinds(report)
+    assert all("Klasifikasi" in c["text"] for c in report["clashes"])
+
+
+def test_over_long_classification_line_beyond_the_column_is_flagged(tmp_path):
+    line = "Klasifikasi : " + "SANGAT RAHASIA UNTUK PENGGUNAAN INTERNAL DIREKSI DAN KOMISARIS SAJA " * 2
+    width = pymupdf.get_text_length(line, fontsize=6)
+    assert RIGHT < NUM_X + width < A4[0]                             # precondition: past the margin, on the page
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, CL_BASE), line, fontsize=6)
+    report = clash.analyze(make_pdf(tmp_path / "long.pdf", draw))
+    assert report["clashes"] and set(kinds(report)) == {"overflow"}
+    assert max(c["bbox"][2] for c in report["clashes"]) > RIGHT
+
+
+def test_second_line_below_the_classification_line_is_flagged(tmp_path):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, CL_BASE), "Klasifikasi : TERBATAS", fontsize=6)
+        page.insert_text((NUM_X, CL_BASE + 2.6), "Klasifikasi : RAHASIA", fontsize=6)  # a third baseline, still in the band
+    report = clash.analyze(make_pdf(tmp_path / "third.pdf", draw))
+    assert report["clashes"] and "RAHASIA" in " ".join(c["text"] for c in report["clashes"])
+
+
+def _nota_docx(path: Path, footer_line: str | None) -> Path:
+    """DATUM default geometry; footer = register table, then (optionally) the classification paragraph (C16)."""
+    import docx
+    src = _docx(path, 1361)
+    d = docx.Document(src)
+    ftr = d.sections[0].footer
+    table = ftr.add_table(rows=1, cols=4, width=docx.shared.Twips(9411))
+    for cell, text in zip(table.rows[0].cells, ("GSP \u00b7 017/GSP/KT/XI/2026", "REV A \u00b7 04-XI-2026",
+                                                  "LEMBAR 1 DARI 1", "TERBATAS"), strict=True):
+        cell.text = text
+    if footer_line is not None:
+        ftr.add_paragraph(footer_line)
+    d.save(path)
+    return path
+
+
+def test_docx_footer_classification_paragraph_is_read(tmp_path):
+    assert clash.docx_classification_lines(_nota_docx(tmp_path / "a.docx", "Classification: TERBATAS")) \
+        == {"CLASSIFICATION:TERBATAS"}
+    assert clash.docx_classification_lines(_nota_docx(tmp_path / "b.docx", None)) == set()
+    assert clash.docx_classification_lines(_nota_docx(tmp_path / "c.docx", "Catatan bebas")) == set()
+
+
+def test_docx_classification_paragraph_identifies_the_line(tmp_path):
+    def draw(page):
+        nota_register(page)
+        page.insert_text((NUM_X, CL_BASE), "Klasifikasi : TERBATAS", fontsize=6)
+    pdf = make_pdf(tmp_path / "s.pdf", draw)
+    assert clash.analyze(pdf, _nota_docx(tmp_path / "s.docx", "Klasifikasi : TERBATAS"))["clashes"] == []
+    # the DOCX footer paragraph says RAHASIA: the PDF line is not that paragraph, so it is a foreign second line
+    report = clash.analyze(pdf, _nota_docx(tmp_path / "m.docx", "Klasifikasi : RAHASIA"))
+    assert kinds(report) == ["overflow"] and "wrap" in report["clashes"][0]["detail"]
+
+
+_FTR_XML = (b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            b'<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:ftr>')
+
+
+def test_docx_footer_part_count_is_capped(tmp_path):
+    # C35 L-04: a hostile package with thousands of footer parts is refused up front, not read part by part
+    parts = {"word/document.xml": _DOC_XML, **{f"word/footer{i}.xml": _FTR_XML for i in range(1, 5001)}}
+    path = _zip(tmp_path / "footers.docx", parts)
+    with pytest.raises(clash.DocxLimitError, match="footer"):
+        clash.docx_classification_lines(path)
+    ok = _zip(tmp_path / "ok.docx", {"word/document.xml": _DOC_XML,
+                                       **{f"word/footer{i}.xml": _FTR_XML for i in range(1, clash.MAX_FOOTER_PARTS + 1)}})
+    assert clash.docx_classification_lines(ok) == set()
+
+
+def test_docx_part_lookup_is_linear_in_the_number_of_entries(tmp_path):
+    # C35 L-04: the per-name presence check uses a set, so many requested names in a large package stay fast
+    import time
+    n = 19_000   # just under MAX_DOCX_ENTRIES; the old per-name list scan took 2.2 s at 12,000
+    parts = {"word/document.xml": _DOC_XML, **{f"word/footer{i}.xml": _FTR_XML for i in range(1, n + 1)}}
+    path = _zip(tmp_path / "many.docx", parts)
+    names = tuple(f"word/footer{i}.xml" for i in range(1, n + 1))
+    start = time.perf_counter()
+    out = clash.read_docx_parts(path, names)
+    elapsed = time.perf_counter() - start
+    assert len(out) == n
+    assert elapsed < 2.0, f"read_docx_parts took {elapsed:.2f} s for {n} parts"

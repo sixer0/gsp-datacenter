@@ -23,11 +23,13 @@ import type {
   TableBlock,
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
-import { chapterLabelText, classificationMarkText, kickerSuppressed, registerWordsText } from "../../front/texts";
+import { chapterLabelText, classificationLineText, classificationMarkText, kickerSuppressed, registerWordsText, wrapperLangOf } from "../../front/texts";
 import { fitRunningHeadText } from "../../front/running-head-fit";
 import { measureFont, type FitFont } from "../../chart/core/textfit";
+import { normalizeHex } from "../../tokens/color";
+import { PARAMS_BY_KEY } from "../../../params";
 import { REL, type Relationship } from "./parts";
-import { mmToTw, resolveUnitSetup, sectPrXml, textWidthTw, type ResolvedSectionSetup } from "./section";
+import { mmToTw, resolveUnitSetup, sectPrXml, sheetNumberingFromChapter1, textWidthTw, type ResolvedSectionSetup } from "./section";
 import {
   escapeXml,
   facesInXml,
@@ -35,6 +37,7 @@ import {
   hfRunsXml,
   inlinePlain,
   inlineRuns,
+  paramBool,
   paramString,
   pPrXml,
   rPrXml,
@@ -65,15 +68,30 @@ const REGISTER_PARA: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, lineT
 /** Paragraf penutup footer setelah tabel register (line 20 exact). */
 const FOOTER_TAIL_FORMAT: ParaFormat = { spacingBeforeTw: 0, spacingAfterTw: 0, lineTw: 20, lineRule: "exact" };
 
-function runningHeadFormat(textW: number): ParaFormat {
+/** R-72 (C14, GF-22): warna garis bawah kepala halaman; absen/tidak sah = INK200 (keluaran sebelum ronde). */
+const PARAM_RUNNING_HEAD_RULE = "runningHead.ruleColour";
+/** R-73 (C14, GF-22): warna garis atas sel blok register; absen/tidak sah = INK900. */
+const PARAM_REGISTER_TOP_RULE = "device.registerBlock.topRuleColour";
+
+function runningHeadFormat(textW: number, p: RenderContext["tpl"]["params"]): ParaFormat {
   return {
     spacingBeforeTw: 0,
     spacingAfterTw: 0,
     lineTw: 180,
     lineRule: "exact",
     tabs: [{ posTw: textW, val: "right" }],
-    borders: { bottom: { val: "single", sz: 5, space: 1, color: INK200 } },
+    borders: { bottom: { val: "single", sz: 5, space: 1, color: normalizeHex(p[PARAM_RUNNING_HEAD_RULE]) ?? INK200 } },
   };
+}
+
+/**
+ * RH-03 (C25 F1): R-72 hex sah yang BERBEDA dari bawaan registri, selain itu undefined. Format kepala halaman
+ * dari preset (`render.section.interior.header.format`, mis. `datum-gsp`) menimpa garis bawaan di atas; hanya
+ * nilai opt-in ini yang mewarnai ulang garis bawah preset. Absen/bawaan/tidak sah = presedensi lama (byte sama).
+ */
+function runningHeadRuleOverride(p: RenderContext["tpl"]["params"]): string | undefined {
+  const v = normalizeHex(p[PARAM_RUNNING_HEAD_RULE]);
+  return v !== undefined && v !== normalizeHex(PARAMS_BY_KEY.get(PARAM_RUNNING_HEAD_RULE)?.default) ? v : undefined;
 }
 
 // ── Utilitas teks ───────────────────────────────────────────────────────
@@ -160,7 +178,13 @@ function runningHeadBody(
   pStyle: string,
 ): string {
   const p = ctx.tpl.params;
-  const fmt = { ...runningHeadFormat(textWidthTw(setup)), ...(spec.format ?? {}) };
+  let fmt: ParaFormat = { ...runningHeadFormat(textWidthTw(setup), p), ...(spec.format ?? {}) };
+  // RH-03: warna opt-in R-72 menang atas garis bawah preset; ukuran/jenis/jarak garis tetap dari preset.
+  // Hanya mewarnai ulang garis yang ada (param warna, bukan sakelar garis).
+  const ruleOverride = runningHeadRuleOverride(p);
+  if (ruleOverride && fmt.borders?.bottom) {
+    fmt = { ...fmt, borders: { ...fmt.borders, bottom: { ...fmt.borders.bottom, color: ruleOverride } } };
+  }
   const right: Inline = spec.right ?? { text: classificationMarkText(ctx.snapshot.doc.meta.classification) };
   let leftRuns: Run[];
   if (spec.left) {
@@ -351,24 +375,82 @@ function registerDefaultCells(ctx: RenderContext): Run[][] {
   });
 }
 
-function registerBody(spec: { cells?: Inline[] }, ctx: RenderContext, setup: ResolvedSectionSetup, pStyle: string): string {
+/** R-76 (C16, CL-02 NOTA): baris klasifikasi di bawah nomor dokumen; absen/false = tanpa baris. */
+const PARAM_CLASSIFICATION_LINE = "render.nota.classificationLine";
+/** Warna teks klasifikasi (DT-28d, segel 6E1420): token `color.wrapper.seal` "Pita segel dan klasifikasi". */
+const PARAM_CLASSIFICATION_COLOUR = "color.wrapper.seal";
+/** Kode log C16: register tanpa sel `{nomor}` (dicatat sekali per dokumen). */
+const CLASSIFICATION_LINE_NO_NUMBER = "CLASSIFICATION_LINE_NO_NUMBER";
+/** Margin kiri sel register: sel pertama rata tepi blok teks, sel lain 141 tw (BM footer5.xml). */
+const registerCellLeftTw = (i: number): number => (i === 0 ? 0 : 141);
+
+/**
+ * C16 (CL-02 NOTA, DT-28c ID:611-612, EN:647-648): "Klasifikasi : <K>" / "Classification: <K>"
+ * tepat di bawah nomor dokumen. NOTA tidak punya sampul/blok kendali; nomornya hanya dicetak
+ * di sel register yang berpola `{nomor}` (kaki setiap halaman interior). Baris menjadi paragraf
+ * sesudah tabel register, menjorok ke tepi teks sel bernomor itu, sehingga sel register tetap
+ * "GSP · <nomor>" saja. Label abu (run label register), nilai kapital tebal berwarna segel.
+ * Sel eksplisit (`spec.cells`) atau pola tanpa `{nomor}` = tidak ada nomor untuk diikuti: dilewati, dicatat
+ * sekali per dokumen (`warned` = himpunan kode per dokumen dari `buildSectionPackage`; absen = tiap panggilan).
+ */
+function classificationLineXml(
+  ctx: RenderContext,
+  unit: NormUnit,
+  grid: readonly number[],
+  explicitCells: boolean,
+  pStyle: string,
+  warned?: Set<string>,
+): string {
   const p = ctx.tpl.params;
-  const cellRuns: Run[][] =
-    spec.cells && spec.cells.length > 0 ? spec.cells.map((c) => inlineRuns(c)) : registerDefaultCells(ctx);
+  const numberCell = explicitCells ? -1 : registerCellPatterns(p).findIndex((c) => c.includes("{nomor}"));
+  if (numberCell < 0 || numberCell >= grid.length) {
+    if (warned?.has(CLASSIFICATION_LINE_NO_NUMBER)) return "";
+    warned?.add(CLASSIFICATION_LINE_NO_NUMBER);
+    ctx.log({
+      level: "warn",
+      code: CLASSIFICATION_LINE_NO_NUMBER,
+      address: unit.key,
+      message: `${PARAM_CLASSIFICATION_LINE}: blok register tanpa sel nomor dokumen ({nomor}); baris klasifikasi tidak dicetak`,
+    });
+    return "";
+  }
+  const meta = ctx.snapshot.doc.meta;
+  const value = classificationMarkText(meta.classification);
+  const full = classificationLineText(meta.classification, wrapperLangOf(meta));
+  const label = full.slice(0, full.length - value.length);
+  const indent = grid.slice(0, numberCell).reduce((a, b) => a + b, 0) + registerCellLeftTw(numberCell);
+  const fmt: ParaFormat = { ...REGISTER_PARA, jc: "left", ...(indent > 0 ? { indLeftTw: indent } : {}) };
+  const valueRun: RunProps = { ...REGISTER_VALUE_RUN, color: normalizeHex(p[PARAM_CLASSIFICATION_COLOUR]) ?? INK900 };
+  return `<w:p>${pPrXml(fmt, pStyle)}${hfRunsXml([{ t: label }], REGISTER_LABEL_RUN, p)}${hfRunsXml([{ t: value }], valueRun, p)}</w:p>`;
+}
+
+function registerBody(
+  spec: { cells?: Inline[] },
+  ctx: RenderContext,
+  unit: NormUnit,
+  setup: ResolvedSectionSetup,
+  pStyle: string,
+  warned?: Set<string>,
+): string {
+  const p = ctx.tpl.params;
+  const explicitCells = spec.cells !== undefined && spec.cells.length > 0;
+  const cellRuns: Run[][] = explicitCells ? (spec.cells as Inline[]).map((c) => inlineRuns(c)) : registerDefaultCells(ctx);
   const n = cellRuns.length;
   const textW = textWidthTw(setup);
   const grid = n === REGISTER_COLS_TW.length ? scaleCols(REGISTER_COLS_TW, textW) : scaleCols(new Array<number>(n).fill(1), textW);
+  const topRule = normalizeHex(p[PARAM_REGISTER_TOP_RULE]) ?? INK900;
   const cells: SimpleCell[] = cellRuns.map((runs, i) => {
     const last = i === n - 1;
     const borders: Omit<Borders, "insideH" | "insideV"> = {
-      top: { val: "single", sz: 8, space: 0, color: INK900 },
+      top: { val: "single", sz: 8, space: 0, color: topRule },
       bottom: { val: "single", sz: 5, space: 0, color: INK200 },
       ...(last ? {} : { right: { val: "single", sz: 5, space: 0, color: INK200 } }),
     };
     const para = `<w:p>${pPrXml({ ...REGISTER_PARA, jc: last ? "right" : "left" })}${hfRunsXml(runs, REGISTER_LABEL_RUN, p)}</w:p>`;
-    return { widthTw: grid[i], paragraphsXml: para, borders, marginsTw: { top: 90, left: i === 0 ? 0 : 141, bottom: 79, right: 141 } };
+    return { widthTw: grid[i], paragraphsXml: para, borders, marginsTw: { top: 90, left: registerCellLeftTw(i), bottom: 79, right: 141 } };
   });
-  return simpleTableXml(grid, [cells]) + `<w:p>${pPrXml(FOOTER_TAIL_FORMAT, pStyle)}</w:p>`;
+  const line = paramBool(p, PARAM_CLASSIFICATION_LINE) === true ? classificationLineXml(ctx, unit, grid, explicitCells, pStyle, warned) : "";
+  return simpleTableXml(grid, [cells]) + line + `<w:p>${pPrXml(FOOTER_TAIL_FORMAT, pStyle)}</w:p>`;
 }
 
 function cellParagraphs(c: Cell, ctx: RenderContext): string {
@@ -444,6 +526,8 @@ export function headerFooterXml(
   unit: NormUnit,
   kind: "hdr" | "ftr",
   trailingXml = "",
+  /** Kode peringatan yang sudah dicatat di dokumen ini (dibagi antar unit oleh `buildSectionPackage`). */
+  warned?: Set<string>,
 ): string {
   const setup = resolveUnitSetup(unit, ctx.tpl);
   const eff = spec.mode === "inherit" ? (kind === "hdr" ? setup.header : setup.footer) : spec;
@@ -457,7 +541,7 @@ export function headerFooterXml(
       body = runningHeadBody(eff, ctx, unit, setup, pStyle);
       break;
     case "registerBlock":
-      body = registerBody(eff, ctx, setup, pStyle);
+      body = registerBody(eff, ctx, unit, setup, pStyle, warned);
       break;
     case "custom":
       body = customBody(eff, ctx, unit, setup, pStyle);
@@ -546,6 +630,13 @@ export function buildSectionPackage(ctx: RenderContext, opts: BuildSectionPackag
   const relationships: Relationship[] = [];
   const faces = new Set<string>();
   const marker = opts.draftMarker;
+  // C26 (RB-08c, R-80 "bab1"): halaman pertama Bab 1 = lembar 1. Seksi pembungkus sebelumnya tetap
+  // tanpa medan PAGE; kaki register tetap PAGE lalu NUMPAGES (CR-4). "DARI N" = jumlah halaman dokumen,
+  // bukan dihitung dari Bab 1 (SECTIONPAGES = per seksi, salah). LibreOffice 24.2 menambah satu halaman
+  // kosong otomatis ke NUMPAGES bila Bab 1 jatuh di halaman fisik genap (laporan engine C, C26).
+  const firstChapter = units.findIndex((u) => u.kind === "chapter");
+  // Peringatan yang sama untuk setiap unit (mis. C16 tanpa `{nomor}`) dicatat sekali per dokumen.
+  const warned = new Set<string>();
   units.forEach((unit, i) => {
     const n = i + 1;
     const uctx = opts.contextFor ? opts.contextFor(unit, i) : ctx;
@@ -556,8 +647,8 @@ export function buildSectionPackage(ctx: RenderContext, opts: BuildSectionPackag
     const footerPath = `word/footer${n}.xml`;
     const hdrTail = marker?.placement === "header" ? draftMarkerParagraphXml(marker.text, uctx, "hdr") : "";
     const ftrTail = marker?.placement === "footer" ? draftMarkerParagraphXml(marker.text, uctx, "ftr") : "";
-    const hdr = headerFooterXml(setup.header, uctx, unit, "hdr", hdrTail);
-    const ftr = headerFooterXml(setup.footer, uctx, unit, "ftr", ftrTail);
+    const hdr = headerFooterXml(setup.header, uctx, unit, "hdr", hdrTail, warned);
+    const ftr = headerFooterXml(setup.footer, uctx, unit, "ftr", ftrTail, warned);
     for (const f of [...facesInXml(hdr), ...facesInXml(ftr)]) faces.add(f);
     parts.push(
       { path: headerPath, data: hdr, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" },
@@ -575,7 +666,11 @@ export function buildSectionPackage(ctx: RenderContext, opts: BuildSectionPackag
       footerRId,
       headerPath,
       footerPath,
-      sectPr: sectPrXml(setup, { headerRId, footerRId }),
+      sectPr: sectPrXml(
+        setup,
+        { headerRId, footerRId },
+        i === firstChapter && sheetNumberingFromChapter1(uctx.tpl.params) ? { pgNumStart: 1 } : {},
+      ),
     });
   });
   return { sections, parts, relationships, facesUsed: [...faces].sort() };

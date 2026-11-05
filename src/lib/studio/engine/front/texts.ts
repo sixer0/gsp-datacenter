@@ -12,7 +12,7 @@
  * Huruf kapital tampilan (mis. kicker berhuruf besar) adalah urusan format
  * peran (`caps` -> `w:caps` / `text-transform`), bukan teks sumber (D-46).
  */
-import type { DocMeta, ParamMap } from "../../contract";
+import type { DocMeta, ParamMap, ProvenanceMark } from "../../contract";
 import { StudioEngineError } from "../../contract/errors";
 import { PARAMS_BY_KEY } from "../../params";
 import { dateParts, longDate, pNum, pStr, pStrList, ROMAN_MONTHS, roman } from "../docx/wrapper/formats";
@@ -73,6 +73,9 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean => a.leng
 /** Tabel teks bawaan pembungkus per bahasa (dulu tabel `L` di `docx/wrapper/pages.ts`). */
 export const WRAPPER_TEXT = {
   controlKicker: { ID: "Lembar Kendali", EN: "Control Sheet" },
+  // C07 (CS-12, research/38 §3.1): subjudul di bawah judul lembar kendali, verbatim ID:25 / EN:25 (EN tanpa koma
+  // serial); dicetak hanya bila opt-in `controlSheet.subtitle.enabled` (pembaca C08). Belum ada pemanggil.
+  controlSubtitle: { ID: "Kendali dokumen, riwayat revisi, dan pernyataan verifikasi", EN: "Document control, revision history and verification statement" },
   revision: { ID: "Riwayat revisi", EN: "Revision history" },
   verification: { ID: "Rantai verifikasi", EN: "Verification chain" },
   method: { ID: "Pernyataan metode", EN: "Method statement" },
@@ -118,6 +121,38 @@ export function controlSheetColumnHeads(kind: ControlSheetTableKind, lang: Wrapp
   const entry: Partial<Record<WrapperLang, readonly string[]>> & { ID: readonly string[] } = CONTROL_SHEET_COLUMNS[kind];
   return entry[lang] ?? entry.ID;
 }
+
+/**
+ * C07 (CS-11, register research/38 §3.2; D-635): label kolom bentuk manual lembar kendali per pengenal kolom.
+ * Pengenal = isi bawaan registri `controlSheet.revisionHistory.columns` (ID:29, EN:29),
+ * `controlSheet.verificationChain.columns` (ID:39, EN:38) dan `controlSheet.distribution.columns` (ID:58, EN:62).
+ * Dipakai hanya bila opt-in `controlSheet.columns.form` = "manual" (pembaca C10); bentuk mesin tetap
+ * `CONTROL_SHEET_COLUMNS`. Huruf kapital tampilan = peran kepala tabel, bukan teks sumber (D-46). Belum ada pemanggil.
+ */
+export const CONTROL_SHEET_COLUMN_LABELS = {
+  REV: { ID: "Rev", EN: "Rev" },
+  TANGGAL: { ID: "Tanggal", EN: "Date" },
+  PENYUSUN: { ID: "Penyusun", EN: "Prepared by" },
+  PERUBAHAN: { ID: "Perubahan", EN: "Change" },
+  STATUS: { ID: "Status", EN: "Status" },
+  LAPIS: { ID: "Lapis", EN: "Layer" },
+  METODE: { ID: "Metode", EN: "Method" },
+  OBJEK: { ID: "Objek", EN: "Object" },
+  HASIL: { ID: "Hasil", EN: "Result" },
+  SALINAN: { ID: "Salinan", EN: "Copy" },
+  PEMEGANG: { ID: "Pemegang", EN: "Holder" },
+  MEDIA: { ID: "Media", EN: "Medium" },
+  KEMBALI: { ID: "Kembali", EN: "Return" },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
+
+/**
+ * C07 (research/38 §3.2): nilai kolom STATUS turunan (bukan muatan): baris revisi terakhir = berlaku
+ * (ID:31, EN:31); baris sebelumnya = diganti (hipotesis register: spesimen manual hanya satu baris).
+ */
+export const CONTROL_SHEET_STATUS_TEXT = {
+  current: { ID: "Berlaku", EN: "In force" },
+  superseded: { ID: "Diganti", EN: "Superseded" },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
 
 /** Kicker bawaan halaman lembar kendali. */
 export function controlSheetKickerText(lang: WrapperLang): string {
@@ -199,6 +234,36 @@ export function chapterKickerText(chapterPattern: unknown, appendixPattern: unkn
 
 // ── Sampul mode auto: blok kendali dan kolofon (FIX-2 siklus 2, O-3) ─────
 
+/**
+ * S13 (research/33 B-08, register research/31 §4.3): label isi slot depan yang dibangkitkan klien MCP
+ * (`scripts/studio/mcp/write-client.ts`) dan belum ada di tabel blok kendali di bawah: medan klasifikasi
+ * blok kendali eksplisit, peran tanda tangan / lapis rantai verifikasi (EN = D-590 Prepared by / Reviewed by /
+ * Approved by), dan catatan revisi bawaan. Entri ID = nilai klien sebelum S13 (byte-sama).
+ * C07: dipindah ke atas `CONTROL_FIELD_LABELS` karena entri KLASIFIKASI di sana merujuknya (tanpa literal kedua).
+ */
+export const FRONT_PAYLOAD_LABELS = {
+  classification: { ID: "Klasifikasi", EN: "Classification" },
+  made: { ID: "Disusun", EN: "Prepared by" },
+  checked: { ID: "Diperiksa", EN: "Reviewed by" },
+  approved: { ID: "Disetujui", EN: "Approved by" },
+  first: { ID: "Terbit pertama", EN: "First issue" },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
+
+/**
+ * C07 (CL-02 NOTA, register research/38 §3.7; D-635): pemisah baris klasifikasi di bawah nomor dokumen.
+ * ID mengikuti manual "Klasifikasi : ..." dengan spasi sebelum titik dua (ID:612-613, spesimen ID:4109, gaya
+ * Tata Naskah Dinas); EN "Classification: ..." (EN:647-649, spesimen EN:4184).
+ */
+export const CLASSIFICATION_LINE_SEPARATOR = { ID: " : ", EN: ": " } as const satisfies Readonly<Record<WrapperLang, string>>;
+
+/**
+ * C07: teks baris klasifikasi NOTA (opt-in `render.nota.classificationLine`, pembaca C16): label klasifikasi
+ * bahasa `lang` + pemisah + penandaan kapital (`classificationMarkText`, ID:611). Belum ada pemanggil.
+ */
+export function classificationLineText(classification: string, lang: WrapperLang): string {
+  return `${FRONT_PAYLOAD_LABELS.classification[lang]}${CLASSIFICATION_LINE_SEPARATOR[lang]}${classificationMarkText(classification)}`;
+}
+
 /** Label medan blok kendali P4V-12 per bahasa (dulu `CONTROL_FIELD_LABELS` di `docx/wrapper/pages.ts`). */
 export const CONTROL_FIELD_LABELS: Readonly<Record<string, Readonly<Record<WrapperLang, string>>>> = {
   "NOMOR DOKUMEN": { ID: "Nomor dokumen", EN: "Document number" },
@@ -209,21 +274,16 @@ export const CONTROL_FIELD_LABELS: Readonly<Record<string, Readonly<Record<Wrapp
   TIER: { ID: "Tier", EN: "Tier" },
   DASAR: { ID: "Dasar", EN: "Basis" },
   BAHASA: { ID: "Bahasa", EN: "Language" },
+  // C07 (CL-02 T/S, research/38 §3.3): label medan opt-in KLASIFIKASI = rujukan label muatan (ID:1, ID:21; EN:1,
+  // EN:21), bukan literal kedua. Nilainya ditambahkan C15; jalur absen memakai bawaan registri (C-6), bukan kunci tabel ini.
+  KLASIFIKASI: FRONT_PAYLOAD_LABELS.classification,
 };
 
 /**
- * S13 (research/33 B-08, register research/31 §4.3): label isi slot depan yang dibangkitkan klien MCP
- * (`scripts/studio/mcp/write-client.ts`) dan belum ada di tabel di atas: medan klasifikasi blok kendali
- * eksplisit, peran tanda tangan / lapis rantai verifikasi (EN = D-590 Prepared by / Reviewed by /
- * Approved by), dan catatan revisi bawaan. Entri ID = nilai klien sebelum S13 (byte-sama).
+ * C-6 (research/35 §5, research/38 §2): daftar medan blok kendali bila parameter absen = bawaan registri P4V-12
+ * (`params/page.ts`), bukan kunci tabel label di atas, agar label opt-in (KLASIFIKASI) tidak masuk jalur absen.
  */
-export const FRONT_PAYLOAD_LABELS = {
-  classification: { ID: "Klasifikasi", EN: "Classification" },
-  made: { ID: "Disusun", EN: "Prepared by" },
-  checked: { ID: "Diperiksa", EN: "Reviewed by" },
-  approved: { ID: "Disetujui", EN: "Approved by" },
-  first: { ID: "Terbit pertama", EN: "First issue" },
-} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string>>>>;
+const CONTROL_FIELDS_DEFAULT: readonly string[] = registryDefault("cover.controlBlock.fields", isStringList, "daftar string");
 
 /**
  * Nilai medan BAHASA blok kendali sampul: bahasa dokumen ditulis dalam bahasa pembungkus `lang`.
@@ -240,6 +300,20 @@ function languageValueText(docLanguage: DocMeta["language"], lang: WrapperLang):
 }
 
 /**
+ * C27 (CV-15, research/38 §3.5; D-627 Q2): unit penyusun tetap dari data templat R-79 `cover.controlBlock.preparerUnit`
+ * (string tak kosong) atau undefined (absen, null, kosong = `meta.author`, keluaran sekarang).
+ */
+export function coverPreparerUnit(params: ParamMap): string | undefined {
+  const v = pStr(params, "cover.controlBlock.preparerUnit");
+  return v !== undefined && v.trim() !== "" ? v : undefined;
+}
+
+/** Nilai PENYUSUN sampul: unit templat (C27) bila diisi, selain itu `meta.author`. Tanda tangan dan riwayat revisi tetap `meta.author`. */
+function coverPreparerText(meta: DocMeta, params: ParamMap): string {
+  return coverPreparerUnit(params) ?? meta.author;
+}
+
+/**
  * Baris blok kendali sampul auto (meta + P4V-12 `cover.controlBlock.fields`): pasangan
  * label/nilai berurutan, dua pasangan per baris, medan kosong dilewati, baris terakhir
  * dipadatkan dengan sel kosong. undefined = tidak ada medan berisi.
@@ -248,15 +322,17 @@ export function controlBlockRowsText(meta: DocMeta, params: ParamMap, lang: Wrap
   const values: Record<string, string | undefined> = {
     "NOMOR DOKUMEN": meta.docNumber,
     REVISI: `${meta.rev} · ${longDate(meta.issueDate, lang)}`,
-    PENYUSUN: meta.author,
+    PENYUSUN: coverPreparerText(meta, params),
     KUSTODIAN: meta.custodian,
     "DITUJUKAN KEPADA": meta.audience,
     TIER: meta.tier,
     DASAR: meta.basis,
     BAHASA: languageValueText(meta.language, lang),
+    // C15 (CL-02 T/S, research/38 §3.3): hanya tercetak bila templat mendaftar KLASIFIKASI (bukan bawaan, C-6).
+    KLASIFIKASI: meta.classification ? classificationMarkText(meta.classification) : undefined,
   };
   const pairs: Array<[string, string]> = [];
-  for (const f of pStrList(params, "cover.controlBlock.fields", Object.keys(CONTROL_FIELD_LABELS))) {
+  for (const f of pStrList(params, "cover.controlBlock.fields", CONTROL_FIELDS_DEFAULT)) {
     const v = values[f];
     const label = CONTROL_FIELD_LABELS[f];
     if (!label || !v || v.trim() === "") continue;
@@ -384,6 +460,20 @@ export const APPARATUS_TEXT = {
 
 export type ApparatusTextKey = keyof typeof APPARATUS_TEXT;
 
+/**
+ * C07 (ST-01, register research/38 §3.6, research/37 R3-R6; D-635): label indeks aturan STD (opt-in
+ * `render.ruleIndex.fromMarkers`, pembaca C17/C22). Judul huruf kalimat seperti tercetak (ID:4517, EN:4441);
+ * kolom ID:4530 / EN:4456 tanpa kolom UJI SINGKAT, EN "Ch" tanpa titik agar kepala kapital = "CH" (EN:4456).
+ * `source` = teks sesudah label run `APPARATUS_TEXT.source` (rumusan register, bukan teks manual); `empty` =
+ * teks slot wajib tanpa kode aturan (rumusan register). Belum ada pemanggil.
+ */
+export const RULE_INDEX_TEXT = {
+  title: { ID: "Indeks aturan", EN: "Rule index" },
+  columns: { ID: ["Kode", "Ringkas", "Tingkat", "Bab"], EN: ["Code", "Summary", "Level", "Ch"] },
+  source: { ID: "Blok aturan dokumen ini", EN: "Rule blocks of this document" },
+  empty: { ID: "Dokumen ini tidak memuat kode aturan.", EN: "This document states no rule codes." },
+} as const satisfies Readonly<Record<string, Readonly<Record<WrapperLang, string | readonly string[]>>>>;
+
 /** Semua label aparatus untuk bahasa `lang`. */
 export function apparatusText(lang: WrapperLang): Record<ApparatusTextKey, string> {
   const out = {} as Record<ApparatusTextKey, string>;
@@ -412,6 +502,24 @@ export function verdictTagText(tag: string, lang: WrapperLang): string {
   if (tag === APPARATUS_TEXT.verdictPass.ID) return APPARATUS_TEXT.verdictPass[lang];
   if (tag === APPARATUS_TEXT.verdictFail.ID) return APPARATUS_TEXT.verdictFail[lang];
   return tag;
+}
+
+/**
+ * EN-PROV (DATUM Rev A Tabel 7.1, EN manual_en.txt:2114-2124, ID manual_id.txt:2040-2051): label tampilan
+ * tanda provenans per bahasa, SATU sumber bagi rel, assumptionInline, baris SUMBER/PROVENANS tabel/figur, dan
+ * turunan (DOCX dan HTML). Kunci = kode tanda kontrak (`PROVENANCE_MARKS`), yang tersimpan di konten dan API
+ * dan tidak diterjemahkan; entri ID = kode itu sendiri, jadi keluaran ID byte-identik.
+ */
+export const PROVENANCE_MARK_TEXT = {
+  TERUKUR: { ID: "TERUKUR", EN: "MEASURED" },
+  DITURUNKAN: { ID: "DITURUNKAN", EN: "DERIVED" },
+  PEMASOK: { ID: "PEMASOK", EN: "VENDOR" },
+  ASUMSI: { ID: "ASUMSI", EN: "ASSUMED" },
+} as const satisfies Readonly<Record<ProvenanceMark, Readonly<Record<WrapperLang, string>>>>;
+
+/** Label tanda provenans `mark` untuk bahasa `lang`; kode di luar enum keluar apa adanya. */
+export function provenanceMarkLabelText(mark: string, lang: WrapperLang): string {
+  return Object.hasOwn(PROVENANCE_MARK_TEXT, mark) ? PROVENANCE_MARK_TEXT[mark as ProvenanceMark][lang] : mark;
 }
 
 /** Kata label aparatus kapital untuk `keys` dalam bahasa `lang`: satu sumber bagi pengenal run label (L4). */

@@ -67,6 +67,10 @@
  *      penjaga: templat lain tidak berubah/bertambah, section type tidak tersentuh sama sekali, setiap templat
  *      restricted=false, contractKind null, archived=false, basis = versi preset terbaru; gagal = rollback + exit 1.
  *      Run ulang tanpa perubahan = `unchanged`. Tanpa kode per slug.
+ *      C21 (GF-08, M2; research/35 §6 M2, research/38 §4.4): di transaksi yang sama, SEBELUM templat, preset turunan dari
+ *      tabel spec data murni `prisma/seed-derived-presets.ts` (preset GSP DATUM Rev A = versi terbaru `datum-gsp-preset`
+ *      + sematan Tabel 8.2, pemanggil ADMIN, `isPreset`); slug preset ikut sasaran penjaga, `datum-gsp-preset` bukan
+ *      sasaran sehingga wajib tidak berubah. Idempoten (`unchanged` pada jalan ulang).
  *   `--dry-run` (bersama 5/6/7/8): seluruh transaksi preset/kerangka/kontrak di-rollback setelah
  *      laporan dan penjaga dihitung; tidak ada yang di-commit (FIX-SEED): penulisan section type
  *      di luar transaksi itu dan sinkron kanonik dilewati (rencana section type tetap dilaporkan),
@@ -142,6 +146,7 @@ import {
   type Tx,
   type VersionRow,
 } from "./seed-studio-templates";
+import { withDerivedPresets } from "./seed-derived-presets";
 import { docTypeTemplateTxOptions } from "./seed-doc-type-templates";
 
 const SOURCE = "prisma/seed-studio.ts";
@@ -1178,9 +1183,12 @@ async function runContractTemplates(db: string, opts: { dryRun: boolean }): Prom
   );
 }
 
-/** `--doc-type-templates` (S27): tabel spec S26 dalam SATU transaksi lewat runner berpenjaga bersama; gagal = rollback + galat. */
+/**
+ * `--doc-type-templates` (S27): tabel spec S26 dalam SATU transaksi lewat runner berpenjaga bersama; gagal = rollback + galat.
+ * C21: preset turunan tabel `seed-derived-presets.ts` ditulis lebih dulu di transaksi yang sama (sasaran penjaga tambahan).
+ */
 async function runDocTypeTemplates(db: string, opts: { dryRun: boolean }): Promise<void> {
-  await runGuardedTemplateTx(prisma, docTypeTemplateTxOptions(db, opts.dryRun), { log, seedSectionTypes });
+  await runGuardedTemplateTx(prisma, withDerivedPresets(docTypeTemplateTxOptions(db, opts.dryRun)), { log, seedSectionTypes });
 }
 
 /** Kanonik dikelola preset: sinkron registri lewat versi baru tanpa kerangka dihentikan (akan menimpa kerangka). */

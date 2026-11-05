@@ -23,7 +23,19 @@ import type {
   TocSpec,
   VerificationEntryV2,
 } from "../../contract";
-import { classificationMarkText, controlSheetColumnHeads, controlSheetLabelText, FRONT_PAYLOAD_LABELS, wrapperLangOf } from "../../engine/front/texts";
+import {
+  classificationMarkText,
+  CONTROL_FIELD_LABELS,
+  CONTROL_SHEET_COLUMN_LABELS,
+  CONTROL_SHEET_STATUS_TEXT,
+  controlSheetColumnHeads,
+  controlSheetLabelText,
+  coverPreparerUnit,
+  FRONT_PAYLOAD_LABELS,
+  wrapperLangOf,
+  type ControlSheetTableKind,
+  type WrapperLang,
+} from "../../engine/front/texts";
 import { table, type BlockCtx } from "./blocks";
 import { mapInline, mapInlineOpt, type InlineCtx } from "./inline";
 
@@ -59,7 +71,27 @@ function markClassificationPairs(row: [Inline, Inline, Inline, Inline]): [Inline
   return out;
 }
 
-export function coverFront(payload: CoverPayloadV2 | undefined, meta: DocMeta, ctx: InlineCtx): FrontPage {
+/** Label medan penyusun blok kendali sampul semua bahasa (Penyusun / Prepared by; tabel teks yang sama dengan klien MCP). */
+const PREPARER_LABELS: ReadonlySet<string> = new Set(Object.values(CONTROL_FIELD_LABELS.PENYUSUN));
+
+/**
+ * C27 (CV-15, research/38 §3.5 dan risiko K-6; D-627 Q2, D-635 (4)): pada blok kendali eksplisit (klien MCP mengirimnya
+ * bila meta.number ada), nilai teks di sebelah label penyusun dicetak sebagai unit templat R-79. Hanya keluaran compose
+ * yang berubah; muatan tersimpan tetap `meta.author`, sehingga pembacaan balik meta klien MCP (`write-meta.ts`
+ * `serverClientMeta`) dan blok tanda tangan / riwayat revisi tidak menerima unit.
+ */
+function preparerPairs(row: [Inline, Inline, Inline, Inline], unit: string): [Inline, Inline, Inline, Inline] {
+  const out: [Inline, Inline, Inline, Inline] = [...row];
+  for (const i of [0, 2]) {
+    const label = out[i];
+    const value = out[i + 1];
+    if (label && value && "text" in label && PREPARER_LABELS.has(label.text.trim()) && "text" in value) out[i + 1] = { ...value, text: unit };
+  }
+  return out;
+}
+
+/** `params` = parameter slot sampul; dibaca hanya R-79 (kunci compose, C-5). */
+export function coverFront(payload: CoverPayloadV2 | undefined, meta: DocMeta, ctx: InlineCtx, params?: ParamMap): FrontPage {
   const p = payload ?? ({ type: "cover" } as CoverPayloadV2);
   const data: CoverData = {
     titleLines: p.titleLines && p.titleLines.length > 0 ? p.titleLines.map((t) => mapInline(t, ctx)) : [{ text: meta.title }],
@@ -73,9 +105,13 @@ export function coverFront(payload: CoverPayloadV2 | undefined, meta: DocMeta, c
   set("addressLine", mapInlineOpt(p.addressLine, ctx));
   set("identityString", mapInlineOpt(p.identityString, ctx));
   if (p.control) {
+    const unit = params ? coverPreparerUnit(params) : undefined;
     data.control = {
       type: "controlBlock",
-      rows: p.control.map((r) => markClassificationPairs(r.map((c) => mapInline(c, ctx)) as [Inline, Inline, Inline, Inline])),
+      rows: p.control.map((r) => {
+        const row = markClassificationPairs(r.map((c) => mapInline(c, ctx)) as [Inline, Inline, Inline, Inline]);
+        return unit !== undefined ? preparerPairs(row, unit) : row;
+      }),
     };
   }
   if (p.colophon) data.colophon = { type: "colophon", left: mapInline(p.colophon.left, ctx), right: mapInline(p.colophon.right, ctx) };
@@ -96,18 +132,67 @@ export function controlSheetFront(payload: ControlSheetPayloadV2 | undefined, sl
     kicker: { text: label },
     title: p.title ? mapInline(p.title, ctx) : { text: label },
   };
-  const rh = listOrTable<RevisionEntryV2>(p.revisionHistory, (rows) => textTable(controlSheetColumnHeads("revision", lang), rows.map((r) => [r.rev, r.date, r.what, r.by]), ["id", "text", "text", "text"]), ctx);
+  const manual = ctx.params["controlSheet.columns.form"] === "manual";
+  const rh = listOrTable<RevisionEntryV2>(
+    p.revisionHistory,
+    manual
+      ? (rows) => manualTable("revision", lang, rows.map((r, i) => [r.rev, r.date, r.by, r.what, revisionStatusText(i === rows.length - 1, lang)]))
+      : (rows) => textTable(controlSheetColumnHeads("revision", lang), rows.map((r) => [r.rev, r.date, r.what, r.by]), ["id", "text", "text", "text"]),
+    ctx,
+  );
   if (rh) data.revisionHistory = rh;
   const vc = listOrTable<VerificationEntryV2>(
     p.verificationChain,
-    (rows) => textTable(controlSheetColumnHeads("verification", lang), rows.map((r) => [r.layer, r.role, r.name, r.date ?? ""]), ["id", "text", "text", "text"]),
+    manual
+      ? (rows) => manualTable("verification", lang, rows.map((r) => [r.layer, "", "", ""]))
+      : (rows) => textTable(controlSheetColumnHeads("verification", lang), rows.map((r) => [r.layer, r.role, r.name, r.date ?? ""]), ["id", "text", "text", "text"]),
     ctx,
   );
   if (vc) data.verificationChain = vc;
   if (p.methodStatement) data.methodStatement = mapInline(p.methodStatement, ctx);
-  const ds = listOrTable<DistributionEntryV2>(p.distribution, (rows) => textTable(controlSheetColumnHeads("distribution", lang), rows.map((r) => [r.copy, r.holder]), ["id", "text"]), ctx);
+  const ds = listOrTable<DistributionEntryV2>(
+    p.distribution,
+    manual
+      ? (rows) => manualTable("distribution", lang, rows.map((r) => [r.copy, r.holder, "", ""]))
+      : (rows) => textTable(controlSheetColumnHeads("distribution", lang), rows.map((r) => [r.copy, r.holder]), ["id", "text"]),
+    ctx,
+  );
   if (ds) data.distribution = ds;
   return { mode: "auto", data };
+}
+
+type ManualColumn = keyof typeof CONTROL_SHEET_COLUMN_LABELS;
+
+/**
+ * C10 (CS-11, register research/38 §3.2): pengenal kolom bentuk manual = bawaan registri
+ * `controlSheet.revisionHistory.columns`, `controlSheet.verificationChain.columns`, `controlSheet.distribution.columns`
+ * (`params/page.ts`; ID:29, ID:39, ID:58; EN:29, EN:38, EN:62). Nilai templat parameter kolom itu TIDAK dibaca compose
+ * (tidak masuk `COMPOSE_PARAM_KEYS`); hanya opt-in R-69 `controlSheet.columns.form` yang dibaca (C-5).
+ */
+const MANUAL_COLUMNS = {
+  revision: ["REV", "TANGGAL", "PENYUSUN", "PERUBAHAN", "STATUS"],
+  verification: ["LAPIS", "METODE", "OBJEK", "HASIL"],
+  distribution: ["SALINAN", "PEMEGANG", "MEDIA", "KEMBALI"],
+} as const satisfies Readonly<Record<ControlSheetTableKind, readonly ManualColumn[]>>;
+
+/** Kepala kolom bentuk manual tabel `kind` dalam bahasa `lang` (tabel teks mesin, C07). */
+export function manualControlSheetColumnHeads(kind: ControlSheetTableKind, lang: WrapperLang): string[] {
+  return MANUAL_COLUMNS[kind].map((c) => CONTROL_SHEET_COLUMN_LABELS[c][lang]);
+}
+
+/** Kolom pertama = kode (REV/LAPIS/SALINAN), sisanya teks. */
+function manualTable(kind: ControlSheetTableKind, lang: WrapperLang, rows: string[][]): TableV2 {
+  const heads = manualControlSheetColumnHeads(kind, lang);
+  return textTable(heads, rows, heads.map((_, i) => (i === 0 ? "id" : "text")));
+}
+
+/**
+ * STATUS turunan (bukan muatan; register research/38 §3.2): baris revisi terakhir = berlaku (ID:31, EN:31), baris
+ * sebelumnya = diganti. Tidak bercabang per tier: tabel teks hanya punya dua nilai dan slot lembar kendali hanya aktif
+ * pada tier yang memuatnya (kerangka), jadi tier tidak mengubah teks STATUS.
+ */
+function revisionStatusText(latest: boolean, lang: WrapperLang): string {
+  return CONTROL_SHEET_STATUS_TEXT[latest ? "current" : "superseded"][lang];
 }
 
 export function signatureBlock(payload: SignaturePayloadV2, ctx: InlineCtx): SignatureBlock {

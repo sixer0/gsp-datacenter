@@ -46,6 +46,7 @@ import { cssString } from "../base/fonts";
 import { mm, pageGeometry, record, twToMm, type PageGeometry } from "../base/params";
 import { escapeHtml } from "../blocks/escape";
 import { inlineHtml } from "../blocks/inline";
+import { emptyOptionalUnitOmitted, expandRuleIndexMarker, isRuleIndexAutoMarker, PARAM_RULE_INDEX_FROM_MARKERS } from "../../front/rule-index";
 import { HTML_ASSEMBLE_CLASSES as A } from "./classes";
 
 /** Kunci parameter yang dibaca modul ini. */
@@ -234,6 +235,50 @@ export const SLOT_BLOCK_RENDERERS: Readonly<Record<string, (b: NormBlock, ctx: R
   // tabel butir blok `contractRecord` sudah membawa alamat + pid, jadi tidak ada markup di sini.
   contractItem: () => "",
 };
+
+/**
+ * C17 / ST-01 (research/37 R5/R7, D-631; opt-in `render.ruleIndex.fromMarkers`, R-77): konteks dengan
+ * penanda `ruleIndex` AUTO diganti judul + tabel indeks dari pembangun bersama DOCX (`front/rule-index`),
+ * sehingga dispatch tabel kontrak merendernya. 0 entri pada slot opsional = unit dan bloknya tidak
+ * dipancarkan (padanan D-299 DOCX `units.ts` (c2)); baris kosong hanya bila unit dipaksa (slot wajib,
+ * render lingkup slot itu, unit berisi blok lain). Flag absen/false atau tanpa penanda = `ctx` apa adanya.
+ */
+export function withRuleIndex(ctx: RenderContext): RenderContext {
+  const v2 = snapshotV2(ctx);
+  if (!v2 || !v2.blocks.some(isRuleIndexAutoMarker)) return ctx;
+  const slotByKey = new Map((v2.skeleton?.slots ?? []).map((s) => [s.slotKey, s] as const));
+  let blocks: NormBlock[] = [...v2.blocks];
+  let units: NormUnitV2[] = [...v2.units];
+  let changed = false;
+  for (const marker of v2.blocks.filter(isRuleIndexAutoMarker)) {
+    const unit = units.find((u) => u.key === marker.unitKey);
+    const slot = unit ? slotByKey.get(unit.slotKey) : undefined;
+    if (!unit || !slot || unit.placeholder) continue;
+    const flag = ctx.slots?.get(slot.slotKey)?.params[PARAM_RULE_INDEX_FROM_MARKERS];
+    if ((flag !== undefined ? flag : ctx.tpl.params[PARAM_RULE_INDEX_FROM_MARKERS]) !== true) continue;
+    const scoped = ctx.scope?.kind === "SLOT" && ctx.scope.key === slot.slotKey;
+    const omitted = emptyOptionalUnitOmitted(slot, blocks.filter((b) => b.unitKey === unit.key), { scoped });
+    const x = expandRuleIndexMarker(marker, v2, { forced: !omitted });
+    for (const e of x.log) ctx.log(e);
+    changed = true;
+    if (x.blocks) {
+      const at = blocks.indexOf(marker);
+      blocks = [...blocks.slice(0, at), ...x.blocks, ...blocks.slice(at + 1)];
+      continue;
+    }
+    blocks = blocks.filter((b) => b.unitKey !== unit.key);
+    units = units.filter((u) => u !== unit);
+    ctx.log({
+      level: "info",
+      code: "OPTIONAL_SLOT_EMPTY_OMITTED",
+      address: `F:${slot.slotKey}`,
+      message: `Slot opsional ${slot.slotKey} (${slot.sectionType}) tanpa isi tidak dirender sebagai seksi (D-299)`,
+    });
+  }
+  if (!changed) return ctx;
+  const snapshot = { ...v2, units, blocks: blocks as NormDocSnapshotV2["blocks"] };
+  return { ...ctx, snapshot: snapshot as unknown as RenderContext["snapshot"] };
+}
 
 /** Blok proyeksi: dirender oleh blok induknya; keluaran kosong tidak dibungkus `data-address`. */
 export const PROJECTION_BLOCK_TYPES: ReadonlySet<string> = new Set(["contractItem"]);

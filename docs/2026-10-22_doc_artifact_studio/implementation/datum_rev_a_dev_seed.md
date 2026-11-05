@@ -38,3 +38,13 @@ Catatan: layanan templat menulis baris info "Templat v2 dibuat" ke `data/studio-
 | Jalan ulang | perintah yang sama | exit 0; 10 templat `unchanged` versi 2; guard ok |
 
 Log: `C:/tmp/s34/real2.log`, `C:/tmp/s34/rerun2.log`. Versi 2 memuat ambang zebra 1000 di lapis bersama (G-FIX 1). Perubahan mesin sesudahnya (klasifikasi kapital, lebar kepala halaman, potong batas kata) adalah kode, bukan data templat; dry-run S40 memastikan 10 templat tetap `unchanged` v2.
+
+## Seed ulang v3 + preset Rev A (ronde cakupan, D-643)
+
+| Langkah | Perintah | Hasil |
+|---|---|---|
+| Fresh-seed `_uji` (C24) | `node tests/integration/studio/uji-run.mjs fresh-seed` | exit 0; `doc-type-templates created: OK`, `doc-type-templates unchanged: OK`; preset `datum-gsp-rev-a-preset` created dengan pin 7,8/6,8/7,6/0,09 |
+| DEV nyata (C30) | `npx tsx prisma/seed-studio.ts --doc-type-templates` | exit 0; preset `datum-gsp-rev-a-preset` created v1; 10 templat `new-version` v3 berbasis preset Rev A; guard ok, `changedTemplates: []`, `addedTemplates: []` |
+| DEV jalan ulang | perintah yang sama | exit 0; preset dan 10 templat `unchanged` (v1 / v3); guard ok |
+
+Log: `C:/tmp/c24_fresh.log`, `C:/tmp/s34/real3.log`, `C:/tmp/s34/rerun3.log`.

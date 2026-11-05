@@ -51,7 +51,8 @@ export interface NormBlockV2 extends NormBlock {
 // ── Delta IP-48 (D-193): konteks compose ulang `snapshot.compose` (+ atas T2-54) ──
 
 /**
- * Lima belas kunci parameter yang dibaca compose (tingkat dokumen dan slot), D-193 (+4 RQ-8/D-224).
+ * Tujuh belas kunci parameter yang dibaca compose (tingkat dokumen dan slot), D-193 (+4 RQ-8/D-224, +1 C10 R-69,
+ * +1 C27 R-79; keduanya dibuang dari konteks tersimpan bila absen/null/bawaan, spike research/35 C-5).
  * Sumber kanonik daftar; `services/compose/context.ts` `COMPOSE_PARAM_KEYS`
  * wajib sama (urutan = urutan proyeksi).
  */
@@ -71,6 +72,8 @@ export const NORM_COMPOSE_PARAM_KEYS = [
   "render.toc.note",
   "image.widthMm",
   "symbolSheet.widthMm",
+  "controlSheet.columns.form",
+  "cover.controlBlock.preparerUnit",
 ] as const;
 
 export type NormComposeParamKey = (typeof NORM_COMPOSE_PARAM_KEYS)[number];

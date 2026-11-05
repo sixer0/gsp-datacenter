@@ -85,11 +85,11 @@ describe('katalog parameter: toc.levels (R-66)', () => {
     for (const k of ['render.toc.title', 'render.toc.note']) expect([PARAMS_BY_KEY.get(k)!.scope, PARAMS_BY_KEY.get(k)!.surface]).toEqual(['section:toc', 'advanced']);
   });
 
-  it('pin hitungan diperbarui (D-351/D-352): renderer 44 -> 45, total 787 -> 788', () => {
+  it('pin hitungan diperbarui (D-351/D-352; C06 ronde cakupan R-67..R-80): renderer 44 -> 45 -> 59, total 787 -> 788 -> 802', () => {
     expect(PARAMS_RENDER).toHaveLength(RENDER_PARAM_COUNT);
-    expect(RENDER_PARAM_COUNT).toBe(45);
+    expect(RENDER_PARAM_COUNT).toBe(59);
     expect(ALL_PARAMS).toHaveLength(ALL_PARAM_COUNT);
-    expect(ALL_PARAM_COUNT).toBe(788);
+    expect(ALL_PARAM_COUNT).toBe(802);
   });
 
   it('cakupan: boleh di M11 slot toc, ditolak di slot bab', () => {

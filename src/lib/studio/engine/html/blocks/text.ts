@@ -27,8 +27,9 @@ import {
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { railK2ReserveOf } from "../../docx/blocks/rail";
+import { baselineSnapTw, snapParaToBaseline } from "../../docx/blocks/rhythm";
 import { datumRulePlaced } from "../../front/apparatus";
-import { appendixOpenerKickerText, chapterKickerText, kickerSuppressed } from "../../front/texts";
+import { appendixOpenerKickerText, chapterKickerText, kickerSuppressed, provenanceMarkLabelText } from "../../front/texts";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
 import { contentOf, el, isObj, language, reportBad } from "./common";
 import { datumRuleHtml, isDevice, renderDevice } from "./device";
@@ -97,7 +98,7 @@ export function railHtml(ctx: RenderContext, rail: readonly RailLine[]): string 
     }
     // Baris tanda konten-saja (`{kind, mark}`) tanpa label/teks: label = nama tanda (padanan DOCX).
     const labelText =
-      typeof line.label === "string" && line.label ? line.label : mark && !Array.isArray(line.runs) && !line.text ? mark : "";
+      typeof line.label === "string" && line.label ? line.label : mark && !Array.isArray(line.runs) && !line.text ? provenanceMarkLabelText(mark, language(ctx)) : "";
     let label = "";
     if (labelText) {
       const st = runStyle(mark ? markLabelProps(ctx, mark) : undefined, 0, ctx.tpl);
@@ -350,6 +351,17 @@ export function requiredParamMm(ctx: RenderContext, block: NormBlock, keys: read
   throw new StudioEngineError("BY_CONSTRUCTION_FAILED", message, { blockId: block.blockId, keys: [...keys] });
 }
 
+/**
+ * C22b / GF-21 (R-74 `render.rhythm.snapToBaseline`, opt-in): format paragraf `para` dengan jarak dan tinggi baris
+ * dikunci ke garis dasar, aturan bersama DOCX (`docx/blocks/rhythm.ts`: jarak ke kelipatan terdekat dengan minimum
+ * satu garis dasar, jadi jarak bukan nol tidak pernah 0 (review C34 #5); tinggi baris exact/atLeast ke atas; medan
+ * absen tetap absen). Opt-in mati = undefined (format pemanggil apa adanya).
+ */
+function onBaseline(ctx: RenderContext, para: ParaFormat | undefined): ParaFormat | undefined {
+  const base = baselineSnapTw((k) => ctx.tpl?.params?.[k]);
+  return base === undefined ? undefined : snapParaToBaseline(para ?? {}, base);
+}
+
 function chapterHead(block: NormBlock, ctx: RenderContext, kind: "chapter" | "appendix"): string {
   const c = contentOf<Chapter>(ctx, block);
   if (!c) return "";
@@ -359,7 +371,8 @@ function chapterHead(block: NormBlock, ctx: RenderContext, kind: "chapter" | "ap
   const kicker = kickerSuppressed(c.kicker) ? "" : el(
     ctx,
     "p",
-    { classes: [C.chapterKicker], role: "chapter.kicker" },
+    // R-74: kicker/judul bab dikunci (DOCX structure.ts); pembuka lampiran tidak (DOCX wrapper/pages.ts, engine E).
+    { classes: [C.chapterKicker], role: "chapter.kicker", format: kind === "chapter" ? onBaseline(ctx, roleFormat(ctx, "chapter.kicker").para) : undefined },
     hasInline(c.kicker) ? inlineHtml(c.kicker, DEFAULT_MD_ROLES, semanticTransform(ctx, undefined, baseRun(ctx, "chapter.kicker"))) : escapeHtml(defaultKicker(ctx, kind, key, block.unitKey)),
   );
   // Datum Rule bab = kolom teks turunan (sama dengan DOCX `structure.ts` requiredNum("grid.textColumnMm")).
@@ -367,7 +380,8 @@ function chapterHead(block: NormBlock, ctx: RenderContext, kind: "chapter" | "ap
   const rule = datumRulePlaced(ctx.tpl?.params ?? {}, "atas judul bab")
     ? datumRuleHtml(ctx, "chapter.datumRule", requiredParamMm(ctx, block, ["grid.textColumnMm"], "lebar Datum Rule bab"))
     : "";
-  const title = el(ctx, "h2", { classes: [C.heading, C.chapterTitle], role: "chapter.title" }, inlineHtml(c.title, DEFAULT_MD_ROLES, semanticTransform(ctx, undefined, baseRun(ctx, "chapter.title"))));
+  const titleFormat = kind === "chapter" ? onBaseline(ctx, roleFormat(ctx, "chapter.title").para) : undefined;
+  const title = el(ctx, "h2", { classes: [C.heading, C.chapterTitle], role: "chapter.title", format: titleFormat }, inlineHtml(c.title, DEFAULT_MD_ROLES, semanticTransform(ctx, undefined, baseRun(ctx, "chapter.title"))));
   return `<header class="${kind === "appendix" ? C.appendixHead : C.chapterHead}"${attr("id", anchorId(kind === "appendix" ? "st-app" : "st-ch", key))}${attr("data-address", block.address ?? undefined)}${attr("data-block", block.blockId)}${attr("data-head", kind)}>${kicker}${rule}${title}</header>`;
 }
 
@@ -393,7 +407,7 @@ export const renderSection: HtmlBlockRenderer = (block, ctx) => {
     {
       classes: [C.heading, C.sectionHeading],
       role: "section.heading",
-      format: s.headingFormat,
+      format: onBaseline(ctx, mergePara(rf.para, s.headingFormat)) ?? s.headingFormat,
       address: block.address,
       blockId: block.blockId,
       attrs: [["id", anchorId("st-sec", (number || (block.address ?? "")).replace(/\./g, "-"))]],

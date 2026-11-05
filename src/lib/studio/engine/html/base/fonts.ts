@@ -238,9 +238,22 @@ function unicodeRange(tpl: ResolvedTemplate): string {
   ].join(",");
 }
 
-/** String CSS aman: kutip ganda, `\` dan `"` di-escape, `<` dan baris baru sebagai escape heksa. */
+/** C35 M-01: kontrol C0 dan DEL yang tersisa sesudah LF/CRLF (CR dan FF juga baris baru CSS). */
+const CSS_CONTROL_RE = /[\u0000-\u001F\u007F]/g;
+
+/**
+ * String CSS aman: kutip ganda, `\` dan `"` di-escape, `<` dan baris baru sebagai escape heksa.
+ * C35 M-01 (CWE-116): CR tunggal, FF, kontrol C0 lain dan DEL juga jadi escape heksa (`\d `, `\c `),
+ * sehingga tidak ada karakter yang bisa mengakhiri string; string biasa tetap byte-identik.
+ */
 export function cssString(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/</g, "\\3C ").replace(/\r?\n/g, "\\A ")}"`;
+  const body = s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/</g, "\\3C ")
+    .replace(/\r?\n/g, "\\A ")
+    .replace(CSS_CONTROL_RE, (c) => `\\${c.charCodeAt(0).toString(16)} `);
+  return `"${body}"`;
 }
 
 export interface FontFaceResult {

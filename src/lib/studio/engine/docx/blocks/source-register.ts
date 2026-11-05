@@ -21,6 +21,7 @@
  */
 import type { BorderSpec, Inline, ParaFormat, RunProps } from "../../../contract";
 import type { BlockEnv } from "./env";
+import { plainHostVariant } from "./rail";
 import { hostFormat } from "./text";
 import { el } from "./xml";
 
@@ -41,9 +42,9 @@ function isInline(v: unknown): v is Inline {
   return typeof o.text === "string" || Array.isArray(o.runs);
 }
 
-/** Format paragraf peran badan tanpa rel (blok slot tidak membawa rel bukti). */
+/** Format paragraf peran badan tanpa rel (blok slot tidak membawa rel bukti); kolom tercadang (C20) = badan 128 mm. */
 function bodyFormat(env: BlockEnv): { para: ParaFormat; run: RunProps } {
-  const f = hostFormat(env, "body.paragraph", [], undefined, "plain");
+  const f = hostFormat(env, "body.paragraph", [], undefined, plainHostVariant(env));
   return { para: f.para, run: f.run };
 }
 

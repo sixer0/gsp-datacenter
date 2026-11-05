@@ -24,6 +24,20 @@ import { datumRulePng } from "../wrapper/media";
 import { bookmarkWrap, chapterTocTarget, chapterTocTargetOf, sectionTocTarget, type TocTarget } from "../wrapper/toc-refs";
 import { imageHeightMm, inlineDrawingRun, loadImageAsset, type LoadedImage } from "./media";
 import { mergePara } from "./props";
+import { withReservedColumn } from "./rail";
+import { baselineSnapTw, snapDrawingPara, snapParaToBaseline } from "./rhythm";
+
+/** C19 (R-74): format judul dikunci ke garis dasar bila opt-in aktif; selain itu apa adanya. */
+function onBaseline(env: BlockEnv, para: ParaFormat): ParaFormat {
+  const base = baselineSnapTw((k) => env.param(k));
+  return base === undefined ? para : snapParaToBaseline(para, base);
+}
+
+/** C19 (R-74): paragraf gambar Datum Rule berakhir pada garis dasar (jarak sesudah menutup sisa tinggi gambar). */
+function ruleOnBaseline(env: BlockEnv, para: ParaFormat, heightMm: number): ParaFormat {
+  const base = baselineSnapTw((k) => env.param(k));
+  return base === undefined ? para : snapDrawingPara(para, env.mmToTw(heightMm), base);
+}
 import { structuralFor } from "./text";
 
 /** Pemisah nomor-judul seksi terukur BM.docx (research/07 K-26: "1.1   "). */
@@ -92,7 +106,7 @@ function datumRuleXml(env: BlockEnv): string {
   const key = `rule${Math.round(widthMm)}`;
   const img = loadImageAsset(env, key);
   const heightMm = img ? imageHeightMm(img, widthMm) : undefined;
-  if (img && heightMm !== undefined) return env.para(para, inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
+  if (img && heightMm !== undefined) return env.para(ruleOnBaseline(env, para, heightMm), inlineDrawingRun(env, img, widthMm, heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
   if (img) env.warn(`tinggi aset Datum Rule "${key}" tidak terbaca`, "ASSET_TYPE_UNSUPPORTED");
   // C10 (D-44: "datumRule (asset rule128, derived)", D-66): aset tidak ada ->
   // rule dibangkitkan dengan geometri BM (pembangkit S18, piksel setara BM).
@@ -100,12 +114,12 @@ function datumRuleXml(env: BlockEnv): string {
     const gen = generatedDatumRule(env, widthMm);
     if (gen) {
       env.warn(`Datum Rule bab "${key}" dibangkitkan dari geometri BM (aset tidak ada)`, "FILE_NOT_FOUND");
-      return env.para(para, inlineDrawingRun(env, gen.img, gen.widthMm, gen.heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
+      return env.para(ruleOnBaseline(env, para, gen.heightMm), inlineDrawingRun(env, gen.img, gen.widthMm, gen.heightMm, env.rPr(rf.run ?? {}), "chapterDatumRule"));
     }
   }
   env.warn(`Datum Rule bab memakai cadangan garis bawah paragraf (aset "${key}")`);
   const bottom = env.rule("device.datumRule.weightMm", "rules.primary.colour", 0.2, "ink900");
-  return env.para(mergePara(para, { borders: { bottom } }), "");
+  return env.para(onBaseline(env, mergePara(para, { borders: { bottom } })), "");
 }
 
 /**
@@ -128,9 +142,10 @@ export function renderChapter(env: BlockEnv): string {
   const kicker: Inline = isInline(c.kicker) ? c.kicker : { text: kickerText(env, key) };
   const titleRole = env.role("chapter.title", structuralFor("chapter.title"));
   // IMPL-W4: kicker kosong eksplisit = judul bab memuat nomor sumber; paragraf kicker tidak ditulis.
-  let xml = kickerSuppressed(c.kicker) ? "" : env.para(kickerRole.para ?? {}, env.inline(kicker, kickerRole.run ?? {}, false));
+  // C20: kicker dan judul bab di badan 128 mm bila kolom rel dicadangkan (Datum Rule sudah selebar kolom teks).
+  let xml = kickerSuppressed(c.kicker) ? "" : env.para(onBaseline(env, withReservedColumn(env, kickerRole.para ?? {})), env.inline(kicker, kickerRole.run ?? {}, false));
   if (datumRuleEnabled(env)) xml += datumRuleXml(env);
-  xml += env.para(titleRole.para ?? {}, bookmarkWrap(tocTarget(env, c, key), env.inline(c.title, titleRole.run ?? {}, false)));
+  xml += env.para(onBaseline(env, withReservedColumn(env, titleRole.para ?? {})), bookmarkWrap(tocTarget(env, c, key), env.inline(c.title, titleRole.run ?? {}, false)));
   return xml;
 }
 
@@ -138,7 +153,7 @@ export function renderSection(env: BlockEnv): string {
   const c = obj(env) as Partial<Section>;
   if (!isInline(c.title)) throw env.fail("section.title wajib Inline");
   const rf = env.role("section.heading", structuralFor("section.heading"));
-  const para: ParaFormat = mergePara(rf.para, c.headingFormat);
+  const para: ParaFormat = onBaseline(env, withReservedColumn(env, mergePara(rf.para, c.headingFormat)));
   const titleRun = rf.run ?? {};
   const numberRun = env.mergeRun(titleRun, rf.numberRun);
   const fromAddress = env.block.address && /^[0-9A-Z]+\.\d+$/.test(env.block.address) ? env.block.address : undefined;

@@ -43,6 +43,7 @@ import { HTML_RENDERERS } from "../../../contract/dispatch";
 import { StudioEngineError, StudioNotImplemented } from "../../../contract/errors";
 import { fontFaceCss, htmlShell } from "../base";
 import { escapeHtml } from "../blocks/escape";
+import { withBackCover } from "./back-cover";
 import { HTML_ASSEMBLE_CLASSES as A, STUDIO_HTML_STRUCTURAL_CSS } from "./classes";
 import { collectFaces } from "./faces";
 import {
@@ -56,6 +57,7 @@ import {
   slotCss,
   unitModes,
   unitViews,
+  withRuleIndex,
   type DraftMarker,
   type UnitView,
 } from "./slots";
@@ -258,7 +260,10 @@ export async function assembleHtml(ctx: RenderContext, opts: { preview: boolean 
   }
 }
 
-function assembleDocument(ctx: RenderContext, preview: boolean): string {
+function assembleDocument(docCtx: RenderContext, preview: boolean): string {
+  // C17 / ST-01: indeks aturan dari penanda (opt-in R-77); tanpa flag = konteks apa adanya.
+  // C22 / CV-19: unit sampul belakang terakhir (opt-in "sampul belakang"); tanpa opt-in = konteks apa adanya.
+  const ctx = withBackCover(withRuleIndex(docCtx));
   const views = unitViews(ctx);
   const draft = isDraft(ctx) ? draftMarker(ctx.tpl) : undefined;
   const bodyHtml = assembleBody(ctx, { preview, views, draft });

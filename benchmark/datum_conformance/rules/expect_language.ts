@@ -75,6 +75,13 @@ export interface LanguageExpectation {
   readonly firstIssueNote: string;
   /** Kepala kolom pertama tabel rantai verifikasi (research/31 §4.2). */
   readonly verificationHead: string;
+  /**
+   * C25 (D-635 (5)): kepala kolom catatan perubahan riwayat revisi, bentuk mesin (research/31 §4.2:
+   * `Uraian`/`Change`, kolom ke-3) dan bentuk manual (`ID:29` PERUBAHAN, `EN:29` CHANGE, kolom ke-4).
+   */
+  readonly revisionChangeHeads: readonly string[];
+  /** C25: kepala rantai verifikasi bentuk manual tanpa kolom peran (`ID:39` LAPIS/METODE/OBJEK/HASIL; `EN:38`). */
+  readonly manualVerificationHeads: readonly string[];
   /** Kata kicker pembuka bab dan lampiran, teks tampak (research/31 §4.5; texts.ts:89-104). */
   readonly chapterKickerWords: readonly string[];
   /** Kata depan keterangan artefak, teks tampak tanpa beda besar-kecil (research/32 LB-09). */
@@ -123,6 +130,8 @@ export const LANGUAGE_EXPECTATIONS: Readonly<Record<Lang, LanguageExpectation>> 
     verificationRoles: ["Penyusun", "Diperiksa", "Disetujui"],
     firstIssueNote: "Terbit pertama",
     verificationHead: "Lapis",
+    revisionChangeHeads: ["Uraian", "Perubahan"],
+    manualVerificationHeads: ["Lapis", "Metode", "Objek", "Hasil"],
     chapterKickerWords: ["BAB", "LAMPIRAN"],
     artifactWords: ["TABEL", "GAMBAR", "TURUNAN"],
     runLabels: ["SUMBER", "PROVENANS", "KUNCI"],
@@ -165,6 +174,8 @@ export const LANGUAGE_EXPECTATIONS: Readonly<Record<Lang, LanguageExpectation>> 
     verificationRoles: ["Prepared by", "Reviewed by", "Approved by"],
     firstIssueNote: "First issue",
     verificationHead: "Layer",
+    revisionChangeHeads: ["Change"],
+    manualVerificationHeads: ["Layer", "Method", "Object", "Result"],
     // G-FIX1 (D-606) LB-08: mesin mencetak ANNEX (EN:223-247, EN:4326); APPENDIX tetap kata Inggris yang sah untuk LB-03.
     chapterKickerWords: ["CHAPTER", "ANNEX", "APPENDIX"],
     artifactWords: ["TABLE", "FIGURE", "DERIVATION"],

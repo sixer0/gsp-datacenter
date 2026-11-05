@@ -862,11 +862,19 @@ function checkLB09(ctx: RuleContext): RuleResult {
   return pass(`${caps.length} keterangan dan ${labels.length} label aparatus berbahasa ${ctx.pair.language}`);
 }
 
+const CHANGE_HEADS: ReadonlySet<string> = new Set(LANGS.flatMap((l) => LANGUAGE_EXPECTATIONS[l].revisionChangeHeads));
+const sameStrings = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
+
 function checkLB10(ctx: RuleContext): RuleResult {
   if (ctx.pair.producedBy !== "mcp" || ctx.pair.agentRevisionText) return na("catatan revisi dari agen atau sampel r08");
   const rt = revisionTable(ctx);
   if (!rt || rt.rows.length < 2) return fail("tabel riwayat revisi dengan baris data tidak ditemukan");
-  const note = norm(rt.rows[1][2] ?? "");
+  // C25 (D-635 (5)): kolom catatan dicari per kepala, bukan indeks tetap: bentuk mesin Uraian/Change (kolom ke-3),
+  // bentuk manual PERUBAHAN/CHANGE (kolom ke-4; ID:29, EN:29). Kepala kedua bahasa dipakai sebagai penanda letak saja.
+  const heads = (rt.rows[0] ?? []).map(norm);
+  const col = heads.findIndex((h) => CHANGE_HEADS.has(h));
+  if (col < 0) return fail(`kolom catatan perubahan (${[...CHANGE_HEADS].join("/")}) tidak ada di riwayat revisi`, { location: rt.location, observed: heads.join(" | ") });
+  const note = norm(rt.rows[1][col] ?? "");
   const want = E(ctx).firstIssueNote;
   if (note !== want) return fail(`catatan revisi baris pertama "${note}" != "${want}"`, { location: rt.location, observed: note });
   return pass(`catatan revisi bawaan "${want}"`, { location: rt.location });
@@ -877,6 +885,11 @@ function checkLB11(ctx: RuleContext): RuleResult {
   const heads = new Set(LANGS.map((l) => LANGUAGE_EXPECTATIONS[l].verificationHead));
   const t = A(ctx).frontTables.find((x) => heads.has(norm(x.rows[0]?.[0] ?? "")));
   if (!t) return fail("tabel rantai verifikasi tidak ditemukan");
+  // C25 (D-635 (5)): rantai bentuk manual LAPIS/METODE/OBJEK/HASIL (ID:39) / LAYER/METHOD/OBJECT/RESULT (EN:38) tidak
+  // punya kolom peran; subjek aturan (label peran klien MCP) tidak tercetak. Hanya kepala manual utuh yang N/A.
+  const head = (t.rows[0] ?? []).map(norm);
+  const manual = LANGS.find((l) => sameStrings(head, LANGUAGE_EXPECTATIONS[l].manualVerificationHeads));
+  if (manual) return na(`rantai verifikasi bentuk manual (${head.join("/")}; ${manual === "ID" ? "ID:39" : "EN:38"}) tanpa kolom peran`, { location: t.location });
   const roles = t.rows.slice(1).map((r) => norm(r[1] ?? "")).filter((r) => r !== "");
   if (roles.length === 0) return fail("tabel rantai verifikasi tanpa peran", { location: t.location });
   const allowed = E(ctx).verificationRoles;

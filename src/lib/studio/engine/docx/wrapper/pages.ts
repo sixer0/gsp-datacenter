@@ -29,6 +29,7 @@ import type {
   Inline,
   NormBlock,
   ParaFormat,
+  ParamMap,
   PartSpec,
   RenderContext,
   RunProps,
@@ -115,8 +116,21 @@ function rulePlaced(b: WrapperBuilder, where: "sampul" | "pembatas" | "atas judu
   return pBool(b.params, "device.datumRule.enabled", true) && pStrList(b.params, "device.datumRule.placements", ["atas judul bab", "sampul", "pembatas"]).includes(where);
 }
 
+function spinePlacedIn(p: ParamMap, where: "margin luar sampul" | "pembatas" | "sampul belakang"): boolean {
+  return pBool(p, "device.spine.enabled", true) && pStrList(p, "device.spine.placements", ["margin luar sampul", "pembatas"]).includes(where);
+}
+
 function spinePlaced(b: WrapperBuilder, where: "margin luar sampul" | "pembatas"): boolean {
-  return pBool(b.params, "device.spine.enabled", true) && pStrList(b.params, "device.spine.placements", ["margin luar sampul", "pembatas"]).includes(where);
+  return spinePlacedIn(b.params, where);
+}
+
+/**
+ * C12 / CV-19 (opt-in nilai enum `sampul belakang` di `device.spine.placements`, register research/38 §2):
+ * dokumen mendapat halaman sampul belakang berisi string punggung. Perencana unit memakai predikat ini
+ * DAN mensyaratkan unit sampul di rencana (register §4.1: tanpa sampul, mis. NOTA, tanpa sampul belakang).
+ */
+export function backCoverPlaced(params: ParamMap): boolean {
+  return spinePlacedIn(params, "sampul belakang");
 }
 
 // FIX-2 (F-055): teks bawaan pembungkus (tabel `L`) = satu sumber bersama HTML di `engine/front/texts.ts`.
@@ -284,6 +298,9 @@ export function autoControlSheetItems(b: WrapperBuilder, data: ControlSheetData 
   if (s) items.push(s);
   items.push(paraItem("kicker", data?.kicker ?? textInline(controlSheetKickerText(b.lang))));
   items.push(paraItem("pageTitle", data?.title ?? textInline(b.ctx.snapshot.doc.meta.title)));
+  // C08 / CS-12 (R-67, opt-in): subjudul tabel teks SESUDAH judul (CS-02 membaca kicker + judul lebih dulu);
+  // peran `cover.standfirst` yang sudah ada (register research/38 §1.3). Absen/false = tanpa paragraf.
+  if (pBool(b.params, "controlSheet.subtitle.enabled", false)) items.push(paraItem("standfirst", textInline(L.controlSubtitle[b.lang])));
   const blocks: Array<{ kind: ControlSheetBlockKind; table?: TableBlock; method?: Inline }> = [];
   if (data?.revisionHistory) blocks.push({ kind: "revision", table: data.revisionHistory });
   if (data?.verificationChain) blocks.push({ kind: "verification", table: data.verificationChain });
@@ -561,6 +578,22 @@ export const renderPartDivider: DocxBlockRenderer = (block, ctx) => {
     }
   });
 };
+
+// ── backCover (C12 / CV-19) ──────────────────────────────────────────────
+
+/**
+ * Sampul belakang: halaman kosong yang hanya memuat string punggung berputar, perangkat yang sama dengan
+ * sampul dan pembatas (`spineXml`). Manual tidak meminta teks lain (DT-13f ID:2718-2723, EN:2766,
+ * EN:2778-2783; register §3.4). Paragraf jangkar sesudah tabel mengambang: unit ini unit terakhir,
+ * langsung diikuti sectPr badan. Header/footer kosong (tanpa PAGE/register, RB-07/RB-08/SB-01) milik seksi
+ * pembungkus perakit; renderer tidak menulis sectPr (K-12).
+ */
+export const renderBackCover: DocxBlockRenderer = (block, ctx) =>
+  build(ctx, block, "cover", (b) => {
+    if (backCoverPlaced(b.params)) b.push(spineXml(b, { runs: [{ t: spineText(b), caps: true }] }));
+    else b.warn('sampul belakang tanpa penempatan "sampul belakang" di device.spine.placements; string punggung dilewati', "BY_CONSTRUCTION_FAILED");
+    b.push(paragraphXml(paraOf(ctx, "spacer.generic")));
+  });
 
 // ── signatureBlock ───────────────────────────────────────────────────────
 

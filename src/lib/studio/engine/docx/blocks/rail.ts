@@ -20,18 +20,30 @@
  * menyempit sebesar cadangan rel tanpa chip sesudahnya, atau chip tanpa inang,
  * = BY_CONSTRUCTION_FAILED. Moda `table3col` (Manual 000) tidak tersentuh.
  *
+ * Varian kolom tercadang (C20 / GF-24, R-75 `render.rail.reserveColumn`, opt-in): pada
+ * moda K2 setiap paragraf badan unit interior menyempit sebesar cadangan rel, berchip
+ * atau tidak, sehingga badan 128 mm dan kolom rel 32 mm kosong di setiap halaman interior
+ * ("Rel yang kosong itu benar", manual ID:2711; EN:2764). Margin seksi tidak berubah
+ * (GF-02/GF-03, register research/38 §6.3); tabel dan gambar tetap 128 atau 166 mm
+ * (EN:2737: 166 mm untuk peta, grafik, dan tabel lebar). Absen/false = K2 rev B.
+ *
  * Baris tanda: run glif (`glyphRun[mark]` peran `rail.mark`, cadangan wajah
  * symbolGlyph + warna `marks.<m>.colour`) lalu run label " <label>" (pola
  * BM.docx: spasi pemisah di awal run label). Teks label/sumber/catatan apa adanya.
  */
-import { PROVENANCE_GLYPHS, type ParaFormat, type ParamValue, type ProvenanceMark, type RailLine, type RunProps } from "../../../contract";
+import { PROVENANCE_GLYPHS, type NormUnitKind, type ParaFormat, type ParamValue, type ProvenanceMark, type RailLine, type RunProps } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
+import { provenanceMarkLabelText, wrapperLangOf } from "../../front/texts";
 import { mmToTw } from "../../tokens";
+import { WRAPPER_KINDS } from "../package/section";
 import type { BlockEnv, RailLayout } from "./env";
 import { singleRowTable } from "./table";
 import { el } from "./xml";
 
 export type HostVariant = "plain" | "framePr" | "table";
+
+/** R-75 (C20 / GF-24): cadangkan kolom rel di setiap halaman interior. */
+export const PARAM_RAIL_RESERVE_COLUMN = "render.rail.reserveColumn";
 
 function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -61,6 +73,8 @@ export function resolveRailLayout(param: (key: string) => ParamValue | undefined
   }
   // `auto` tanpa konteks sitasi = susunan moda A (D-37); B bila diminta atau kolom rel tunggal.
   const mode = param("layout.railMode") === "B" || colsTw.length < 3 ? "B" : "A";
+  // C20: varian kolom tercadang hanya di samping perender framePr (moda K2); medan ditulis hanya bila aktif.
+  if (mode === "A" && renderer === "framePr" && param(PARAM_RAIL_RESERVE_COLUMN) === true) return { mode, renderer, colsTw, reserveColumn: true };
   return { mode, renderer, colsTw };
 }
 
@@ -76,6 +90,51 @@ export function railK2ReserveTw(lay: RailLayout): number | undefined {
  */
 export function railK2ReserveOf(param: (key: string) => ParamValue | undefined): number | undefined {
   return railK2ReserveTw(resolveRailLayout(param, () => 0));
+}
+
+/**
+ * Cadangan rel (twip) yang berlaku untuk paragraf badan blok ini pada varian kolom
+ * tercadang (C20): K2 + R-75 true + unit interior (bukan sampul, lembar kendali, daftar
+ * isi, pembatas bagian). Selain itu undefined (perilaku K2 rev B per paragraf).
+ */
+export function reservedColumnTw(env: BlockEnv): number | undefined {
+  return reservedColumnTwOf((k) => env.param(k), env.unitKind());
+}
+
+/** Bentuk parameter-saja `reservedColumnTw` untuk penyaji tanpa BlockEnv (figur, tabel); kolom teks tidak dituntut. */
+export function reservedColumnTwOf(param: (key: string) => ParamValue | undefined, unitKind: NormUnitKind | undefined): number | undefined {
+  if (param(PARAM_RAIL_RESERVE_COLUMN) !== true || unitKind === undefined || WRAPPER_KINDS.has(unitKind)) return undefined;
+  const lay = resolveRailLayout(param, () => 0);
+  return lay.reserveColumn ? railK2ReserveTw(lay) : undefined;
+}
+
+/**
+ * Apparatus (caption, kunci, SUMBER) artefak selebar kolom teks atau lebih sempit ikut badan
+ * 128 mm pada kolom tercadang; artefak bentang penuh (166 mm, EN:2737) membawa apparatusnya
+ * selebar artefak. `widthTw` = lebar artefak; tanpa `grid.textColumnMm` = tidak diubah.
+ */
+export function apparatusReserveTw(param: (key: string) => ParamValue | undefined, unitKind: NormUnitKind | undefined, widthTw: number): number | undefined {
+  const reserve = reservedColumnTwOf(param, unitKind);
+  const text = param("grid.textColumnMm");
+  if (reserve === undefined || !isNum(text)) return undefined;
+  // Toleransi sisa pembulatan per kolom (BM: tblW 9412 untuk 166 mm = 9411 tw).
+  return widthTw <= mmToTw(text) + 4 ? reserve : undefined;
+}
+
+/** `para` dengan indentasi kanan paling sedikit `reserve` (indentasi lebih besar tetap); `reserve` undefined = apa adanya. */
+export function reserveRight(para: ParaFormat, reserve: number | undefined): ParaFormat {
+  if (reserve === undefined || (para.indRightTw ?? 0) >= reserve) return para;
+  return { ...para, indRightTw: reserve };
+}
+
+/** Varian inang untuk paragraf tanpa rel: `framePr` (menyempit tanpa chip) pada kolom tercadang, selain itu `plain`. */
+export function plainHostVariant(env: BlockEnv): HostVariant {
+  return reservedColumnTw(env) !== undefined ? "framePr" : "plain";
+}
+
+/** Indentasi kanan paragraf badan pada kolom tercadang: paling sedikit sebesar cadangan rel (indentasi peran yang lebih besar tetap). */
+export function withReservedColumn(env: BlockEnv, para: ParaFormat): ParaFormat {
+  return reserveRight(para, reservedColumnTw(env));
 }
 
 function markGlyph(env: BlockEnv, mark: ProvenanceMark): string {
@@ -119,7 +178,7 @@ export function railLinesXml(env: BlockEnv, lines: readonly RailLine[], framePr?
         if (!line.mark) throw env.fail(`rail[${i}] kind "mark" tanpa medan mark`);
         const glyph = env.run({ t: markGlyph(env, line.mark) }, glyphRunProps(env, line.mark, base));
         const label = markLabelRun(env, line.mark, base);
-        content = glyph + env.run({ t: ` ${line.label ?? line.mark}` }, label);
+        content = glyph + env.run({ t: ` ${line.label ?? provenanceMarkLabelText(line.mark, wrapperLangOf(env.ctx.snapshot.doc.meta))}` }, label);
       } else {
         const text = line.text ?? line.label;
         if (text === undefined) throw env.fail(`rail[${i}] kind "${line.kind}" tanpa text/label/runs`);
@@ -135,7 +194,7 @@ export function railLinesXml(env: BlockEnv, lines: readonly RailLine[], framePr?
  * `framePr` = inang menyempit (ind kanan), `table` = isi sel prosa 1x3, `plain` = biasa.
  */
 export function withRail(env: BlockEnv, rail: readonly RailLine[] | undefined, host: (v: HostVariant) => string): string {
-  if (!rail || rail.length === 0) return host("plain");
+  if (!rail || rail.length === 0) return host(plainHostVariant(env));
   const lay = env.rail();
   if (lay.mode === "B") {
     // FIX-H4: rel dimatikan templat (P4S-07) = perilaku jelas, bukan diam-diam: baris tetap
@@ -221,7 +280,8 @@ export function assertRailK2(xml: string, lay: RailLayout, where: string): RailK
     }
     if (p.rightTw !== reserve) return;
     if (paras[i + 1]?.chip) hosts += 1;
-    else narrowed.push(p.text);
+    // C20: pada kolom tercadang paragraf badan menyempit tanpa chip memang benar.
+    else if (!lay.reserveColumn) narrowed.push(p.text);
   });
   if (narrowed.length > 0 || orphans.length > 0) {
     const parts = [

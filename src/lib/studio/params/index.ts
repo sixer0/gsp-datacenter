@@ -32,7 +32,7 @@ export * from "./render";
 export * from "./structure";
 
 export const CATALOG_PARAM_COUNT = 722;
-export const RENDER_PARAM_COUNT = 45;
+export const RENDER_PARAM_COUNT = 59;
 export const STRUCTURE_PARAM_COUNT = 21;
 export const ALL_PARAM_COUNT = CATALOG_PARAM_COUNT + RENDER_PARAM_COUNT + STRUCTURE_PARAM_COUNT;
 

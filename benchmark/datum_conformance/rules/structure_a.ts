@@ -319,7 +319,7 @@ function controlTables(ctx: RuleContext, section: ClassifiedSection): Partial<Re
   for (const t of section.blocks.filter((b) => b.name === "w:tbl")) {
     const head = headerRow(doc, t);
     for (const k of TABLE_KINDS) {
-      if (!out[k] && ALL_LANG_EXPECT.some((e) => sameList(e.columns[k], head))) out[k] = t;
+      if (!out[k] && ALL_LANG_EXPECT.some((e) => sameList(e.columns[k], head) || sameList(e.manualColumns[k], head))) out[k] = t;
     }
   }
   return out;
@@ -707,16 +707,23 @@ const csRules: Rule[] = [
     const tables = controlTables(ctx, s);
     const kinds = TABLE_KINDS.filter((k) => tables[k]);
     if (!kinds.length) return fail("tidak ada tabel riwayat revisi, rantai verifikasi, atau distribusi", { part: DOC, location: loc(s) });
+    const heads = new Map(kinds.map((k) => [k, headerRow(doc, tables[k]!)] as const));
+    // C25 (D-635 (5)): bentuk manual bila satu tabel memakai daftar manual bahasa dokumen (revisi ID:29/EN:29,
+    // rantai ID:39/EN:38, distribusi ID:58/EN:62). Satu parameter bentuk berlaku untuk ketiga tabel
+    // (`controlSheet.columns.form`), jadi semua tabel lalu dinilai terhadap daftar manual; selain itu daftar mesin.
+    const manual = kinds.some((k) => sameList(heads.get(k)!, exp.manualColumns[k]));
+    const want = manual ? exp.manualColumns : exp.columns;
+    const form = manual ? "bentuk manual ID:29/39/58, EN:29/38/62" : "research/31 §4.2";
     const bad: string[] = [];
     const seen: string[] = [];
     for (const k of kinds) {
-      const head = headerRow(doc, tables[k]!);
+      const head = heads.get(k)!;
       seen.push(`${k}=[${head.join(", ")}]`);
-      if (!sameList(head, exp.columns[k])) bad.push(`${k}: [${head.join(", ")}] != [${exp.columns[k].join(", ")}]`);
+      if (!sameList(head, want[k])) bad.push(`${k}: [${head.join(", ")}] != [${want[k].join(", ")}]`);
     }
     return bad.length
-      ? fail(`kepala kolom bukan daftar ${ctx.pair.language} research/31 §4.2: ${bad.join("; ")}`, { part: DOC, location: loc(s), observed: seen.join(" ") })
-      : pass(`kepala kolom ${kinds.join(", ")} = daftar ${ctx.pair.language}`, { part: DOC, location: loc(s), observed: seen.join(" ") });
+      ? fail(`kepala kolom bukan daftar ${ctx.pair.language} ${form}: ${bad.join("; ")}`, { part: DOC, location: loc(s), observed: seen.join(" ") })
+      : pass(`kepala kolom ${kinds.join(", ")} = daftar ${ctx.pair.language} ${form}`, { part: DOC, location: loc(s), observed: seen.join(" ") });
   }),
 
   defineRule("CS-07", (ctx) => {

@@ -28,8 +28,11 @@ export const EXT_RE = /^[a-z0-9]{1,10}$/;
 export const DATUM_NAME_MAX = 120;
 export const MAX_REL_PATH_CHARS = 1000;
 const MAX_SEGMENT_CHARS = 255;
-/** Karakter terlarang di nama berkas Windows + kendali. */
-const FORBIDDEN_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
+/**
+ * Karakter terlarang di nama berkas Windows + kendali. C35 L-02 (CWE-451): juga kontrol bidi
+ * (U+200E/F, U+202A-202E, U+2066-2069) agar nama tidak tampil terbalik di unduhan/penjelajah berkas.
+ */
+const FORBIDDEN_NAME_CHARS = /[<>:"/\\|?*\u0000-\u001f\u007f\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 const FORBIDDEN_SEGMENT_CHARS = /[<>:"|?*\u0000-\u001f\u007f]/;
 const WIN_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
 
@@ -205,6 +208,32 @@ export function datumFileName(title: string, docNumber: string, rev: string, ext
   const name = `${datumClean(stem)}.${e}`;
   assertSafeSegment(name);
   return name;
+}
+
+/**
+ * C18 / TR-07 (R-78 `naming.file.form`, manual Tabel 2.3 ID:487-493 / EN:518-523): nama berkas
+ * `<Judul> <YYYY-MM-DD>.<ext>` (contoh `Nota Rencana Uji 2026-11-02.md`), maks 120 karakter sebelum
+ * ekstensi; bila terlalu panjang JUDUL yang dipotong agar tanggal utuh. Tanggal wajib ISO.
+ */
+export function datumDateFileName(title: string, isoDate: string, ext: string): string {
+  const e = normalizeExt(ext);
+  const date = String(isoDate ?? "").trim();
+  if (!ISSUE_DATE_RE.test(date)) throw invalid("Invalid issue date", { field: "issueDate" });
+  const t = datumClean(title);
+  const room = DATUM_NAME_MAX - date.length - 1;
+  const stem = t && room > 0 ? `${clip(t, room)} ${date}` : date;
+  const name = `${datumClean(stem)}.${e}`;
+  assertSafeSegment(name);
+  return name;
+}
+
+/** Bentuk nama berkas R-78: `judulTanggalIso` = judul + tanggal ISO; nilai lain/absen = `datumFileName` hari ini. */
+export function datumFileNameByForm(
+  form: unknown,
+  i: { title: string; docNumber: string; rev: string; issueDate: string },
+  ext: string,
+): string {
+  return form === "judulTanggalIso" ? datumDateFileName(i.title, i.issueDate, ext) : datumFileName(i.title, i.docNumber, i.rev, ext);
 }
 
 /** Nama berkas DATUM bebas (figur `Gambar C.n Judul`, label artefak). */

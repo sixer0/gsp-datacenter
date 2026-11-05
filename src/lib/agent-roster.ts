@@ -37,14 +37,9 @@ const CONTROLLER_ROSTER_FILE =
   process.env.HERMES_CONTROLLER_ROSTER ||
   "C:/Users/TRIAL/workspace/gsp-hermes/workspace/docs/2026-08-31-enforcement-fleet/controller-roster.json";
 
-// Used only when the canonical file is unreadable.
-const CONTROLLER_FALLBACK = [
-  "default",
-  "gsp-crawler-orchestrator",
-  "gsp-skill-manager",
-  "gsp-system-manager",
-  "gsp-pm-planner",
-];
+// Used only when the canonical file is unreadable. gsp-crawler-orchestrator and
+// gsp-pm-planner were archived by PROF-MERGE-1010 (2026-10-10) and are dropped.
+const CONTROLLER_FALLBACK = ["default", "gsp-skill-manager", "gsp-system-manager"];
 
 export const GROUP_LABELS: Record<string, string> = {
   core: "Core Orchestrator",
@@ -111,6 +106,11 @@ export const PROFILE_META: Record<
   "gsp-skill-manager": { name: "Skill Manager", emoji: "📦", role: "Distribusi skill on-demand dari request agent aktif; meminta Skill Creator jika belum dimiliki", level: 3, group: "execution" },
   "gsp-skill-creator": { name: "Skill Creator", emoji: "🧩", role: "CRUD skill & tools fleet: create, patch, edit, delete (registry kanonik/fleet)", level: 3, group: "execution" },
   "gsp-imagegen-worker": { name: "Imagegen Worker", emoji: "🖼️", role: "Eksekutor render Imagegen 2.1 (Qwen-Image-2.1 recipe A4): generate/edit slide via inference-kaytus, verifikasi struktur vision, PNG + record.json", level: 3, group: "execution" },
+  // PROF-MERGE-1010 (2026-10-10): the per-role profiles above were archived and
+  // consolidated into three general workers (role-via-file, see each SOUL.md).
+  "gsp-thinker": { name: "Thinker", emoji: "🧭", role: "Pekerja rasio berat: analisis, arsitektur tugas, verifikasi mendalam, countersign · peran via berkas", level: 3, group: "analysis" },
+  "gsp-worker": { name: "Worker", emoji: "🛠️", role: "Pekerja standar: dokumen, pengumpulan data, kode, analisis · peran via berkas", level: 3, group: "execution" },
+  "gsp-worker-fast": { name: "Worker Fast", emoji: "⚡", role: "Pekerja cepat ber-volume: ekstraksi, konversi, sapuan, reparasi mekanis · peran via berkas", level: 3, group: "execution" },
 };
 
 /**
@@ -142,9 +142,9 @@ export function parseModelLabel(yamlText: string): string {
   return def || prov;
 }
 
-function controllerSet(): Set<string> {
+function controllerSet(rosterFile: string): Set<string> {
   try {
-    const j = JSON.parse(readFileSync(CONTROLLER_ROSTER_FILE, "utf8"));
+    const j = JSON.parse(readFileSync(rosterFile, "utf8"));
     if (Array.isArray(j.controllers) && j.controllers.length > 0) {
       return new Set<string>(j.controllers.filter((c: unknown) => typeof c === "string"));
     }
@@ -159,10 +159,14 @@ function controllerSet(): Set<string> {
  * agent (name = folder name), plus the Hermes root profile ("default",
  * surfaced to the dashboard as id "brahma" like the old static roster).
  * Throws when the directory cannot be read or yields nothing — callers decide
- * the fallback.
+ * the fallback. `controllerRosterFile` lets callers (tests, other machines)
+ * point at their own canonical controller list instead of this machine's.
  */
-export function buildRoster(profilesDir: string = PROFILES_DIR): RosterAgent[] {
-  const controllers = controllerSet();
+export function buildRoster(
+  profilesDir: string = PROFILES_DIR,
+  opts: { controllerRosterFile?: string } = {},
+): RosterAgent[] {
+  const controllers = controllerSet(opts.controllerRosterFile ?? CONTROLLER_ROSTER_FILE);
   const dirs = readdirSync(profilesDir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)

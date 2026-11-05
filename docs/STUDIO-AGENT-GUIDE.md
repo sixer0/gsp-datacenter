@@ -204,6 +204,8 @@ dan `restricted`.
 | `datum-nota-en` | Internal note (EN) | kode NOT, tier bawaan NOTA, kicker sampul INTERNAL NOTE |
 | `datum-manual-000` | Manual 000 | TERBATAS: pemanggil selain ADMIN mendapat `403 FORBIDDEN` (`details.reason = "TEMPLATE_RESTRICTED"`) |
 
+Sepuluh slug jenis dokumen (`datum-proposal-teknis` sampai `datum-nota-en`) memakai preset DATUM Rev A dan mengisi sendiri beberapa bagian halaman depan (unit penyusun di sampul, baris klasifikasi, subjudul dan kolom manual lembar kendali, tiga kolom tanda tangan, sampul belakang; indeks aturan di standar). Cara kirim isinya tidak berubah; daftar yang diisi mesin ada di `docs/STUDIO-HOWTO-DOCUMENT.md` §2.
+
 Kerangka bawaan `datum-gsp` (urutan slot dokumen):
 
 | pos | slotKey | Isi | Wajib | Cara mengisi |

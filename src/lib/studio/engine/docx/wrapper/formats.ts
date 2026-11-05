@@ -381,6 +381,18 @@ function tocDerivedFormat(role: WrapperRole, parent: WrapperRoleFormat, p: Param
 }
 
 /**
+ * C11 / CV-20 (R-70, opt-in): jorokan kanan peran judul sampul agar baris judul paling lebar
+ * `cover.title.maxWidthMm` (manual ID:2480, EN:2552: <= 150 mm) = bentang penuh `grid.fullSpanMm` - nilai
+ * (166 - 150 = 16 mm = 907 tw). `null`/absen, atau nilai >= bentang = tanpa jorokan (keluaran sekarang).
+ */
+export function coverTitleIndentTw(p: ParamMap): number | undefined {
+  const max = pNum(p, "cover.title.maxWidthMm");
+  const span = pNum(p, "grid.fullSpanMm");
+  if (max === undefined || span === undefined || max >= span) return undefined;
+  return mmToTw(span - max);
+}
+
+/**
  * Format efektif satu peran: benchmark <- katalog (per atribut) <- templat
  * `roleFormats` (sub-objek utuh, semantik S11 D-37a).
  * Peran entri TOC turunan (`toc.section*`, `toc.appendix*`; FIX-TL) mewarisi format
@@ -406,8 +418,10 @@ export function roleFormat(ctx: RenderContext, role: WrapperRole): WrapperRoleFo
     if (tplOwn && tplOwn[k] !== undefined) return tplOwn[k];
     return merge(base[k], resolved[k]);
   };
+  const para = pick("para", mergePara);
+  const titleIndent = role === "cover.titleFirst" || role === "cover.titleLast" ? coverTitleIndentTw(ctx.tpl.params) : undefined;
   return {
-    para: pick("para", mergePara),
+    para: titleIndent === undefined ? para : { ...para, indRightTw: titleIndent },
     run: pick("run", mergeRun),
     labelRun: pick("labelRun", mergeRun),
     numberRun: pick("numberRun", mergeRun),

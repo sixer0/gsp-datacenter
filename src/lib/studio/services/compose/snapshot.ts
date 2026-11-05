@@ -414,7 +414,7 @@ export function composeV2(input: ComposeInput): ComposeResult {
     switch (slot.sectionType) {
       case "cover": {
         if (payload === undefined && slot.contentMode === "INPUT") return placeholder();
-        const fp = coverFront(payload as CoverPayloadV2 | undefined, src.meta, inlineCtx);
+        const fp = coverFront(payload as CoverPayloadV2 | undefined, src.meta, inlineCtx, paramsOf(k));
         if (k === "cover" || !docV1.front?.cover) docV1.front = { ...docV1.front, cover: fp };
         addUnit("cover", fKey, slot);
         const pid = structPid(k, fKey);

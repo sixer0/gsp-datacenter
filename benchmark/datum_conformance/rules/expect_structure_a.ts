@@ -16,8 +16,14 @@ export interface StructureAExpect {
   readonly controlSheetKicker: string;
   /** Judul blok lembar kendali, pola `<huruf> · <judul>` (31 §4.2; `texts.ts:23-26, 43-45`). */
   readonly blockTitles: Readonly<Record<ControlBlockKind, string>>;
-  /** Kepala kolom tabel lembar kendali (31 §4.2). */
+  /** Kepala kolom tabel lembar kendali bentuk mesin (31 §4.2), untuk dokumen yang tidak memakai bentuk manual. */
   readonly columns: Readonly<Record<Exclude<ControlBlockKind, "method">, readonly string[]>>;
+  /**
+   * C25 (D-635 (5), research/38 §3.2, §6.2): kepala kolom bentuk manual (`controlSheet.columns.form = manual`).
+   * Revisi `ID:29` / `EN:29`, rantai verifikasi `ID:39` / `EN:38`, distribusi `ID:58` / `EN:62`
+   * (`manual_id.txt` / `manual_en.txt`). Teks sumber huruf campuran (kapital dari format peran kepala tabel).
+   */
+  readonly manualColumns: Readonly<Record<Exclude<ControlBlockKind, "method">, readonly string[]>>;
   /**
    * Label blok kendali sampul per medan (31 §4.1 mode auto dan §4.3 label klien MCP).
    * EN `author` menerima label sekarang (`Author`) dan target (`Prepared by`): CV-13 memetakan medan,
@@ -42,6 +48,14 @@ export const STRUCTURE_A_EXPECT: Readonly<Record<Lang, StructureAExpect>> = {
       verification: ["Lapis", "Peran", "Nama", "Tanggal"],
       distribution: ["Salinan", "Pemegang"],
     },
+    manualColumns: {
+      // ID:29 "REV TANGGAL PENYUSUN PERUBAHAN STATUS"
+      revision: ["Rev", "Tanggal", "Penyusun", "Perubahan", "Status"],
+      // ID:39 "LAPIS METODE OBJEK HASIL"
+      verification: ["Lapis", "Metode", "Objek", "Hasil"],
+      // ID:58 "SALINAN PEMEGANG MEDIA KEMBALI"
+      distribution: ["Salinan", "Pemegang", "Media", "Kembali"],
+    },
     coverLabels: {
       number: ["Nomor dokumen"],
       rev: ["Revisi"],
@@ -64,6 +78,14 @@ export const STRUCTURE_A_EXPECT: Readonly<Record<Lang, StructureAExpect>> = {
       revision: ["Rev", "Date", "Change", "Prepared by"],
       verification: ["Layer", "Role", "Name", "Date"],
       distribution: ["Copy", "Holder"],
+    },
+    manualColumns: {
+      // EN:29 "REV DATE PREPARED BY CHANGE STATUS"
+      revision: ["Rev", "Date", "Prepared by", "Change", "Status"],
+      // EN:38 "LAYER METHOD OBJECT RESULT"
+      verification: ["Layer", "Method", "Object", "Result"],
+      // EN:62 "COPY HOLDER MEDIUM RETURN"
+      distribution: ["Copy", "Holder", "Medium", "Return"],
     },
     coverLabels: {
       number: ["Document number"],

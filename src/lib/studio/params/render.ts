@@ -10,6 +10,8 @@
  * lembar simbol RK-10), nomor lanjut setelah R-58 karena structure.ts bukan berkas baris ini.
  * R-65 = delta FIX-FIG (D-257): resolusi gambar raster untuk aturan ukuran asli K-2 (D-242).
  * R-66 = delta FIX-TL (D-351/D-352): kedalaman daftar isi turunan `toc.levels` (registri S03 paramRefs).
+ * R-67..R-80 = delta ronde cakupan DATUM Rev A (C06; D-631, D-635; register research/38 §1): opt-in
+ * kelas B lapis lanjutan, bawaan = keluaran sekarang.
  *
  * SR-05 (KC-7, SR-01 PC-05/KD-25, D-158): R-09/R-10 tidak lagi membawa ukuran
  * halaman A4 tertanam; `pageSizeTw` adalah sub-medan turunan dari `page.sizeMm`
@@ -332,6 +334,87 @@ export const PARAMS_RENDER: readonly ParamDef[] = [
       "entri turunan sama dengan 2, kerangka medan Word TOC \\o 1-3). Bawaan 2 = medan TOC \\o 1-2 mesin. " +
       "Entri eksplisit konten (Manual 000) tidak terpengaruh",
   }),
+  // ── Delta ronde cakupan DATUM Rev A (C06; D-631, D-635; register research/38 §1) ──
+  // Semua kelas B, lapis lanjutan, bawaan = keluaran sekarang (absen = bawaan = hari ini, syarat
+  // C-1..C-12 research/35 §5); nilai opt-in hanya di lapis spesifikasi 10 templat Rev A (C23).
+  // Pembaca menyusul di baris C08-C27; namespace eksplisit = segmen pertama kunci.
+  r(67, "controlSheet.subtitle.enabled", "Subjudul lembar kendali", "bool", false, {
+    source: "C05 research/38; ID:25, EN:25",
+    namespace: "controlSheet",
+    classNote: "true = subjudul dari tabel teks di bawah judul lembar kendali (ID:25, EN:25); false = tanpa subjudul",
+  }),
+  r(68, "controlSheet.signatures.fillRoles", "Selalu tiga kolom tanda tangan", "bool", false, {
+    source: "C05 research/38; ID:2501, EN:2570",
+    namespace: "controlSheet",
+    classNote: "true = tiga kolom tanda tangan selalu, peran yang tidak dikirim diisi label peran bawaan dengan pemegang kosong",
+  }),
+  r(69, "controlSheet.columns.form", "Bentuk kolom tabel lembar kendali", "enum", "mesin", {
+    enum: ["mesin", "manual"],
+    source: "C05 research/38; ID:29, ID:39, ID:58; EN:29, EN:38, EN:62",
+    namespace: "controlSheet",
+    classNote: "mesin = kolom sekarang; manual = kolom manual (ID:29, 39, 58; EN:29, 38, 62)",
+  }),
+  r(70, "cover.title.maxWidthMm", "Lebar maksimum judul sampul (mm)", "mm", null, {
+    range: { min: 50, max: 166, step: 1 },
+    source: "C05 research/38; ID:2480, EN:2552",
+    namespace: "cover",
+    classNote: "null = tanpa jorokan kanan; nilai = jorokan kanan judul = bentang penuh - nilai (150 -> 16 mm = 907 tw)",
+  }),
+  r(71, "render.docx.pageBackground", "Latar halaman DOCX dari warna kertas badan", "bool", false, {
+    ruleRef: "DT-05",
+    source: "C05 research/38; DT-05 ID:2528-2533, EN:2591-2597; research/36",
+    classNote: "true = w:background dari color.interior.paper + w:displayBackgroundShape; satu warna per dokumen (research/36)",
+  }),
+  r(72, "runningHead.ruleColour", "Warna garis kepala halaman", "hex", "C3CBD1", {
+    ruleRef: "DT-13d",
+    source: "C05 research/38; Tabel 8.1 ID:2576, EN:2646; DT-13d ID:2588-2594, EN:2660-2666",
+    namespace: "runningHead",
+    classNote: "garis bawah kepala halaman; bawaan = INK200 sekarang",
+  }),
+  r(73, "device.registerBlock.topRuleColour", "Warna garis atas blok register", "hex", "101418", {
+    ruleRef: "DT-13d",
+    source: "C05 research/38; Tabel 8.1 ID:2577, EN:2647; DT-13d ID:2588-2594, EN:2660-2666",
+    namespace: "device",
+    classNote: "garis atas sel blok register; bawaan = ink900 sekarang",
+  }),
+  r(74, "render.rhythm.snapToBaseline", "Kunci tinggi unsur ke garis dasar 13,5 pt", "bool", false, {
+    ruleRef: "DT-10b",
+    source: "C05 research/38; DT-10b ID:2680-2685, EN:2748-2753",
+    classNote: "true = jarak judul, tinggi baris tabel dan gambar dibulatkan ke kelipatan 13,5 pt",
+  }),
+  r(75, "render.rail.reserveColumn", "Cadangkan kolom rel bukti di setiap halaman interior", "bool", false, {
+    ruleRef: "DT-13e",
+    source: "C05 research/38; EN:2764; ID:2705-2711",
+    classNote: "true = kolom rel 32 mm dicadangkan di setiap halaman interior (badan 128 mm) tanpa mengubah margin seksi",
+  }),
+  r(76, "render.nota.classificationLine", "Baris klasifikasi di bawah nomor", "bool", false, {
+    ruleRef: "DT-28c",
+    source: "C05 research/38; DT-28c ID:609-617, EN:645-652",
+    classNote: "true = baris 'Klasifikasi : <K>' / 'Classification: <K>' di bawah nomor dokumen",
+  }),
+  r(77, "render.ruleIndex.fromMarkers", "Indeks aturan dari penanda kode di isi", "bool", false, {
+    source: "C05 research/38; ID:235, ID:4515-4522; EN:240, EN:4439-4445; research/37",
+    classNote: "true = indeks aturan dibangun dari penanda kode+tingkat di isi (research/37)",
+  }),
+  r(78, "naming.file.form", "Bentuk nama berkas", "enum", "judulNomorRevisi", {
+    enum: ["judulNomorRevisi", "judulTanggalIso"],
+    source: "C05 research/38; Tabel 2.3 ID:487-493, EN:518-523",
+    namespace: "naming",
+    classNote: "judulTanggalIso = '<judul> <YYYY-MM-DD>.<ext>' (Tabel 2.3)",
+  }),
+  r(79, "cover.controlBlock.preparerUnit", "Unit penyusun di blok kendali sampul", "string", "", {
+    // C35 L-01 (CWE-20): maks 120 karakter, tanpa kontrol C0/DEL; bawaan "" tetap sah.
+    pattern: "^[^\\u0000-\\u001F\\u007F]{0,120}$",
+    source: "C05 research/38; ID:16, ID:2487; EN:16, EN:2558",
+    namespace: "cover",
+    classNote: "kosong = meta.author; nilai = unit penyusun tetap (D-627)",
+  }),
+  r(80, "device.registerBlock.sheetNumbering", "Mulai penomoran lembar", "enum", "dokumen", {
+    enum: ["dokumen", "bab1"],
+    source: "C05 research/38; ID:2510-2511",
+    namespace: "device",
+    classNote: "bab1 = nomor lembar mulai 1 di halaman pertama Bab 1 (ID:2510-2511)",
+  }),
 ];
 
-export const PARAMS_RENDER_COUNT = 45;
+export const PARAMS_RENDER_COUNT = 59;

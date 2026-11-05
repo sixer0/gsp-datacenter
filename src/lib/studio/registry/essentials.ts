@@ -99,6 +99,8 @@ export const PARAM_SURFACE_LISTS: Readonly<Record<ParamSurface, readonly string[
     ...ids("R-", 65),
     // FIX-TL (D-351/D-352): kedalaman daftar isi `toc.levels`, pola R-59/R-60 (lanjutan ADMIN).
     ...ids("R-", 66),
+    // Ronde cakupan DATUM Rev A (C06; D-631, D-635): R-67..R-80 opt-in lanjutan (research/38 §1.1, syarat C-1).
+    ...ids("R-", [67, 80]),
   ],
   derived: [
     ...ids("P3-", 4, 6, 7, 8, 11, 16, 19, 21),

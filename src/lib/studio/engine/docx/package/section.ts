@@ -192,16 +192,31 @@ function int(name: string, v: number, min: number, max: number): number {
   return Math.round(v);
 }
 
+/** R-80 (C26, RB-08c): mulai penomoran lembar; "bab1" = PAGE mulai 1 di seksi Bab 1, selain itu = "dokumen". */
+export const PARAM_SHEET_NUMBERING = "device.registerBlock.sheetNumbering";
+
+/** True bila R-80 = "bab1"; absen, "dokumen", atau nilai tak dikenal = penomoran dokumen (tanpa `w:pgNumType`). */
+export function sheetNumberingFromChapter1(params: ParamMap): boolean {
+  return params[PARAM_SHEET_NUMBERING] === "bab1";
+}
+
+export interface SectPrOptions {
+  /** `w:pgNumType w:start` (C26): nomor halaman awal seksi; absen = lanjut dari seksi sebelumnya. */
+  pgNumStart?: number;
+}
+
 /**
  * `w:sectPr` satu seksi (urutan CT_SectPr: headerReference, footerReference,
- * type, pgSz, pgMar, cols, titlePg, docGrid). Referensi header/footer bertipe
+ * type, pgSz, pgMar, pgNumType, cols, titlePg, docGrid). Referensi header/footer bertipe
  * `default` (BM: 58 referensi default, 0 first/even). `pageSizeTw` wajib
  * (diselesaikan `resolveUnitSetup`). `w:orient` ditulis hanya bila lebar >
- * tinggi; `w:type continuous` hanya bila `startType` diisi.
+ * tinggi; `w:type continuous` hanya bila `startType` diisi; `w:pgNumType` hanya
+ * bila `opts.pgNumStart` diisi.
  */
 export function sectPrXml(
   s: SectionSetup & { startType?: ResolvedSectionSetup["startType"] },
   rel: { headerRId: string; footerRId: string },
+  opts: SectPrOptions = {},
 ): string {
   if (!s.pageSizeTw) {
     throw new StudioEngineError("BY_CONSTRUCTION_FAILED", "sectPr tanpa pageSizeTw: ukuran halaman wajib diselesaikan dari kenop page.size");
@@ -228,6 +243,7 @@ export function sectPrXml(
     `w:bottom="${int("pgMar.bottom", m.bottom, -31680, 31680)}" w:left="${int("pgMar.left", m.left, 0, 31680)}" ` +
     `w:header="${int("pgMar.header", m.header, 0, 31680)}" w:footer="${int("pgMar.footer", m.footer, 0, 31680)}" ` +
     `w:gutter="${int("pgMar.gutter", m.gutter, 0, 31680)}"/>` +
+    (opts.pgNumStart !== undefined ? `<w:pgNumType w:start="${int("pgNumType.start", opts.pgNumStart, 0, 32767)}"/>` : "") +
     cols +
     (s.titlePg ? `<w:titlePg/>` : "") +
     `<w:docGrid w:linePitch="${int("docGrid.linePitch", s.docGridLinePitch ?? BM_DOC_GRID_LINE_PITCH, 0, 31680)}"/>` +

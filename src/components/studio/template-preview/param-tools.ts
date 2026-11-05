@@ -1,11 +1,13 @@
 /**
  * Utilitas parameter untuk editor templat (S101, dipakai S58): pencarian kunci/
- * label, pengelompokan per bab manual lalu namespace, penanda kelas B/K/T, dan
+ * label, pengelompokan per kategori lalu subkelompok namespace (U04: helper bersama
+ * `groupByCategory` dari editor, tanpa pengelompokan bab), penanda kelas B/K/T, dan
  * reset ke induk. Fungsi murni atas `ParamDef[]` dari
  * GET /api/studio/registry?kind=params (lihat `fetchParamRegistry`).
  */
 import type { ParamValue } from "@/lib/studio/contract/types/common";
 import type { ParamDef } from "@/lib/studio/contract/types/params";
+import { categoryOf, groupByCategory, type ParamCategory, type ParamCategoryId } from "@/components/studio/template-editor/param-categories";
 
 export type ParamClass = ParamDef["class"];
 
@@ -35,7 +37,8 @@ function norm(s: string): string {
 
 export interface ParamSearchOptions {
   classes?: readonly ParamClass[];
-  chapter?: string;
+  /** Kategori editor (`param-categories`), menggantikan saringan bab. */
+  category?: ParamCategoryId;
   namespace?: string;
   /** Sertakan parameter nonaktif (P15 workbook/brief). Default true. */
   includeInactive?: boolean;
@@ -52,7 +55,7 @@ export function searchParams(params: readonly ParamDef[], query: string, opts: P
   const filtered = params.filter(
     (p) =>
       (!opts.classes || opts.classes.length === 0 || opts.classes.includes(p.class)) &&
-      (!opts.chapter || p.chapter === opts.chapter) &&
+      (!opts.category || categoryOf(p) === opts.category) &&
       (!opts.namespace || p.namespace === opts.namespace) &&
       (opts.includeInactive !== false || !p.inactive),
   );
@@ -70,26 +73,26 @@ export function searchParams(params: readonly ParamDef[], query: string, opts: P
   return scored.map((s) => s.p);
 }
 
-/** Urutan bab manual: "Bab 1-2" < "Bab 3" < ... < "Bab 16" < "Lampiran" < "Renderer" < lainnya. */
-export function chapterRank(chapter: string): number {
-  const m = /^Bab\s+(\d+)/.exec(chapter);
-  if (m) return Number(m[1]);
-  if (chapter === "Lampiran") return 1000;
-  if (chapter === "Renderer") return 1001;
-  return 1002;
-}
-
 export interface ParamNamespaceGroup {
+  /** Open-state: `ns:<categoryId>:<subkelompok>`. */
+  id: string;
+  /** Namespace, atau `chart.kind` / `type.scale` (S1). */
   namespace: string;
+  /** Label subkelompok bergantung kategori. */
+  label: string;
   params: ParamDef[];
   counts: Record<ParamClass, number>;
 }
 
-export interface ParamChapterGroup {
-  chapter: string;
+export interface ParamCategorySection {
+  /** Open-state: `cat:<categoryId>`. */
+  id: string;
+  category: ParamCategory;
   namespaces: ParamNamespaceGroup[];
   total: number;
   counts: Record<ParamClass, number>;
+  /** Tampil datar tanpa subkelompok (aturan bersama `showSubgroups`, D-632). */
+  flat: boolean;
 }
 
 function emptyCounts(): Record<ParamClass, number> {
@@ -97,35 +100,23 @@ function emptyCounts(): Record<ParamClass, number> {
 }
 
 /**
- * Kelompokkan per bab manual (urut `chapterRank`), lalu per namespace (urut
- * kemunculan pertama di registri, mengikuti urutan katalog). Urutan parameter
- * di dalam namespace dipertahankan.
+ * Kelompokkan per kategori lalu subkelompok lewat `groupByCategory` (satu pemetaan dengan
+ * editor; urutan kategori tetap, kategori kosong disembunyikan), ditambah hitungan kelas.
+ * Urutan parameter di dalam subkelompok mengikuti masukan.
  */
-export function groupParams(params: readonly ParamDef[]): ParamChapterGroup[] {
-  const chapters = new Map<string, Map<string, ParamDef[]>>();
-  for (const p of params) {
-    let ns = chapters.get(p.chapter);
-    if (!ns) chapters.set(p.chapter, (ns = new Map()));
-    const list = ns.get(p.namespace);
-    if (list) list.push(p);
-    else ns.set(p.namespace, [p]);
-  }
-  const out: ParamChapterGroup[] = [];
-  for (const [chapter, nsMap] of chapters) {
+export function groupParamsByCategory(params: readonly ParamDef[]): ParamCategorySection[] {
+  return groupByCategory(params).map((g) => {
     const counts = emptyCounts();
-    const namespaces: ParamNamespaceGroup[] = [];
-    for (const [namespace, list] of nsMap) {
+    const namespaces = g.subgroups.map((sg) => {
       const c = emptyCounts();
-      for (const p of list) c[p.class] += 1;
+      for (const p of sg.defs) c[p.class] += 1;
       counts.B += c.B;
       counts.K += c.K;
       counts.T += c.T;
-      namespaces.push({ namespace, params: list, counts: c });
-    }
-    out.push({ chapter, namespaces, total: counts.B + counts.K + counts.T, counts });
-  }
-  out.sort((a, b) => chapterRank(a.chapter) - chapterRank(b.chapter) || a.chapter.localeCompare(b.chapter));
-  return out;
+      return { id: sg.id, namespace: sg.key, label: sg.label, params: sg.defs, counts: c };
+    });
+    return { id: g.id, category: g.category, namespaces, total: g.total, counts, flat: g.flat };
+  });
 }
 
 /**

@@ -26,6 +26,7 @@ import type {
   ImageBlock,
   Inline,
   NormBlock,
+  ParaFormat,
   ParamMap,
   ProvenanceMark,
   RenderContext,
@@ -47,11 +48,21 @@ import {
   mergeRun,
 } from "./defaults";
 import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../front/alt-text";
-import { apparatusLabelRunText, artifactLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
+import { apparatusLabelRunText, artifactLabelText, provenanceMarkLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
 import { failRender, warnRender } from "./log";
 import { type FigureImage, type FigureMediaEntry, addMedia, figureImageFromBytes, figureMediaRelId, resolveRasterAsset } from "./media";
 import { DOCPR_ID_BASE, drawingParagraphXml, inlineRunsXml, paragraphXml, textRun } from "./ooxml";
 import { RASTER_DPI_FLOOR, classDerivedWidth, rasterPlacedWidthMm } from "../../tokens/raster-width";
+import { mmToTw } from "../../tokens";
+import { type ParaAdjust, apparatusParaAdjust } from "../blocks/apparatus";
+import { baselineSnapTw, snapDrawingPara } from "../blocks/rhythm";
+
+/** Penyesuai format paragraf apparatus figur (C20 kolom rel tercadang, C19 garis dasar; `blocks/apparatus.ts`). */
+export type { ParaAdjust } from "../blocks/apparatus";
+
+function adjusted(para: ParaFormat | undefined, adjust: ParaAdjust | undefined): ParaFormat | undefined {
+  return adjust ? adjust(para ?? {}) : para;
+}
 
 export type FigureBlockType = "chart" | "diagram" | "image" | "symbolSheet";
 type FigureBlock = ChartBlock | DiagramBlock | ImageBlock | SymbolSheetBlock;
@@ -156,7 +167,7 @@ function langOf(ctx: RenderContext): WrapperLang {
   return wrapperLangOf(ctx.snapshot?.doc?.meta);
 }
 
-export function captionXml(block: NormBlock, cap: Caption, ctx: RenderContext, runDefaults?: RunProps): string {
+export function captionXml(block: NormBlock, cap: Caption, ctx: RenderContext, runDefaults?: RunProps, adjust?: ParaAdjust): string {
   const p = ctx.tpl.params;
   const role = figureRole(ctx.tpl, "caption");
   // D-3: tampilan label berbahasa dokumen; alamat/penomoran tetap ("Gambar n.m").
@@ -166,7 +177,7 @@ export function captionXml(block: NormBlock, cap: Caption, ctx: RenderContext, r
   const runs =
     textRun(label + sep, mergeRun(role.labelRun, cap.labelProps), p) +
     inlineRunsXml(cap.inline, mergeRun(role.run, runDefaults), p);
-  return paragraphXml(mergePara(role.para, cap.format), runs);
+  return paragraphXml(adjusted(mergePara(role.para, cap.format), adjust), runs);
 }
 
 /**
@@ -208,7 +219,7 @@ function apparatusRunsXml(i: Inline, base: RunProps, label: RunProps, p: ParamMa
     .join("");
 }
 
-export function keyRowXml(keyRow: FigureCommon["keyRow"], ctx: RenderContext, runDefaults?: RunProps): string {
+export function keyRowXml(keyRow: FigureCommon["keyRow"], ctx: RenderContext, runDefaults?: RunProps, adjust?: ParaAdjust): string {
   if (!keyRow) return "";
   const p = ctx.tpl.params;
   const role = figureRole(ctx.tpl, "figure.keyRow");
@@ -217,9 +228,10 @@ export function keyRowXml(keyRow: FigureCommon["keyRow"], ctx: RenderContext, ru
   // baris SUMBER berbentuk runs) dan memakai `labelRun` peran (RQ-3); label hanya
   // ditambahkan untuk `text`.
   const lang = langOf(ctx);
-  if (!("text" in keyRow)) return paragraphXml(role.para, apparatusRunsXml(keyRow, base, mergeRun(role.labelRun), p, lang));
+  const para = adjusted(role.para, adjust);
+  if (!("text" in keyRow)) return paragraphXml(para, apparatusRunsXml(keyRow, base, mergeRun(role.labelRun), p, lang));
   const labelXml = textRun(figureLabels(lang).key + FIGURE_LABEL_SPACING.keyAfter, mergeRun(role.labelRun), p);
-  return paragraphXml(role.para, labelXml + textRun(stripLeadingLabel(inlinePlain(keyRow), knownLabels((l) => l.key, lang)), base, p));
+  return paragraphXml(para, labelXml + textRun(stripLeadingLabel(inlinePlain(keyRow), knownLabels((l) => l.key, lang)), base, p));
 }
 
 function provenanceMarksXml(marks: readonly ProvenanceMark[], ctx: RenderContext, base: RunProps): string {
@@ -228,7 +240,7 @@ function provenanceMarksXml(marks: readonly ProvenanceMark[], ctx: RenderContext
   return marks
     .map((m, i) => {
       const glyphProps = mergeRun(base, defaultGlyphRun(ctx.tpl), role.glyphRun?.[m]);
-      return (i > 0 ? textRun(" · ", base, p) : "") + textRun(markGlyph(p, m), glyphProps, p) + textRun(` ${m}`, base, p);
+      return (i > 0 ? textRun(" · ", base, p) : "") + textRun(markGlyph(p, m), glyphProps, p) + textRun(` ${provenanceMarkLabelText(m, langOf(ctx))}`, base, p);
     })
     .join("");
 }
@@ -239,12 +251,12 @@ function provenanceMarksXml(marks: readonly ProvenanceMark[], ctx: RenderContext
  * glif + nama tanda bila teks belum memuat segmen PROVENANS. Bentuk `runs`:
  * label disediakan penulis, run label memakai `labelRun` peran (RQ-3).
  */
-export function sourceLineXml(src: SourceLine, ctx: RenderContext, address: string | undefined, runDefaults?: RunProps): string {
+export function sourceLineXml(src: SourceLine, ctx: RenderContext, address: string | undefined, runDefaults?: RunProps, adjust?: ParaAdjust): string {
   const p = ctx.tpl.params;
   const role = figureRole(ctx.tpl, "figure.source");
   const label = mergeRun(role.labelRun);
   const base = mergeRun(role.run, runDefaults);
-  const para = mergePara(role.para, src.format);
+  const para = adjusted(mergePara(role.para, src.format), adjust);
   const lang = langOf(ctx);
   const L = figureLabels(lang);
   const provenanceWords = knownLabels((l) => l.provenance, lang);
@@ -410,6 +422,19 @@ function figureAltInput(fb: FigureBlock, ctx: RenderContext, label: string): Fig
 
 // ── Renderer ─────────────────────────────────────────────────────────────
 
+/**
+ * Apparatus figur (caption, KUNCI, SUMBER), opt-in mati = undefined:
+ * C20 (R-75) selebar kolom teks atau lebih sempit ikut badan 128 mm bila kolom rel dicadangkan,
+ * figur bentang penuh tidak diubah; C19 (R-74) jarak dikunci ke garis dasar, leading caption/KUNCI/SUMBER tetap
+ * (GF-21 (a), `snapApparatusPara`).
+ */
+function apparatusAdjust(block: NormBlock, ctx: RenderContext, sheets: readonly Sheet[]): ParaAdjust | undefined {
+  const p = ctx.tpl.params;
+  const kind = ctx.snapshot.units.find((u) => u.key === block.unitKey)?.kind;
+  const widthTw = Math.max(0, ...sheets.map((s) => mmToTw(s.widthMm)));
+  return apparatusParaAdjust((k) => p[k], kind, widthTw);
+}
+
 function renderFigure(type: FigureBlockType): DocxBlockRenderer {
   return (block: NormBlock, ctx: RenderContext): DocxFragment => {
     const fb = asFigureBlock(block, type, ctx);
@@ -419,6 +444,7 @@ function renderFigure(type: FigureBlockType): DocxBlockRenderer {
     const sheets = figureSheets(block, fb, ctx);
     const paraFormat = mergePara(role.para, fb.format, fb.paragraphFormat);
     const altBase = figureAltInput(fb, ctx, label);
+    const rhythmBase = baselineSnapTw((k) => ctx.tpl.params[k]);
 
     let pictures = "";
     sheets.forEach((s, i) => {
@@ -427,7 +453,9 @@ function renderFigure(type: FigureBlockType): DocxBlockRenderer {
       const docPrId = DOCPR_ID_BASE + block.ordinal * 16 + i;
       // FIX-H8: nama/judul/deskripsi objek dari nomor + caption (+ sumber), bukan "Picture n".
       const alt = figureAltText({ ...altBase, sheet: { index: i + 1, count: sheets.length } });
-      pictures += drawingParagraphXml(paraFormat, {
+      // C19 (R-74): tinggi gambar tidak diskalakan; jarak sesudah menutup sisa sampai garis dasar.
+      const format = rhythmBase === undefined ? paraFormat : snapDrawingPara(paraFormat, mmToTw(s.heightMm), rhythmBase);
+      pictures += drawingParagraphXml(format, {
         relId: figureMediaRelId(name),
         docPrId,
         docPrName: alt.name,
@@ -439,11 +467,12 @@ function renderFigure(type: FigureBlockType): DocxBlockRenderer {
       });
     });
 
+    const adjust = apparatusAdjust(block, ctx, sheets);
     const xml =
-      captionXml(block, fb.caption, ctx, fb.runDefaults) +
+      captionXml(block, fb.caption, ctx, fb.runDefaults, adjust) +
       pictures +
-      keyRowXml(fb.keyRow, ctx, fb.runDefaults) +
-      sourceLineXml(fb.source, ctx, block.address ?? undefined, fb.runDefaults);
+      keyRowXml(fb.keyRow, ctx, fb.runDefaults, adjust) +
+      sourceLineXml(fb.source, ctx, block.address ?? undefined, fb.runDefaults, adjust);
     return { xml, media, facesUsed: facesInXml(xml) };
   };
 }

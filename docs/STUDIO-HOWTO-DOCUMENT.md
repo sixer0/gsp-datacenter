@@ -52,6 +52,20 @@ Slug templat per jenis dokumen dan bahasa. `template: "latest"` = `datum-gsp`. K
 | Nota internal | ID | `datum-nota` | NOT | NOTA | NOTA INTERNAL |
 | Nota internal | EN | `datum-nota-en` | NOT | NOTA | INTERNAL NOTE |
 
+### Yang diisi mesin di 10 templat ini
+
+Hanya untuk 10 slug di tabel, tidak untuk `latest`. Cara kirimnya sama: `meta` dan isi yang sama, hanya `template` yang beda. Jangan menulis hal ini lagi di isi:
+
+- Sampul: baris PENYUSUN berisi unit divisi ("Divisi Engineering PT GSP", EN "Engineering Division, PT GSP"), bukan nama dari `meta.author`. Nama itu tetap dipakai di tanda tangan dan tabel revisi. Baris Klasifikasi diambil dari `meta.classification`, dicetak huruf besar.
+- Lembar kendali: subjudul, tabel revisi bentuk manual (Rev, Tanggal, Penyusun, Perubahan, Status; Status diisi mesin: Berlaku, atau Diganti untuk revisi lama), dan selalu tiga kolom tanda tangan (Disusun, Diperiksa, Disetujui). Kirim `reviewer` dan `approver` bila namanya diketahui; bila tidak, garisnya tetap kosong.
+- Sampul belakang: berisi string punggung dari `meta` (kode jenis, subjek, bahasa, revisi, bulan, tahun).
+- Nota (`datum-nota`, `datum-nota-en`): tidak punya sampul, lembar kendali, atau sampul belakang. Kaki halaman memuat baris "Klasifikasi : TERBATAS" di bawah nomor dokumen, dan nama berkas = judul + tanggal ISO (mis. "Nota Rencana Uji 2026-11-02").
+- Garis warna segel, latar halaman, kolom rel bukti, dan irama 13,5 pt: tata letak saja, tidak ada yang perlu kamu lakukan.
+
+Tetap kirim seperti biasa: `meta.author`, `classification`, `revision` + `revisionNote`, dan `date`. Tulis `date` sebagai YYYY-MM-DD (bentuk lain diganti tanggal hari ini). Isi `classification` dengan tingkat resminya, mis. TERBATAS; huruf besar diatur mesin.
+
+Standar (`datum-standar`, `datum-standar-en`): daftar Indeks Aturan terisi sendiri hanya bila aturan ditulis seperti manual, yaitu kode aturan lalu tingkat di AWAL judul subbab, paragraf, atau butir daftar. Contoh: "DT-13f WAJIB ...", "PK-14 BAKU ...", "EG-50 ANJURAN ..."; di dokumen EN tingkatnya MANDATORY, DEFAULT, atau ADVISORY. Aturan di dalam tabel, keterangan, atau judul bab tidak terbaca. Tanpa penanda seperti itu, bagian indeks tidak muncul. Ini kebiasaan menulis isi, bukan medan baru.
+
 ## 3. Revisi: satu `studio_edit`
 
 Kirim `documentId` dan semua perubahan revisi dalam satu `edits`:

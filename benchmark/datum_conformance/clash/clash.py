@@ -19,7 +19,9 @@ text past the page edge is still seen) and reports, per page:
                        an underline/strike-through that starts and ends with the words
                        of its own line is a text decoration, not an edge.
   overflow       G-06  a label in the header, register or seal zone leaves its zone or
-                       cell, crosses a cell separator, or wraps to a second baseline.
+                       cell, crosses a cell separator, or wraps to a second baseline. One
+                       exception: the NOTA classification line under the register number
+                       cell (ID:611-613, EN:647-649), see classification_line().
 
 With --docx the DOCX is first converted by LibreOffice (the Studio PDF path, D-15) in
 a SHORT work directory (soffice 24.2 hangs on long Windows paths, research/34 #20) and
@@ -90,8 +92,15 @@ VERTICAL_DIRECTIONS = {"tbRl", "btLr", "tbRlV", "tbLrV", "tbV", "lrTbV"}
 MAX_DOCX_ENTRIES = 20000
 MAX_DOCX_PART_BYTES = 64 * 1024 * 1024
 MAX_DOCX_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_FOOTER_PARTS = 256      # C35 L-04: footer parts read for classification lines (Studio manual000 has 29)
 READ_CHUNK_BYTES = 1024 * 1024
 _DTD_RE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)
+# NOTA classification line (C16, R-76): its own paragraph directly under the register row, starting at the text
+# edge of the number cell. Manual ID:611-613 ("di baris tersendiri di bawah nomor"), EN:647-649.
+CLASSIFICATION_RE = re.compile(r"^(?:Klasifikasi\s*:|Classification\s*:)\s*(?P<value>[^\s:][^:]*)$")
+DOC_NUMBER_RE = re.compile(r"\d{1,4}(?:/[A-Z0-9][A-Z0-9.\-]*){3,}")   # 017/GSP/KT/XI/2026
+FOOTER_PART_RE = re.compile(r"word/footer\d*\.xml")
+ALIGN_TOL_PT = 1.5          # classification line start vs number text start (cell padding is the same)
 
 
 class UsageError(Exception):
@@ -275,7 +284,8 @@ def _counted(name: str) -> bool:
     return lower.endswith((".xml", ".rels")) or (lower.startswith("word/media/") and lower.endswith(".svg"))
 
 
-def read_docx_parts(docx_path: str | Path, names: tuple[str, ...] = ("word/document.xml", "word/settings.xml")) -> dict[str, bytes]:
+def read_docx_parts(docx_path: str | Path,
+                    names: tuple[str, ...] = ("word/document.xml", "word/settings.xml")) -> dict[str, bytes]:
     """XML parts of an untrusted DOCX, within MAX_DOCX_* limits; absent optional parts are left out.
 
     The directory is checked first (entry count, declared size per part and in total), then each part is read
@@ -295,12 +305,13 @@ def read_docx_parts(docx_path: str | Path, names: tuple[str, ...] = ("word/docum
                 declared += info.file_size
         if declared > max_total:
             raise DocxLimitError(f"total of XML parts ({declared} B) exceeds the limit {max_total} B")
-        if "word/document.xml" not in z.namelist():
+        present = {info.filename for info in infos}   # C35 L-04: one set, linear per-name lookups
+        if "word/document.xml" not in present:
             raise DocxLimitError("package has no word/document.xml")
         out: dict[str, bytes] = {}
         total = 0
         for name in names:
-            if name not in z.namelist():
+            if name not in present:
                 continue
             buf = bytearray()
             try:
@@ -397,6 +408,30 @@ def docx_spines(docx_path: str | Path) -> dict:
     return {"roles": roles, "texts": texts}
 
 
+def _norm_classification(text: str) -> str:
+    return re.sub(r"\s+", "", text).upper()
+
+
+def docx_classification_lines(docx_path: str | Path) -> set[str]:
+    """Classification lines of a DOCX footer: a paragraph directly after the register table (C16 placement).
+
+    Returned normalised (no whitespace, upper case) for comparison with the PDF line text.
+    """
+    with zipfile.ZipFile(docx_path) as z:
+        names = tuple(dict.fromkeys(n for n in z.namelist() if FOOTER_PART_RE.fullmatch(n)))
+    if len(names) > MAX_FOOTER_PARTS:   # C35 L-04: bounded work on an untrusted package
+        raise DocxLimitError(f"package has {len(names)} footer parts, more than the limit {MAX_FOOTER_PARTS}")
+    out: set[str] = set()
+    for data in read_docx_parts(docx_path, names).values():
+        children = list(ET.fromstring(data))
+        for prev, cur in zip(children, children[1:], strict=False):
+            if prev.tag == f"{W_NS}tbl" and cur.tag == f"{W_NS}p":
+                text = "".join(t.text or "" for t in cur.iter(f"{W_NS}t")).strip()
+                if CLASSIFICATION_RE.match(text):
+                    out.add(_norm_classification(text))
+    return out
+
+
 def page_roles(body_pages: list[bool]) -> list[str | None]:
     """Cover / divider / back-cover role of each page from where the body (interior) pages are.
 
@@ -470,14 +505,75 @@ def load_zones(path: str | None) -> tuple[list[dict], bool]:
 
 # -- detectors ----------------------------------------------------------------
 
+def _separators(zone: Zone, edges: list[Edge]) -> list[Edge]:
+    """Vertical edges that span a single-line zone (register cell separators)."""
+    zh = zone.box[3] - zone.box[1]
+    return [e for e in edges if not e.horizontal and zone.box[0] + TOL_PT < e.pos < zone.box[2] - TOL_PT
+            and min(e.hi, zone.box[3]) - max(e.lo, zone.box[1]) > 0.3 * zh]
+
+
 def _cells(zone: Zone, edges: list[Edge]) -> list[Zone]:
     """Split a single-line zone into cells at the vertical edges that span it (register block)."""
-    zh = zone.box[3] - zone.box[1]
-    xs = sorted({e.pos for e in edges if not e.horizontal and zone.box[0] + TOL_PT < e.pos < zone.box[2] - TOL_PT
-                 and min(e.hi, zone.box[3]) - max(e.lo, zone.box[1]) > 0.3 * zh})
+    xs = sorted({e.pos for e in _separators(zone, edges)})
     bounds = [zone.box[0], *xs, zone.box[2]]
     return [Zone(f"{zone.name} cell {i + 1}", zone.kind, (bounds[i], zone.box[1], bounds[i + 1], zone.box[3]), True)
             for i in range(len(bounds) - 1)]
+
+
+def _baseline_rows(words: list[Word]) -> list[list[Word]]:
+    rows: list[list[Word]] = []
+    for w in sorted(words, key=lambda w: w.baseline):
+        if rows and w.baseline - rows[-1][-1].baseline <= BASELINE_TOL_PT:
+            rows[-1].append(w)
+        else:
+            rows.append([w])
+    return rows
+
+
+def classification_line(words: list[Word], zone: Zone, edges: list[Edge], body: Box,
+                        docx_lines: set[str] | None = None) -> set[int]:
+    """id() of the words of the one allowed second line in the register zone: the NOTA classification line.
+
+    Allowed only when all hold (manual ID:611-613, EN:647-649; C16 placement):
+      - it is the next baseline after the register row (topmost baseline of the zone) and starts below the row
+        (below the cell separators and the row glyphs) within 1.5 line heights;
+      - it starts at the text edge of the number cell (the register cell whose row text holds the document number);
+      - its text is `Klasifikasi :` / `Classification:` + an upper-case value and, when the DOCX footer has a
+        classification paragraph after the register table, equals that paragraph (structural identification);
+      - every word stays inside the footer band and the text column.
+    Anything else keeps the single-line rule; G-01/G-02/G-04 still apply to the allowed line.
+    """
+    if zone.kind != "register":
+        return set()
+    centred = [w for w in words if w.horizontal and _inside((*w.center, *w.center), zone.box, 0)]
+    rows = _baseline_rows(centred)
+    if len(rows) < 2:
+        return set()
+    row, base = rows[0], rows[1][0].baseline
+    line = sorted((w for w in words if w.horizontal and abs(w.baseline - base) <= BASELINE_TOL_PT
+                   and zone.box[1] <= w.center[1] <= zone.box[3]), key=lambda w: w.box[0])
+    number = next((ws for c in _cells(zone, edges)
+                   if (ws := [w for w in row if c.box[0] <= w.center[0] < c.box[2]])
+                   and DOC_NUMBER_RE.search(" ".join(w.text for w in ws))), None)
+    if number is None:
+        return set()
+    row_bottom = max([w.box[3] for w in row] + [e.hi for e in _separators(zone, edges)])
+    size = max(w.size for w in line)
+    top = min(w.box[1] for w in line)
+    if not (row_bottom - TOL_PT <= top <= row_bottom + 1.5 * size):
+        return set()
+    if abs(line[0].box[0] - min(w.box[0] for w in number)) > ALIGN_TOL_PT:
+        return set()
+    text = " ".join(w.text for w in line)
+    m = CLASSIFICATION_RE.match(text)
+    if m is None or m["value"] != m["value"].upper() or not any(ch.isalpha() for ch in m["value"]):
+        return set()
+    if docx_lines and _norm_classification(text) not in docx_lines:
+        return set()
+    column = (body[0], zone.box[1], body[2], zone.box[3])
+    if not all(_inside(w.box, column) for w in line):
+        return set()
+    return {id(w) for w in line}
 
 
 def spine_lines(words: list[Word], body: Box, page_box: Box, role: str | None, spines: dict | None) -> set:
@@ -506,7 +602,7 @@ def spine_lines(words: list[Word], body: Box, page_box: Box, role: str | None, s
 
 def check_page(page: pymupdf.Page, pno: int, sections: list[dict], margins_mm, user_zones: list[dict],
                replace_auto: bool, words: list[Word] | None = None, role: str | None = None,
-               spines: dict | None = None) -> list[dict]:
+               spines: dict | None = None, classification_lines: set[str] | None = None) -> list[dict]:
     words = extract_words(page) if words is None else words
     edges, seals = extract_drawing(page)
     prect = page.rect
@@ -549,8 +645,10 @@ def check_page(page: pymupdf.Page, pno: int, sections: list[dict], margins_mm, u
     for z in zones:
         if not z.single_line:
             continue
+        allowed = classification_line(words, z, edges, body, classification_lines)
         for cell in (_cells(z, edges) if z.kind == "register" else [z]):
-            members = [w for w in words if w.horizontal and _inside((*w.center, *w.center), cell.box, 0)]
+            members = [w for w in words if w.horizontal and id(w) not in allowed
+                       and _inside((*w.center, *w.center), cell.box, 0)]
             for w in members:
                 if not _inside(w.box, cell.box):
                     report("overflow", w.line, w, w.box, f"label wider than {cell.kind} cell '{cell.name}' {_fmt(cell.box)}")
@@ -644,6 +742,7 @@ def analyze(pdf_path: str | Path, docx_path: str | Path | None = None, margins_m
             zones_path: str | None = None, pdf_label: str | None = None) -> dict:
     sections = docx_geometry(docx_path) if docx_path else []
     spines = docx_spines(docx_path) if docx_path else None
+    cl_lines = docx_classification_lines(docx_path) if docx_path else None
     user_zones, replace_auto = load_zones(zones_path)
     small = pymupdf.TOOLS.set_small_glyph_heights()
     pymupdf.TOOLS.set_small_glyph_heights(True)
@@ -659,7 +758,7 @@ def analyze(pdf_path: str | Path, docx_path: str | Path | None = None, margins_m
             clashes = []
             for pno, page in enumerate(doc, start=1):
                 clashes += check_page(page, pno, sections, margins_mm, user_zones, replace_auto,
-                                      page_words[pno - 1], roles[pno - 1], spines)
+                                      page_words[pno - 1], roles[pno - 1], spines, cl_lines)
             pages = doc.page_count
     finally:
         pymupdf.TOOLS.set_small_glyph_heights(small)

@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { DocxDocument } from '../../../../benchmark/datum_conformance/lib/docx';
 import { runConformance, type ConformanceReport } from '../../../../benchmark/datum_conformance/lib/score';
 import { buildRuleIndex } from '../../../../benchmark/datum_conformance/rules';
+import { LANGUAGE_EXPECTATIONS } from '../../../../benchmark/datum_conformance/rules/expect_language';
+import { STRUCTURE_A_EXPECT } from '../../../../benchmark/datum_conformance/rules/expect_structure_a';
 import { rules } from '../../../../benchmark/datum_conformance/rules/language';
 import type { Lang, PairContext, Tier } from '../../../../benchmark/datum_conformance/rules/types';
 import { buildDocx, p, tbl } from './_docx_kit';
@@ -124,6 +126,9 @@ interface SampleOptions {
   tier?: Tier;
   /** Penimpaan teks per kunci (bentuk sumber). */
   over?: Partial<Texts>;
+  /** C25: baris data riwayat revisi dan rantai verifikasi (bawaan = bentuk mesin). */
+  revRow?: string[];
+  verRow?: string[];
 }
 
 function sample(lang: Lang, opts: SampleOptions = {}): DocxDocument {
@@ -169,9 +174,9 @@ function sample(lang: Lang, opts: SampleOptions = {}): DocxDocument {
       capsP(t.csKicker) +
       p(t.csKicker) +
       p(t.blocks[0]) +
-      tbl([t.revHead, ['A', '2026-12-04', t.firstIssue, 'Tim GSP']]) +
+      tbl([t.revHead, opts.revRow ?? ['A', '2026-12-04', t.firstIssue, 'Tim GSP']]) +
       p(t.blocks[1]) +
-      tbl([t.verHead, ['1', t.role, 'A. Pratama', '']]) +
+      tbl([t.verHead, opts.verRow ?? ['1', t.role, 'A. Pratama', '']]) +
       tbl([[t.sign], [''], ['A. Pratama']]),
   };
   const toc = {
@@ -474,6 +479,75 @@ describe('NC-04 dan label bahasa', () => {
   });
 
   it('LB-11: peran rantai verifikasi ID di dokumen EN gagal', () => {
+    expect(status(run(sample('EN', { over: { role: 'Penyusun' } }), 'EN'), 'LB-11')).toBe('fail');
+  });
+});
+
+/**
+ * C25 (D-635 (5)): lembar kendali bentuk manual. Riwayat revisi REV/TANGGAL/PENYUSUN/PERUBAHAN/STATUS (`ID:29`)
+ * dan REV/DATE/PREPARED BY/CHANGE/STATUS (`EN:29`): catatan revisi di kolom ke-4. Rantai verifikasi
+ * LAPIS/METODE/OBJEK/HASIL (`ID:39`) dan LAYER/METHOD/OBJECT/RESULT (`EN:38`): tanpa kolom peran.
+ */
+const MANUAL_HEADS: Record<Lang, { rev: string[]; ver: string[]; status: string }> = {
+  ID: { rev: ['Rev', 'Tanggal', 'Penyusun', 'Perubahan', 'Status'], ver: ['Lapis', 'Metode', 'Objek', 'Hasil'], status: 'Berlaku' },
+  EN: { rev: ['Rev', 'Date', 'Prepared by', 'Change', 'Status'], ver: ['Layer', 'Method', 'Object', 'Result'], status: 'In force' },
+};
+
+function manualSample(lang: Lang, o: { note?: string; verHead?: string[]; verRow?: string[] } = {}): DocxDocument {
+  const m = MANUAL_HEADS[lang];
+  return sample(lang, {
+    over: { revHead: m.rev, verHead: o.verHead ?? m.ver },
+    revRow: ['A', '2026-12-04', 'Tim GSP', o.note ?? TEXTS[lang].firstIssue, m.status],
+    verRow: o.verRow ?? ['1', '', '', ''],
+  });
+}
+
+describe('C25 bentuk manual lembar kendali (LB-10, LB-11)', () => {
+  for (const lang of ['ID', 'EN'] as const) {
+    it(`${lang}: DOCX bentuk manual lolos semua aturan bahasa (LB-11 NA), 0 bentrok X, gerbang kritis lulus`, () => {
+      const r = run(manualSample(lang), lang);
+      const bad = r.outcomes.filter((o) => o.module === 'language' && o.applicable && o.status !== 'pass' && o.id !== 'LB-11');
+      expect(bad.map((o) => `${o.id}: ${o.status} ${o.evidence}`)).toEqual([]);
+      expect(status(r, 'LB-10')).toBe('pass');
+      expect(status(r, 'LB-11')).toBe('na');
+      expect(outcome(r, 'LB-11').evidence).toMatch(lang === 'ID' ? /ID:39/ : /EN:38/);
+      expect(r.clash.xFailures).toEqual([]);
+      expect(r.critical.failed.filter((c) => c !== 'CR-1')).toEqual([]);
+    });
+
+    it(`${lang}: bentuk mesin tetap PASS untuk LB-10 dan LB-11`, () => {
+      const r = run(sample(lang), lang);
+      expect(status(r, 'LB-10')).toBe('pass');
+      expect(status(r, 'LB-11')).toBe('pass');
+    });
+  }
+
+  it('LB-10: kolom perubahan dicari per kepala; catatan salah di kolom PERUBAHAN/CHANGE tetap gagal', () => {
+    expect(status(run(manualSample('EN', { note: 'Terbit pertama' }), 'EN'), 'LB-10')).toBe('fail');
+    expect(status(run(manualSample('ID', { note: 'First issue' }), 'ID'), 'LB-10')).toBe('fail');
+    // Tanpa kepala kolom perubahan yang dikenal: gagal beralasan, bukan membaca indeks tetap.
+    const noChange = sample('ID', { over: { revHead: ['Rev', 'Tanggal', 'Catatan', 'Oleh'] } });
+    const r = run(noChange, 'ID');
+    expect(status(r, 'LB-10')).toBe('fail');
+    expect(outcome(r, 'LB-10').evidence).toMatch(/kolom/);
+  });
+
+  it('kepala manual modul language = kepala manual structure_a (CS-04), per bahasa', () => {
+    for (const lang of ['ID', 'EN'] as const) {
+      const a = STRUCTURE_A_EXPECT[lang];
+      const e = LANGUAGE_EXPECTATIONS[lang];
+      expect(e.manualVerificationHeads).toEqual(a.manualColumns.verification);
+      expect(e.manualVerificationHeads).toEqual(MANUAL_HEADS[lang].ver);
+      expect(a.manualColumns.revision).toEqual(MANUAL_HEADS[lang].rev);
+      // Kolom perubahan: ke-3 bentuk mesin, ke-4 bentuk manual (ID:29, EN:29).
+      expect(e.revisionChangeHeads).toContain(a.columns.revision[2]);
+      expect(e.revisionChangeHeads).toContain(a.manualColumns.revision[3]);
+    }
+  });
+
+  it('LB-11: N/A hanya bila kepala rantai = daftar manual utuh; kepala lain tanpa peran tetap gagal', () => {
+    const partial = manualSample('EN', { verHead: ['Layer', 'Method', 'Name', 'Date'] });
+    expect(status(run(partial, 'EN'), 'LB-11')).toBe('fail');
     expect(status(run(sample('EN', { over: { role: 'Penyusun' } }), 'EN'), 'LB-11')).toBe('fail');
   });
 });

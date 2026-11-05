@@ -52,7 +52,7 @@ import { figureStoreKeys, sheetKey } from "../../../engine/docx/figures";
 import { assembleHtml } from "../../../engine/html/assemble";
 import { checkRenderEnvReadiness, convertDocxToPdf } from "../../../engine/soffice";
 import type { SofficeLogEntry } from "../../../engine/soffice";
-import { datumFileName } from "../../storage/paths";
+import { datumFileNameByForm } from "../../storage/paths";
 import {
   asAnySnapshot,
   engineSnapshot,
@@ -72,6 +72,9 @@ import { draftFileName, draftScopeSuffix, FORMAT_EXT, FORMAT_MIME, figureFileNam
 import { isCompositeChart } from "./chart";
 import { createDetachedJob, InlineSpecReader, type InlineArtifactSpec } from "./job";
 import { applyRenderScope, snapshotAssetShas } from "./scope";
+
+/** R-78 (C18 / TR-07): bentuk nama berkas utama (`judulNomorRevisi` bawaan | `judulTanggalIso`). */
+const PARAM_NAMING_FILE_FORM = "naming.file.form";
 
 /** Bawaan bila format tidak diminta dan `doc.outputs` kosong (sama dengan layanan revisi). */
 export const PURE_DEFAULT_DOC_FORMATS: readonly StudioOutputFormat[] = ["DOCX", "PDF", "HTML"];
@@ -362,7 +365,12 @@ async function runPure(
   const nameFor = (f: StudioOutputFormat): string => {
     const n = opts.naming ?? {};
     try {
-      const name = datumFileName(n.title ?? meta.title, n.docNumber ?? meta.docNumber ?? "", n.rev ?? meta.rev, FORMAT_EXT[f]);
+      // C18 / TR-07: bentuk dari data templat (R-78 `naming.file.form`); absen = `<Judul> <nomor> Rev<X>`.
+      const name = datumFileNameByForm(
+        tpl.params[PARAM_NAMING_FILE_FORM],
+        { title: n.title ?? meta.title, docNumber: n.docNumber ?? meta.docNumber ?? "", rev: n.rev ?? meta.rev, issueDate: meta.issueDate },
+        FORMAT_EXT[f],
+      );
       return run.layout ? draftFileName(name, draftScopeSuffix(run.layout)) : name;
     } catch (err) {
       const fallback = `document.${FORMAT_EXT[f]}`;

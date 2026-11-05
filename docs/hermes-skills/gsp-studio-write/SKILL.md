@@ -1,7 +1,7 @@
 ---
 name: gsp-studio-write
 description: "Menulis laporan kerja dan dokumen klien lewat Studio (MCP toolset write): isi saja, mesin mengurus format."
-version: 0.1.0
+version: 0.2.0
 author: Swarm HQ v2.1 Doc Artifact Studio (terpasang 2026-11-04)
 license: MIT
 platforms: [linux, macos, windows]
@@ -49,6 +49,13 @@ Bukan sasaran: gambar foto atau diagram bebas di luar keluarga grafik Studio; do
 | Laporan verifikasi dan uji | `datum-laporan-verifikasi` | `datum-laporan-verifikasi-en` | VER | TERBIT |
 | Standar | `datum-standar` | `datum-standar-en` | STD | TERBIT |
 | Nota internal | `datum-nota` | `datum-nota-en` | NOT | NOTA |
+
+## Isian otomatis 10 templat di atas (bukan `latest`)
+
+Cara kirim sama (`meta` + isi sama, hanya slug beda). Mesin sudah mengisi, jangan ditulis lagi: sampul (PENYUSUN = unit divisi, baris Klasifikasi huruf besar dari `meta.classification`), lembar kendali (subjudul, kolom manual, Status otomatis, tiga kolom tanda tangan), sampul belakang, dan tata letak (garis segel, latar, rel, irama). Nota: tanpa sampul/lembar kendali; ada baris klasifikasi di bawah nomor, nama berkas = judul + tanggal ISO.
+
+- Tetap kirim: `meta.author` (untuk tanda tangan dan tabel revisi), `classification` (tingkat resmi, mis. TERBATAS), `revision` + `revisionNote`, `date` (YYYY-MM-DD), dan `reviewer`/`approver` bila namanya diketahui (kalau tidak, garis tanda tangan kosong).
+- Standar (`datum-standar`, `datum-standar-en`): Indeks Aturan terisi hanya bila kode aturan + tingkat ada di AWAL judul subbab, paragraf, atau butir daftar ("DT-13f WAJIB ...", "PK-14 BAKU ...", "EG-50 ANJURAN ..."; EN: MANDATORY/DEFAULT/ADVISORY). Di tabel, keterangan, atau judul bab tidak terbaca; tanpa penanda, tidak ada indeks. Rincian: `references/howto-document.md` §2.
 
 ## References
 

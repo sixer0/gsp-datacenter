@@ -34,6 +34,15 @@ the DOCX (cells with vertical text direction), and the role must belong to a sec
 (first section = cover, last = back cover, other = divider). Without it the text must match
 `type · subject · language · REV x · Roman month · year`. Overlap, out_of_page and edge checks still apply.
 
+NOTA classification line (C16 / R-76; manual ID:611-613, EN:647-649 "on its own line under the number"): the
+register zone keeps its single-baseline rule, with one exception. The next baseline after the register row is
+not a G-06 wrap when it starts below the row (below its cell separators and glyphs, within 1.5 line heights),
+starts at the text edge of the number cell (the cell whose row text holds the document number, +-1.5 pt), reads
+`Klasifikasi :` / `Classification:` followed by an upper-case value, and stays inside the footer band and the text
+column. With `--docx`, when a footer has a paragraph directly after the register table matching that pattern, the
+PDF line must equal it (structural identification); otherwise the pattern and position rule decide. Any other or
+further line in the register zone is still flagged; overlap, out_of_page and edge checks still apply to it.
+
 Output: `{"pdf", "pages", "clashes": [{"page", "kind", "bbox": [x0, y0, x1, y1], "text", "detail"}]}`
 (PDF points, origin top-left, pages 1-based). Exit 0 = no clashes, 1 = clashes, 2 = usage error,
 unreadable input or failed conversion; then `clash_error.json` (durable error record) is written next to

@@ -20,9 +20,9 @@
  * Modul khusus server (node:crypto, node:fs, node:path).
  */
 import type { DocxBlockRenderer } from "../../../contract";
-import { renderAppendixOpener, renderControlSheet, renderCover, renderPartDivider, renderSignatureBlock, renderToc } from "./pages";
+import { renderAppendixOpener, renderBackCover, renderControlSheet, renderCover, renderPartDivider, renderSignatureBlock, renderToc } from "./pages";
 
-export type DocxWrapperKey = "cover" | "controlSheet" | "toc" | "partDivider" | "signatureBlock" | "appendix";
+export type DocxWrapperKey = "cover" | "controlSheet" | "toc" | "partDivider" | "signatureBlock" | "appendix" | "backCover";
 
 export const docxWrapper: Partial<Record<DocxWrapperKey, DocxBlockRenderer>> = {
   cover: renderCover,
@@ -31,6 +31,8 @@ export const docxWrapper: Partial<Record<DocxWrapperKey, DocxBlockRenderer>> = {
   partDivider: renderPartDivider,
   signatureBlock: renderSignatureBlock,
   appendix: renderAppendixOpener,
+  // C12 / CV-19: blok sampul belakang (unit direncanakan perakit bila backCoverPlaced + ada unit sampul).
+  backCover: renderBackCover,
 };
 
 export {
@@ -39,6 +41,7 @@ export {
   autoControlSheetItems,
   autoCoverItems,
   autoPartBody,
+  backCoverPlaced,
   controlSheetIncludesSignature,
   datumRuleFragment,
   deriveTocEntries,

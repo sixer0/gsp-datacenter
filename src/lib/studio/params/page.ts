@@ -329,7 +329,8 @@ const SIGNATURE: ParamDef[] = [
     "Tabel 4.6",
     "L777",
     "B",
-    { enum: ["margin luar sampul", "pembatas"], classNote: "subset" },
+    // C06 (D-635; research/38 §2): "sampul belakang" hanya di enum (opt-in CV-19); bawaan tetap dua tempat.
+    { enum: ["margin luar sampul", "pembatas", "sampul belakang"], classNote: "subset" },
   ),
   d(
     "P4S-26",
@@ -375,6 +376,11 @@ const COVER_CONTROL_FIELDS = [
   "DASAR",
   "BAHASA",
 ];
+/**
+ * C06 (C-6 research/35 §5; research/38 §2): enum medan blok kendali = bawaan + "KLASIFIKASI" (opt-in CL-02).
+ * Konstanta terpisah agar tambahan enum tidak mengubah bawaan (bawaan masuk paramsSha256 dan keluaran sekarang).
+ */
+const COVER_CONTROL_FIELD_ENUM = [...COVER_CONTROL_FIELDS, "KLASIFIKASI"];
 const COVER_COLOPHON_FIELDS = ["entitas", "NIB", "cap terbit", "klasifikasi"];
 
 const COVER: ParamDef[] = [
@@ -424,7 +430,7 @@ const COVER: ParamDef[] = [
     classNote: "= grid.fullSpanMm",
   }),
   d("P4V-12", "cover.controlBlock.fields", "Medan blok kendali sampul", "list", COVER_CONTROL_FIELDS, "4.8", "L17-20, L796; research/04 T002", "B", {
-    enum: COVER_CONTROL_FIELDS,
+    enum: COVER_CONTROL_FIELD_ENUM,
     classNote: "subset urut",
   }),
   d("P4V-13", "cover.colophon.fields", "Medan kolofon sampul", "list", COVER_COLOPHON_FIELDS, "4.8", "L22, L796; research/04 T003", "B", {

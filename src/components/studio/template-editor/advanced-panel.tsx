@@ -173,6 +173,7 @@ export function PresetModeEditor(p: PresetModeProps) {
         onReset={p.readOnly ? () => {} : ed.onReset}
         onInvalid={ed.onInvalid}
         refFilter={p.refFilter}
+        headingLevel={2}
       />
       <details className="group rounded-[12px] border border-[var(--line)] bg-[var(--surface-1)]">
         <summary className="flex cursor-pointer select-none items-center gap-2 rounded-[12px] px-4 py-3 text-[13px] font-medium text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">

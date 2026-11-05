@@ -28,6 +28,7 @@ import type {
   SymbolSheetBlock,
 } from "../../../contract";
 import { docAssetBytes } from "../../bind";
+import { baselineSnapTw } from "../../docx/blocks/rhythm";
 import { type FigureAltInput, figureAltText, stripSourceLabel } from "../../front/alt-text";
 import { classDerivedWidth, rasterPlacedWidthMm } from "../../tokens/raster-width";
 import { symbolSheetSvg, type SymbolSheetOptions } from "../../symbols";
@@ -200,12 +201,14 @@ export function renderFigureBlock(block: NormBlock, ctx: RenderContext): string 
     attr("data-block-type", fb.type) +
     attr("data-figure", label || block.blockId) +
     attr("data-graphic-source", g.source);
+  // C22b / GF-21 (R-74): caption, KUNCI dan SUMBER figur dikunci ke garis dasar (= DOCX figure.ts `apparatusAdjust`).
+  const base = baselineSnapTw((k) => ctx.tpl?.params?.[k]);
   return (
     `<figure class="st-figure st-figure-${escText(fb.type)}"${attrs} style="${escText(figStyle)}">` +
-    captionHtml(common.caption, label, ctx, "margin-bottom:2.2mm") +
+    captionHtml(common.caption, label, ctx, "margin-bottom:2.2mm", base) +
     `<div class="st-figure-graphic" style="${escText(graphicStyle)}">${g.html}</div>` +
-    keyRowHtml(common.keyRow, ctx) +
-    sourceParagraphHtml(common.source, ctx, "figure.source", true) +
+    keyRowHtml(common.keyRow, ctx, base) +
+    sourceParagraphHtml(common.source, ctx, "figure.source", true, base) +
     `</figure>`
   );
 }

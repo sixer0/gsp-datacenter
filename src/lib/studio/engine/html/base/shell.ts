@@ -19,8 +19,11 @@
  */
 import type { DocMeta, ResolvedTemplate } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
+import { PARAMS_BY_KEY } from "../../../params";
 import { railModeFor } from "../../tokens";
-import { railK2ReserveOf } from "../../docx/blocks/rail";
+import { normalizeHex } from "../../tokens/color";
+import { classificationLineText, classificationMarkText, wrapperLangOf } from "../../front/texts";
+import { PARAM_RAIL_RESERVE_COLUMN, railK2ReserveOf } from "../../docx/blocks/rail";
 import { buildTokenCss, fontStack, typeSpec } from "./css";
 import { cssString } from "./fonts";
 import { esc, registerCellParts, registerFieldValue, registerHtml, runningHeadHtml, runningHeadText, type RunningHeadText } from "./markup";
@@ -144,6 +147,21 @@ export function countRailCitations(bodyHtml: string): number {
   return n;
 }
 
+/** R-72 (GF-22): warna garis bawah kepala halaman. */
+const P_RUNNING_HEAD_RULE = "runningHead.ruleColour";
+/** R-73 (GF-22): warna garis atas blok register. */
+const P_REGISTER_TOP_RULE = "device.registerBlock.topRuleColour";
+
+/**
+ * Warna garis opt-in: hex sah (dinormalkan) yang BERBEDA dari bawaan registri, selain itu undefined. Profil
+ * DATUM-kanonik membawa bawaan setiap kunci, jadi bawaan eksplisit harus = absen agar HTML tetap byte-sama
+ * (garis HTML bawaan mengikuti token `--rule-hair-c` / `--ink900`, bukan konstanta DOCX INK200/INK900).
+ */
+function ruleColourOverride(tpl: ResolvedTemplate, key: string): string | undefined {
+  const v = normalizeHex(tpl.params[key]);
+  return v !== undefined && v !== normalizeHex(PARAMS_BY_KEY.get(key)?.default) ? v : undefined;
+}
+
 const BOXES = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"] as const;
 type Box = (typeof BOXES)[number];
 
@@ -172,12 +190,67 @@ function registerBoxes(tpl: ResolvedTemplate, meta: DocMeta): Partial<Record<Box
   return out;
 }
 
-function boxDecl(box: Box, content: string | undefined, styles: Record<"top" | "bottom" | "class", string>): string {
+function boxDecl(box: Box, content: string | undefined, styles: Record<"top" | "bottom" | "class", string>, pre = false): string {
   if (content === undefined) return `@${box}{content:none}`;
   const base = box.startsWith("top") ? styles.top : styles.bottom;
   const extra = box === "top-right" || box === "bottom-right" ? styles.class : "";
   const align = box.endsWith("left") ? "left" : box.endsWith("right") ? "right" : "center";
-  return `@${box}{content:${content};${base}${extra}text-align:${align}}`;
+  return `@${box}{content:${content};${base}${extra}${pre ? "white-space:pre;" : ""}text-align:${align}}`;
+}
+
+/** R-76 (CL-02 NOTA): baris klasifikasi di bawah nomor dokumen; absen/false = tanpa baris. */
+const P_CLASSIFICATION_LINE = "render.nota.classificationLine";
+/** Warna nilai klasifikasi (DT-28d, segel): token `color.wrapper.seal`, sama dengan DOCX C16 (cadangan INK900). */
+const P_CLASSIFICATION_COLOUR = "color.wrapper.seal";
+
+interface ClassificationLine {
+  /** "Klasifikasi : " / "Classification: " (label + pemisah, tabel teks bersama). */
+  label: string;
+  /** Nilai kapital (`classificationMarkText`). */
+  value: string;
+  /** Indeks sel register berpola `{nomor}`. */
+  cell: number;
+  /** Kotak margin @page yang memuat sel itu (aturan `registerBoxes`). */
+  box: Box;
+}
+
+/**
+ * C22 / CL-02 NOTA (R-76, opt-in) = DOCX `classificationLineXml` (engine C C16): "Klasifikasi : <K>" /
+ * "Classification: <K>" (`classificationLineText`, bahasa pembungkus dokumen) di bawah sel register yang memuat
+ * `{nomor}`; sel register sendiri tidak berubah (RB-02/RB-03/RB-04). Tanpa sel `{nomor}` = tidak ada nomor untuk
+ * diikuti: tanpa baris (DOCX mencatat `CLASSIFICATION_LINE_NO_NUMBER`; kerangka HTML tidak punya kanal log).
+ */
+function classificationLine(tpl: ResolvedTemplate, meta: DocMeta): ClassificationLine | undefined {
+  if (tpl.params[P_CLASSIFICATION_LINE] !== true) return undefined;
+  const parts = registerCellParts(tpl, meta.language);
+  const cell = parts.findIndex((c) => c.some((x) => "field" in x && x.field === "nomor"));
+  if (cell < 0) return undefined;
+  const value = classificationMarkText(meta.classification);
+  const full = classificationLineText(meta.classification, wrapperLangOf(meta));
+  const last = parts.length - 1;
+  const centerIdx = parts.findIndex((c, i) => i !== last && c.some((x) => "field" in x && x.field === "n"));
+  const box: Box = cell === centerIdx ? "bottom-center" : cell === last ? "bottom-right" : "bottom-left";
+  return { label: full.slice(0, full.length - value.length), value, cell, box };
+}
+
+/**
+ * CSS baris klasifikasi layar (hanya bila opt-in): tepat di bawah tepi bawah `.reg`, grid kolom yang sama
+ * dengan `.reg` (4 kolom, sel mengalir) sehingga baris jatuh di bawah sel bernomor; jorokan = padding sel
+ * `.reg > div` (2,5 mm; sel 1 rata tepi, = DOCX `registerCellLeftTw` 0 / 141 tw).
+ */
+function classificationLineCss(tpl: ResolvedTemplate, line: ClassificationLine): string {
+  const seal = colour(tpl, P_CLASSIFICATION_COLOUR, "101418");
+  return [
+    `.reg-cls{position:absolute;left:var(--m-inner);right:var(--m-outer);top:calc(100% - var(--ftr));display:none;grid-template-columns:1fr 1fr 1fr auto;` +
+      `font-family:var(--ff-registerBlock);font-size:var(--fs-registerBlock);font-weight:var(--fw-registerBlock);letter-spacing:.02em;color:var(--fc-registerBlock);white-space:pre}`,
+    `.reg-cls > div{grid-column:${(line.cell % 4) + 1};padding-left:${line.cell === 0 ? "0" : "2.5mm"}}`,
+    `.reg-cls b{color:${seal};font-weight:600}`,
+    `@media screen{.st-unit > .reg-cls.st-screen{display:grid}}`,
+  ].join("\n");
+}
+
+function classificationLineHtml(line: ClassificationLine): string {
+  return `<div class="reg-cls st-screen"><div>${esc(line.label)}<b>${esc(line.value)}</b></div></div>`;
 }
 
 /** CSS halaman dinamis: properti dokumen, halaman `@page` per unit, kotak margin. */
@@ -201,14 +274,17 @@ export function pageFurnitureCss(tpl: ResolvedTemplate, meta: DocMeta, units: re
     class: `color:${classInk};font-weight:600;`,
   };
   const docRh = runningHeadText(tpl, meta);
+  const line = classificationLine(tpl, meta);
   const reg = registerBoxes(tpl, meta);
+  // CL-02 NOTA (cetak): baris kedua di kotak margin yang memuat nomor.
+  if (line && reg[line.box] !== undefined) reg[line.box] = `${reg[line.box]} "\\A" ${cssString(line.label + line.value)}`;
   const headBoxes = (t: RunningHeadText): Partial<Record<Box, string>> => ({
     "top-left": t.left ? cssString(t.left) : undefined,
     "top-center": t.center ? cssString(t.center) : undefined,
     "top-right": t.right ? cssString(t.right) : undefined,
   });
   const pageRule = (name: string, head: Partial<Record<Box, string>>, foot: Partial<Record<Box, string>>, bg: string) =>
-    `@page${name ? ` ${name}` : ""}{background:${bg};` + BOXES.map((b) => boxDecl(b, head[b] ?? foot[b], styles)).join("") + `}`;
+    `@page${name ? ` ${name}` : ""}{background:${bg};` + BOXES.map((b) => boxDecl(b, head[b] ?? foot[b], styles, line !== undefined && foot === reg && b === line.box)).join("") + `}`;
 
   const interiorBg = colour(tpl, "color.interior.paper", "FCFCFB");
   const wrapperBg = colour(tpl, "color.wrapper.paper", "FBFAF7");
@@ -227,6 +303,13 @@ export function pageFurnitureCss(tpl: ResolvedTemplate, meta: DocMeta, units: re
     out.push(pageRule(name, head, foot, u.wrapper ? wrapperBg : interiorBg));
     if (u.key !== undefined) out.push(`.st-unit[data-unit-key=${cssString(u.key)}]{page:${name}}`);
   }
+  // C22 / GF-22 (R-72, R-73, opt-in): warna garis bawah kepala halaman dan garis atas blok register (perabot
+  // layar `.runhead` / `.reg`), nilai sama dengan DOCX `runningHeadFormat` / `registerBody` (engine C C14).
+  const headRule = ruleColourOverride(tpl, P_RUNNING_HEAD_RULE);
+  if (headRule) out.push(`.runhead{border-bottom-color:#${headRule}}`);
+  const regRule = ruleColourOverride(tpl, P_REGISTER_TOP_RULE);
+  if (regRule) out.push(`.reg{border-top-color:#${regRule}}`);
+  if (line) out.push(classificationLineCss(tpl, line));
   return out.join("\n");
 }
 
@@ -234,7 +317,9 @@ export function pageFurnitureCss(tpl: ResolvedTemplate, meta: DocMeta, units: re
 export function withScreenFurniture(tpl: ResolvedTemplate, meta: DocMeta, bodyHtml: string, units: readonly ShellUnit[]): string {
   if (units.length === 0) return bodyHtml;
   const docRh = runningHeadText(tpl, meta);
-  const reg = registerHtml(tpl, meta, "st-screen");
+  const line = classificationLine(tpl, meta);
+  // CL-02 NOTA (layar): baris tepat sesudah register (absen = tanpa elemen).
+  const reg = registerHtml(tpl, meta, "st-screen") + (line ? classificationLineHtml(line) : "");
   const pieces: string[] = [];
   let at = 0;
   for (const u of units) {
@@ -270,6 +355,23 @@ export function assertFontsCss(css: string): void {
 const RAIL_K2_CSS =
   "body.st-rail-k2.st-rail-a :is(.st-p,.st-list,.st-aside,.st-monoblock,.st-asm,.st-section-heading):not(.st-railhost *){max-width:none}";
 
+/**
+ * C22b / GF-24 (R-75 `render.rail.reserveColumn`, opt-in; padanan DOCX C20 engine E): pada moda K2 kolom rel
+ * dicadangkan di setiap unit interior (bukan WRAPPER_KINDS DOCX cover/controlSheet/toc/part), jadi unsur yang DOCX
+ * persempit (`plainHostVariant`/`withReservedColumn`: paragraf, daftar, asumsi, register sumber, placeholder slot,
+ * kicker/judul bab, kepala section) kembali selebar kolom teks `--col` meski tanpa chip; spesifisitas lebih tinggi
+ * dari `RAIL_K2_CSS`. Tidak dipersempit, sama dengan DOCX: aside/monoBlock, isi tabel/figur, inang chip (grid kolom
+ * teks + rel sendiri), pembuka lampiran (DOCX `wrapper/pages.ts`). Caption/SUMBER tabel <= kolom teks ikut lewat
+ * penanda `data-rail-reserve` (tables/table.ts, predikat DOCX `apparatusReserveTw`); figur sudah membatasi caption
+ * selebar figur (`max-width` figur).
+ */
+const RAIL_RESERVE_CSS = [
+  "body.st-rail-k2.st-rail-a .st-unit:not(.st-unit-cover,.st-unit-controlSheet,.st-unit-toc,.st-unit-part) " +
+    ":is(.st-p,.st-list,.st-asm,.st-srcreg-entry,.st-placeholder,.st-chapter-kicker,.st-chapter-title,.st-section-heading)" +
+    ":not(.st-railhost *,.st-aside *,.st-monoblock *,.st-table *,.st-figure *,.st-appendix-head *){max-width:var(--col)}",
+  "body.st-rail-k2.st-rail-a .st-table[data-rail-reserve] > :is(.st-caption,.st-source){max-width:var(--col)}",
+].join("\n");
+
 export interface HtmlShellInput {
   tpl: ResolvedTemplate;
   meta: DocMeta;
@@ -304,12 +406,14 @@ export function buildHtmlShell(i: HtmlShellInput): string {
   ].join("");
   const k2 = rail === "A" && railK2ReserveOf((k) => tpl.params[k]) !== undefined;
   const flags = ["st-doc", `st-rail-${rail === "B" ? "b" : "a"}`, k2 ? "st-rail-k2" : "", i.previewLabel ? "st-preview" : ""].filter(Boolean);
+  // C22b / GF-24: kolom rel tercadang hanya di samping K2 (= DOCX `resolveRailLayout` reserveColumn); absen/false = tanpa aturan.
+  const reserve = k2 && tpl.params[PARAM_RAIL_RESERVE_COLUMN] === true;
   return (
     `<!DOCTYPE html>\n` +
     `<html lang="${en ? "en" : "id"}"><head>${metaTags}<title>${esc(title)}</title>\n` +
     `<style data-studio="fonts">\n${i.fontsCss}\n</style>\n` +
     `<style data-studio="tokens">\n${buildTokenCss(tpl)}</style>\n` +
-    `<style data-studio="pages">\n${pageFurnitureCss(tpl, meta, units, sheets)}${k2 ? `\n${RAIL_K2_CSS}` : ""}\n</style>\n` +
+    `<style data-studio="pages">\n${pageFurnitureCss(tpl, meta, units, sheets)}${k2 ? `\n${RAIL_K2_CSS}` : ""}${reserve ? `\n${RAIL_RESERVE_CSS}` : ""}\n</style>\n` +
     `</head>\n<body class="${flags.join(" ")}" data-rail-mode="${rail}">${label}\n${body}\n</body></html>\n`
   );
 }

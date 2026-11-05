@@ -9,6 +9,7 @@
 import type { DocMeta, FaceRole, ResolvedTemplate, RunProps } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
 import { PARAMS_BY_KEY } from "../../../params";
+import { normalizeHex } from "../../tokens/color";
 import { escapeXml, paramBool, paramNumber, paramObject, paramString, R_NS, rPrXml, W_NS, XML_DECL } from "./xml";
 
 /** R-30: gaya paragraf Header/Footer; tab diskalakan ke bentang efektif oleh engine/tokens (SR-60). */
@@ -231,6 +232,34 @@ export function stylesXml(tpl: ResolvedTemplate): string {
   );
 }
 
+// ── Latar halaman (C13, GF-19) ──────────────────────────────────────────
+
+/** R-71: latar halaman DOCX opt-in; absen/false = tanpa latar (keluaran sebelum ronde). */
+const PARAM_PAGE_BACKGROUND = "render.docx.pageBackground";
+/** Warna latar = kertas badan (DT-05); satu warna per dokumen, jadi kertas pembungkus FBFAF7 tidak dapat berbeda. */
+const PARAM_INTERIOR_PAPER = "color.interior.paper";
+
+/**
+ * Warna latar halaman bila R-71 aktif dan `color.interior.paper` hex sah, selain itu `undefined`.
+ * Satu sumber untuk `w:background` (document.xml) dan `w:displayBackgroundShape` (settings.xml):
+ * LibreOffice 24.2 hanya menghormati latar bila keduanya ada (research/36 §1), jadi keduanya
+ * ditulis bersama atau tidak sama sekali.
+ */
+export function pageBackgroundColour(tpl: ResolvedTemplate): string | undefined {
+  return paramBool(tpl.params, PARAM_PAGE_BACKGROUND) === true ? normalizeHex(tpl.params[PARAM_INTERIOR_PAPER]) : undefined;
+}
+
+/**
+ * Sisipkan `<w:background w:color>` sebagai anak pertama `w:document`, tepat sebelum `w:body`
+ * (urutan CT_Document: background, body). Tanpa warna, atau dokumen sudah berlatar = apa adanya.
+ */
+export function withPageBackground(documentXml: string, colour: string | undefined): string {
+  if (colour === undefined || documentXml.includes("<w:background")) return documentXml;
+  const at = documentXml.search(/<w:body[\s>/]/);
+  if (at < 0) return documentXml;
+  return `${documentXml.slice(0, at)}<w:background w:color="${escapeXml(colour)}"/>${documentXml.slice(at)}`;
+}
+
 // ── settings.xml ────────────────────────────────────────────────────────
 
 const RSIDS = ["00034616", "0006063C", "0015074B", "0029639D", "00326F90", "00AA1D8D", "00B47730", "00CB0664", "00FC693F"];
@@ -239,7 +268,8 @@ const RSIDS = ["00034616", "0006063C", "0015074B", "0029639D", "00326F90", "00AA
  * settings.xml dalam urutan skema CT_Settings (Word membuang elemen yang salah
  * urut, catatan DatumDocx DHS-RB-05). R-01 compatibilityMode, R-02
  * defaultTabStop, R-03 updateFields, R-04 embedTrueTypeFonts, R-05
- * saveSubsetFonts. Sisa elemen = basis BM (research/07 §9.3).
+ * saveSubsetFonts. Sisa elemen = basis BM (research/07 §9.3). C13 (R-71):
+ * `w:displayBackgroundShape` sesudah `w:zoom` bila latar halaman aktif.
  */
 export function settingsXml(tpl: ResolvedTemplate): string {
   const p = tpl.params;
@@ -258,6 +288,7 @@ export function settingsXml(tpl: ResolvedTemplate): string {
     `xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" ` +
     `xmlns:sl="http://schemas.openxmlformats.org/schemaLibrary/2006/main" mc:Ignorable="w14">` +
     `<w:zoom w:val="bestFit"/>` +
+    (pageBackgroundColour(tpl) !== undefined ? `<w:displayBackgroundShape/>` : "") +
     (embed ? `<w:embedTrueTypeFonts/>` : "") +
     (subset ? `<w:saveSubsetFonts/>` : `<w:saveSubsetFonts w:val="false"/>`) +
     `<w:proofState w:spelling="clean" w:grammar="clean"/>` +

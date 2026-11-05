@@ -38,6 +38,8 @@ import type {
   SignatureBlock,
 } from "../../../contract";
 import { StudioEngineError } from "../../../contract/errors";
+import { emptyOptionalUnitOmitted, expandRuleIndexMarker, isRuleIndexAutoMarker, PARAM_RULE_INDEX_FROM_MARKERS } from "../../front/rule-index";
+import { backCoverPlaced } from "../wrapper/pages";
 
 export interface UnitPlan {
   unit: NormUnit;
@@ -183,13 +185,6 @@ function syntheticBlock(unitKey: string, slotKey: string, type: string, content:
     textPlain: "",
     contentSha256: "",
   };
-}
-
-/** Blok `ruleIndex` v2 penanda otomatis tanpa entri (D-299); daftar blok kosong juga lolos `every`. */
-function isEmptyRuleIndexMarker(b: NormBlock): boolean {
-  if (b.type !== "ruleIndex") return false;
-  const c = b.content as { mode?: unknown; entries?: unknown } | null;
-  return !!c && typeof c === "object" && c.mode === "auto" && !(Array.isArray(c.entries) && c.entries.length > 0);
 }
 
 function planUnitsV2(s: NormDocSnapshotV2, opts: PlanUnitsOptions): UnitPlan[] {
@@ -348,6 +343,20 @@ function planUnitsV2(s: NormDocSnapshotV2, opts: PlanUnitsOptions): UnitPlan[] {
     }
   }
 
+  // (c1) C17 / ST-01 (research/37, R-77 opt-in): penanda `ruleIndex` AUTO diganti judul + tabel
+  // indeks dari penanda kode di isi (pembangun bersama dengan HTML). 0 entri: penanda dibiarkan
+  // agar (c2) menghilangkan slot opsional seperti hari ini; baris kosong hanya bila unit dipaksa.
+  for (const p of plans) {
+    const sl = slotByKey.get(p.slotKey as string);
+    if (!sl || p.placeholder || slotParam(opts, sl.slotKey, PARAM_RULE_INDEX_FROM_MARKERS) !== true) continue;
+    const at = p.blocks.findIndex(isRuleIndexAutoMarker);
+    if (at < 0) continue;
+    const omitted = emptyOptionalUnitOmitted(sl, p.blocks, { scoped: scope?.kind === "SLOT" && scope.key === sl.slotKey });
+    const x = expandRuleIndexMarker(p.blocks[at], s, { forced: !omitted });
+    for (const e of x.log) opts.log?.(e);
+    if (x.blocks) p.blocks.splice(at, 1, ...x.blocks);
+  }
+
   // (c2) D-299 (FIX-SERAH, SR-50 N-SR50-1): slot opsional tanpa isi tidak memancarkan
   // seksi (halaman kosong). `ruleIndex` v2 = penanda `mode: "auto"` tanpa entri (indeks
   // aturan otomatis belum dibangun), menggantikan penerimaan sementara D-197. Slot wajib
@@ -355,9 +364,8 @@ function planUnitsV2(s: NormDocSnapshotV2, opts: PlanUnitsOptions): UnitPlan[] {
   for (let i = plans.length - 1; i >= 0; i -= 1) {
     const p = plans[i];
     const sl = slotByKey.get(p.slotKey as string);
-    if (!sl || sl.required || p.placeholder || sl.sectionType === "signatureBlock") continue;
-    if (scope?.kind === "SLOT" && scope.key === sl.slotKey) continue;
-    if (!p.blocks.every(isEmptyRuleIndexMarker)) continue;
+    if (!sl || p.placeholder) continue;
+    if (!emptyOptionalUnitOmitted(sl, p.blocks, { scoped: scope?.kind === "SLOT" && scope.key === sl.slotKey })) continue;
     plans.splice(i, 1);
     opts.log?.({
       level: "info",
@@ -365,6 +373,19 @@ function planUnitsV2(s: NormDocSnapshotV2, opts: PlanUnitsOptions): UnitPlan[] {
       address: `F:${sl.slotKey}`,
       message: `Slot opsional ${sl.slotKey} (${sl.sectionType}) tanpa isi tidak dirender sebagai seksi (D-299)`,
     });
+  }
+
+  // (c3) C12 / CV-19 (opt-in `device.spine.placements` berisi "sampul belakang"): unit terakhir
+  // `F:backCover` jenis `cover` (kepala/kaki kosong: tanpa PAGE/register) dengan satu blok `backCover`,
+  // hanya pada render DOCUMENT dan bila rencana memuat unit sampul (tanpa sampul, mis. NOTA = tanpa
+  // halaman belakang). Unit tanpa slot terurut terakhir di (d). Absen = rencana tidak berubah.
+  const documentScope = !scope || scope.kind === "DOCUMENT";
+  if (documentScope && opts.params && backCoverPlaced(opts.params) && plans.some((p) => p.unit.kind === "cover" && !p.placeholder)) {
+    let key = "F:backCover";
+    for (let i = 2; taken.has(key); i += 1) key = `F:backCover#${i}`;
+    taken.add(key);
+    const unit: NormUnit = { kind: "cover", key, setup: { header: { mode: "inherit" }, footer: { mode: "inherit" } } };
+    plans.push({ unit, blocks: [syntheticBlock(key, "backCover", "backCover", { mode: "auto" }, seq++)] });
   }
 
   // (d) Urutan = posisi slot (stabil di dalam slot).

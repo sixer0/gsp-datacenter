@@ -42,6 +42,11 @@ export interface RailLayout {
   mode: "A" | "B";
   renderer: "framePr" | "table3col";
   colsTw: number[];
+  /**
+   * C20 / GF-24 (R-75 `render.rail.reserveColumn`): kolom rel dicadangkan di setiap halaman
+   * interior (perender `framePr` moda A saja); absen = K2 rev B per paragraf.
+   */
+  reserveColumn?: true;
 }
 
 const MODULE = "engine/docx/blocks";

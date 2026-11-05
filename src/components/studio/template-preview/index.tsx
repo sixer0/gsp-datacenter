@@ -21,39 +21,58 @@
  * Permukaan utama berbahasa awam (P3): kunci parameter, kode, dan ringkasan
  * pemeriksaan standar hanya di "Info teknis" (ADMIN). Galat lewat `shared/http`
  * + `ErrorView` (coba ulang berjeda 3/6/12 s, maks 3).
+ *
+ * Bahasa dokumen contoh (addendum USER 2026-11-05): `doc.language` draf (esensial/lanjutan) atau versi
+ * terresolusi (`previewLanguageOf`); templat EN memakai contoh EN, ID memakai contoh lama apa adanya.
+ *
+ * Daftar pengaturan per kategori (D-627, review C34 #16): pengaturan draf yang dipakai pratinjau, dikelompokkan
+ * dengan helper bersama editor (`PreviewParamGroups`), akordeon tertutup pada awalnya. Registri dimuat sekali
+ * (GET /api/studio/registry?kind=params) kecuali pemanggil memberikan `paramRegistry`.
  */
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { CheckCircle2, Info, Loader2 } from "lucide-react";
 import type { TemplatePreviewPaneProps } from "@/lib/studio/contract/ui";
 import type { ValidationIssue } from "@/lib/studio/contract/types/api";
 import type { ParamValue } from "@/lib/studio/contract/types/common";
+import type { ParamDef } from "@/lib/studio/contract/types/params";
 import type { StudioTemplateV2 } from "@/lib/studio/contract/types/v2/template";
 import { STUDIO_TIERS, type StudioTier } from "@/lib/studio/contract/enums";
 import { ErrorView } from "@/components/studio/shared/error-view";
 import { isStudioApiError, type StudioApiError } from "@/components/studio/shared/http";
 import { InfoTeknis } from "@/components/studio/shared/info-teknis";
 import { TERMS, TIER_HINT, TIER_LABEL } from "@/components/studio/shared/labels";
-import { fetchTemplateRef, isAbort, postValidatePreviewV2, postValidatePreviewWithRoles, type DraftTemplateBody, type PreviewValidateResponse } from "./api";
+import {
+  fetchParamRegistry,
+  fetchTemplateRef,
+  isAbort,
+  postValidatePreviewV2,
+  postValidatePreviewWithRoles,
+  type DraftTemplateBody,
+  type PreviewValidateResponse,
+} from "./api";
+import { PreviewParamGroups } from "./param-groups";
 import { paramKeyFromPointer } from "./param-tools";
 import { fitZoom, listPreviewUnits, maxPageWidthMm, previewSrcDoc } from "./preview-html";
-import { SAMPLE_DOCUMENT, withDraft } from "./sample-document";
+import { previewLanguageOf } from "./preview-language";
+import { SAMPLE_DOCUMENT, sampleDocumentFor, withDraft } from "./sample-document";
 import { sampleDocumentV2 } from "./sample-document-v2";
 
 export type { TemplatePreviewPaneProps };
 
-export { SAMPLE_DOCUMENT, withDraft, type DraftInput } from "./sample-document";
+export { SAMPLE_DOCUMENT, SAMPLE_DOCUMENT_EN, sampleDocumentFor, withDraft, type DraftInput } from "./sample-document";
+export { previewLanguageOf, type PreviewLanguage } from "./preview-language";
+export { PreviewParamGroups, previewParamDefs, type PreviewParamGroupsProps } from "./param-groups";
 export { sampleDocumentV2, type SampleDocumentV2Input } from "./sample-document-v2";
 export {
   PARAM_CLASS_BADGE,
   changedKeys,
-  chapterRank,
-  groupParams,
+  groupParamsByCategory,
   isOverriddenFromParent,
   isParamEditable,
   paramKeyFromPointer,
   resetParamToParent,
   searchParams,
-  type ParamChapterGroup,
+  type ParamCategorySection,
   type ParamClass,
   type ParamNamespaceGroup,
   type ParamSearchOptions,
@@ -89,6 +108,8 @@ export interface TemplatePreviewPaneExtraProps {
   title?: string;
   /** Dipanggil setiap hasil validasi baru. */
   onResult?: (r: TemplatePreviewResult) => void;
+  /** Registri parameter untuk daftar per kategori; absen = dimuat sendiri dari registri server. */
+  paramRegistry?: readonly ParamDef[];
   className?: string;
 }
 
@@ -100,6 +121,8 @@ interface TemplateRef {
   slug: string;
   versionNo: number;
   name: string;
+  /** `doc.language` versi terresolusi (nilai mentah; disaring `previewLanguageOf`). */
+  language: ParamValue | undefined;
 }
 
 interface Settled<T> {
@@ -130,12 +153,13 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
     draftTemplate,
     title = "Pratinjau",
     onResult,
+    paramRegistry,
     className = "",
   } = props;
-  const baseDoc = sampleDocument ?? SAMPLE_DOCUMENT;
   const delay = Math.max(0, debounceMs ?? DEFAULT_DEBOUNCE_MS);
 
-  const [tier, setTier] = useState<StudioTier>(defaultTier ?? baseDoc.meta.tier);
+  // Tingkat awal = tingkat dokumen contoh (contoh ID dan EN sama-sama TERBIT).
+  const [tier, setTier] = useState<StudioTier>(defaultTier ?? (sampleDocument ?? SAMPLE_DOCUMENT).meta.tier);
   const [unitChoice, setUnitChoice] = useState<string>("");
   const [refNonce, setRefNonce] = useState(0);
   const [valNonce, setValNonce] = useState(0);
@@ -178,16 +202,44 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
   const draftJson = useMemo(() => (draftTemplate && draftTemplate.skeleton?.slots?.length > 0 ? JSON.stringify(draftTemplate) : ""), [draftTemplate]);
   const v2 = draftJson !== "";
   const valuesJson = useMemo(() => JSON.stringify({ ...(essentials ?? {}), ...(advanced ?? {}), ...draftOverrides }), [essentials, advanced, draftOverrides]);
+  // Nilai pengaturan yang dipakai pratinjau: v2 = esensial + lanjutan draf templat; v1 = nilai draf gabungan.
+  const previewValues = useMemo((): Record<string, ParamValue> => {
+    if (!draftJson) return JSON.parse(valuesJson) as Record<string, ParamValue>;
+    const template = JSON.parse(draftJson) as StudioTemplateV2;
+    return { ...(template.essentials ?? {}), ...(template.advanced ?? {}) };
+  }, [draftJson, valuesJson]);
+  // Bahasa contoh dari data templat: nilai draf menang, lalu versi terresolusi, lalu ID.
+  const language = previewLanguageOf([previewValues], ref?.language);
+  const baseDoc = sampleDocument ?? sampleDocumentFor(language);
   const body = useMemo(() => {
     if (!ref) return null;
     if (draftJson) {
       const template = JSON.parse(draftJson) as StudioTemplateV2;
       const draft: DraftTemplateBody = { template, base: { slug: ref.slug, version: ref.versionNo } };
-      return JSON.stringify({ v2: { document: sampleDocumentV2({ slug: ref.slug, tier, slots: template.skeleton.slots }), draftTemplate: draft } });
+      return JSON.stringify({ v2: { document: sampleDocumentV2({ slug: ref.slug, tier, slots: template.skeleton.slots, language }), draftTemplate: draft } });
     }
     const values = JSON.parse(valuesJson) as Record<string, ParamValue>;
     return JSON.stringify(withDraft(baseDoc, { slug: ref.slug, versionNo: ref.versionNo, tier, draftOverrides: values }));
-  }, [ref, baseDoc, tier, valuesJson, draftJson]);
+  }, [ref, baseDoc, tier, valuesJson, draftJson, language]);
+
+  // 2b. Registri parameter untuk daftar per kategori (sekali; bila pemanggil tidak memberikan).
+  const [regNonce, setRegNonce] = useState(0);
+  const [regSettled, setRegSettled] = useState<Settled<readonly ParamDef[]> | null>(null);
+  useEffect(() => {
+    if (paramRegistry) return;
+    const ctrl = new AbortController();
+    const key = String(regNonce);
+    fetchParamRegistry(ctrl.signal).then(
+      (data) => setRegSettled({ key, data, error: null, at: Date.now() }),
+      (err: unknown) => {
+        if (isAbort(err)) return;
+        setRegSettled({ key, data: null, error: asError(err), at: Date.now() });
+      },
+    );
+    return () => ctrl.abort();
+  }, [paramRegistry, regNonce]);
+  const registry = paramRegistry ?? (regSettled?.key === String(regNonce) ? regSettled.data : null);
+  const regError = !paramRegistry && regSettled?.key === String(regNonce) ? regSettled.error : null;
   const rolesJson = useMemo(
     () => (!v2 && draftRoleFormats && Object.keys(draftRoleFormats).length > 0 ? JSON.stringify(draftRoleFormats) : ""),
     [draftRoleFormats, v2],
@@ -371,6 +423,11 @@ export function TemplatePreviewPane(props: TemplatePreviewPaneFullProps): ReactE
         )}
       </div>
       <p className="text-[12px] text-[var(--text-2)]">Pratinjau perkiraan; hasil akhir ada di berkas PDF.</p>
+
+      {registry && <PreviewParamGroups registry={registry} values={previewValues} />}
+      {regError && (
+        <ErrorView variant="inline" error={regError} title="Daftar pengaturan tidak dapat dimuat" onRetry={() => setRegNonce((n) => n + 1)} />
+      )}
 
       <InfoTeknis
         items={{

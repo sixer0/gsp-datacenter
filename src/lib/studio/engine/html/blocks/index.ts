@@ -23,7 +23,7 @@ import {
   renderSection,
   renderSpacer,
 } from "./text";
-import { renderControlSheet, renderCover, renderPartDivider, renderSignatureBlock, renderToc } from "./wrapper";
+import { renderBackCover, renderControlSheet, renderCover, renderPartDivider, renderSignatureBlock, renderToc } from "./wrapper";
 import { renderContractRecord } from "./contract-record";
 import { withAutoSpacers } from "./semantic";
 
@@ -42,7 +42,7 @@ export { parseMdLiteHtml } from "./inline";
 export { PARAM_SPACER_AUTO_MODE, autoSpacerRole, semanticRuns, semanticTransform, symbolBoundRuns, withAutoSpacer } from "./semantic";
 
 /** Renderer dibungkus spacer otomatis peran (RT-01/RQ-5; opt-in `render.spacer.autoMode`). */
-export const htmlBlocks: Partial<Record<BlockType | StructuralType | "contractRecord", HtmlBlockRenderer>> = withAutoSpacers<BlockType | StructuralType | "contractRecord">({
+export const htmlBlocks: Partial<Record<BlockType | StructuralType | "contractRecord" | "backCover", HtmlBlockRenderer>> = withAutoSpacers<BlockType | StructuralType | "contractRecord" | "backCover">({
   // S16: blok teks
   chapter: renderChapter,
   section: renderSection,
@@ -62,4 +62,6 @@ export const htmlBlocks: Partial<Record<BlockType | StructuralType | "contractRe
   appendix: renderAppendix,
   // DC-12: slot catatan kontrak (S30, register 05 §6.1); butir `contractItem` milik perakit.
   contractRecord: renderContractRecord,
+  // C22 / CV-19: blok sampul belakang (= DOCX `docxWrapper.backCover`; unit dari `assemble/back-cover.ts`).
+  backCover: renderBackCover,
 });

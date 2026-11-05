@@ -32,7 +32,7 @@ import type {
 } from "../../../contract";
 import { PROVENANCE_GLYPHS, TABLE_BLOCK_TYPES } from "../../../contract/enums";
 import { StudioEngineError } from "../../../contract/errors";
-import { issueStampTextOf, sealBandTextsOf, spineTextOf } from "../../front/texts";
+import { FRONT_PAYLOAD_LABELS, issueStampTextOf, sealBandTextsOf, spineTextOf } from "../../front/texts";
 import { docxBlocks } from "../blocks";
 import { docxFigures } from "../figures";
 import { resolveUnitSetup } from "../package/section";
@@ -513,12 +513,42 @@ export function colophonXml(b: WrapperBuilder, col: Colophon): void {
   );
 }
 
+/** Tiga peran tanda tangan manual, urutan kolom (ID:2501, EN:2570; label = tabel teks, bukan `controlSheet.signatures.roles`). */
+const SIGNATURE_FILL_KEYS = ["made", "checked", "approved"] as const;
+
+const roleKeyText = (s: string): string => s.trim().toLowerCase();
+
+/**
+ * C09 / CS-06 (R-68, opt-in): selalu tiga kolom tanda tangan. Peran kiriman yang labelnya sama dengan label
+ * tabel teks (ID atau EN, tanpa beda huruf) menempati kolomnya; peran lain mengisi kolom kosong pertama dari
+ * kiri; kolom sisa = label bawaan bahasa dokumen dengan pemegang kosong (garis pemegang tetap tergambar).
+ * Tiga peran atau lebih: tidak diubah.
+ */
+export function filledSignature(s: SignatureBlock, lang: "ID" | "EN"): SignatureBlock {
+  if (s.roles.length >= SIGNATURE_FILL_KEYS.length) return s;
+  const slots: Array<SignatureBlock["roles"][number] | undefined> = SIGNATURE_FILL_KEYS.map(() => undefined);
+  const rest: SignatureBlock["roles"][number][] = [];
+  for (const r of s.roles) {
+    const t = roleKeyText(inlinePlain(r.role));
+    const i = SIGNATURE_FILL_KEYS.findIndex((k) => roleKeyText(FRONT_PAYLOAD_LABELS[k].ID) === t || roleKeyText(FRONT_PAYLOAD_LABELS[k].EN) === t);
+    if (i >= 0 && !slots[i]) slots[i] = r;
+    else rest.push(r);
+  }
+  for (const r of rest) slots[slots.findIndex((x) => !x)] = r;
+  const roles = slots.map((r, i) => r ?? { role: textInline(FRONT_PAYLOAD_LABELS[SIGNATURE_FILL_KEYS[i]][lang]), holder: { runs: [] } });
+  // Lebar kolom kiriman hanya berlaku untuk jumlah kolom kiriman.
+  const { colsTw: _cols, ...keep } = s;
+  void _cols;
+  return { ...keep, roles };
+}
+
 /**
  * Blok tanda tangan T008 (C7/G-03): baris peran (KT-07, TCP-08), baris ruang
  * tanda tangan kosong (KT-09 `signRowFormat`, TCP-09), baris pemegang (KT-08,
  * TCP-10), dan baris tanggal opsional bila ada `date`.
  */
-export function signatureXml(b: WrapperBuilder, s: SignatureBlock): void {
+export function signatureXml(b: WrapperBuilder, block: SignatureBlock): void {
+  const s = pBool(b.params, "controlSheet.signatures.fillRoles", false) ? filledSignature(block, b.lang) : block;
   const n = s.roles.length;
   if (n === 0) {
     b.warn("signatureBlock tanpa peran dilewati", "SCHEMA_INVALID");

@@ -32,6 +32,9 @@ import type {
   RunProps,
   TableBlock,
 } from "../../../contract";
+import { apparatusReserveTw } from "../../docx/blocks/rail";
+import { baselineSnapTw } from "../../docx/blocks/rhythm";
+import { mmToTw } from "../../tokens";
 import { scaleRun } from "../../tokens/roles";
 import { artifactLabel, captionHtml, sourceInner, sourceParagraphHtml } from "./apparatus";
 import { attr, escText } from "./escape";
@@ -366,12 +369,15 @@ export function tableHtml(t: TableBlock, ctx: RenderContext, opts: TableHtmlOpti
   const theadHtml = head.length > 0 ? rowsHtml(env, head, "head") : "";
   let tbodyHtml = rowsHtml(env, body, "body");
 
+  // C22b / GF-21 (R-74): apparatus tabel tingkat atas dikunci ke garis dasar (= DOCX `rhythmBaseTw`, depth 0).
+  const rhythmBase = opts.depth === 0 ? baselineSnapTw((k) => p[k]) : undefined;
+
   // SUMBER.
   const placement = t.sourcePlacement ?? (pStr(p, "render.table.sourcePlacement", "lastRowMerged") as TableBlock["sourcePlacement"]);
   let below = "";
   if (t.source) {
     if (placement === "paragraphBelow" || cols.length === 0) {
-      below = sourceParagraphHtml(t.source, ctx, "table.source", true);
+      below = sourceParagraphHtml(t.source, ctx, "table.source", true, rhythmBase);
     } else {
       const rf = role(ctx, "table.source");
       const srcStyle = css(
@@ -403,7 +409,7 @@ export function tableHtml(t: TableBlock, ctx: RenderContext, opts: TableHtmlOpti
 
   const block = opts.block;
   const label = block ? artifactLabel(block, ctx, t.caption) : t.caption?.label ?? "";
-  const cap = captionHtml(t.caption, label, ctx, "margin-bottom:2.2mm");
+  const cap = captionHtml(t.caption, label, ctx, "margin-bottom:2.2mm", rhythmBase);
   const f = t.format;
   const wrapStyle = css(
     f?.spacingBeforeTw !== undefined ? `margin-top:${n(f.spacingBeforeTw / 20)}pt` : opts.depth > 0 ? "margin-top:1mm" : undefined,
@@ -415,9 +421,21 @@ export function tableHtml(t: TableBlock, ctx: RenderContext, opts: TableHtmlOpti
     (block?.blockId ? attr("data-block-id", block.blockId) : "") +
     attr("data-block-type", t.type) +
     (t.preset ? attr("data-preset", t.preset) : "") +
-    (label && opts.depth === 0 ? attr("data-label", label) : "");
+    (label && opts.depth === 0 ? attr("data-label", label) : "") +
+    (railReserved(ctx, block, opts.depth, layoutWidthTw ?? (widthMm !== undefined ? mmToTw(widthMm) : undefined)) ? attr("data-rail-reserve", "true") : "");
   const cls = opts.depth > 0 ? "st-table st-table-nested" : "st-table";
   return `<div class="${cls}"${attrs}${wrapStyle ? ` style="${escText(wrapStyle)}"` : ""}>${cap}${tableEl}${below}</div>`;
+}
+
+/**
+ * C22b / GF-24 (R-75, opt-in): tabel tingkat atas selebar kolom teks atau lebih sempit membawa caption/SUMBER-bawah
+ * selebar badan 128 mm bila kolom rel dicadangkan (predikat DOCX `apparatusReserveTw`: K2 + R-75 + unit interior +
+ * lebar <= `grid.textColumnMm`). Lebar HTML tak tertulis (`width:100%`, bentang penuh) = tidak ditandai.
+ */
+function railReserved(ctx: RenderContext, block: NormBlock | undefined, depth: number, widthTw: number | undefined): boolean {
+  if (depth !== 0 || !block || widthTw === undefined) return false;
+  const kind = ctx.snapshot?.units?.find((u) => u.key === block.unitKey)?.kind;
+  return apparatusReserveTw((k) => ctx.tpl?.params?.[k], kind, widthTw) !== undefined;
 }
 
 /** Renderer HtmlBlockRenderer untuk satu jenis tabel. */

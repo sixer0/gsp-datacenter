@@ -20,6 +20,7 @@ import type {
   DocxFragment,
   Inline,
   NormBlock,
+  NormUnitKind,
   ParaFormat,
   ParamMap,
   ProvenanceMark,
@@ -59,8 +60,10 @@ import {
 import { gridMatrix } from "./guards";
 import { hasPlainText, symbolGlyphProps } from "../blocks/semantic";
 import { resolveTokenColor } from "../../tokens";
-import { APPARATUS_TEXT, apparatusLabelRunText, apparatusLabelWords, artifactLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
+import { APPARATUS_TEXT, apparatusLabelRunText, apparatusLabelWords, artifactLabelText, provenanceMarkLabelText, type WrapperLang, wrapperLangOf } from "../../front/texts";
 import { mmToTw, mmWidthsToTw, solveWidthsImpl, twToMm } from "./widths";
+import { type ParaAdjust, apparatusParaAdjust } from "../blocks/apparatus";
+import { baselineSnapTw, rowWrappedTw, snapUpTw } from "../blocks/rhythm";
 
 /** Python `_NUM_RE` datum_docx.py: kolom angka bila >= 70 % sel badan cocok. */
 const NUM_RE = /^[\d.,%±\s-]+\s*(%|x|mm|m|kVA|kW|Hz)?$/;
@@ -81,6 +84,23 @@ interface Env {
   ctx: RenderContext;
   address: string | null;
   depth: number;
+  /** Jenis unit pemilik blok (opt-in ronde cakupan C20); absen untuk tabel tanpa NormBlock. */
+  unitKind?: NormUnitKind;
+}
+
+/** C19 (R-74): garis dasar (twip) untuk tabel tingkat atas bila opt-in aktif; tabel bersarang tidak diubah. */
+function rhythmBaseTw(env: Env): number | undefined {
+  return env.depth === 0 ? baselineSnapTw((k) => env.tpl.params[k]) : undefined;
+}
+
+/**
+ * Apparatus tabel tingkat atas (opt-in ronde cakupan; mati = undefined, byte sekarang):
+ * C20 (R-75) caption dan SUMBER-bawah tabel selebar kolom teks atau lebih sempit ikut badan
+ * 128 mm bila kolom rel dicadangkan, tabel bentang penuh membawa apparatusnya selebar tabel;
+ * C19 (R-74) jarak apparatus dikunci ke garis dasar; leading caption/SUMBER tetap (GF-21 (a), `snapApparatusPara`).
+ */
+function apparatusAdjust(env: Env, totalTw: number): ParaAdjust | undefined {
+  return env.depth === 0 ? apparatusParaAdjust((k) => env.tpl.params[k], env.unitKind, totalTw) : undefined;
 }
 
 interface ColumnInfo {
@@ -406,13 +426,13 @@ function sourceRuns(env: Env, src: SourceLine, label: RunProps | undefined, main
       if (i > 0) out.push({ t: ", " });
       const g = markGlyphRun(env.tpl, mk, glyphRun);
       out.push({ t: markGlyph(env.tpl, mk), ...(main.szHalfPt !== undefined && g.szHalfPt === undefined ? { szHalfPt: main.szHalfPt } : {}), ...g });
-      out.push({ t: ` ${mk}` });
+      out.push({ t: ` ${provenanceMarkLabelText(mk, lang)}` });
     });
   }
   return out;
 }
 
-function sourceRowXml(env: Env, src: SourceLine, totalTw: number, ncols: number): string {
+function sourceRowXml(env: Env, src: SourceLine, totalTw: number, ncols: number, rowHeight: (tcs: string) => string = () => ""): string {
   const st = cellStyle(env.tpl, "table.source", "source");
   const runs = sourceRuns(env, src, st.labelRun, st.run, st.glyphRun);
   const p = paragraphXml({ ...st.para, ...(src.format ?? {}) }, runsXml(runs, st.run, env.tpl.params));
@@ -428,20 +448,22 @@ function sourceRowXml(env: Env, src: SourceLine, totalTw: number, ncols: number)
     .join("");
   if (mx) pr += `<w:tcMar>${mx}</w:tcMar>`;
   const cant = !pBool(env.tpl.params, "table.row.splitAcrossPages", false);
-  return `<w:tr>${cant ? "<w:trPr><w:cantSplit/></w:trPr>" : ""}<w:tc><w:tcPr>${pr}</w:tcPr>${p}</w:tc></w:tr>`;
+  const tc = `<w:tc><w:tcPr>${pr}</w:tcPr>${p}</w:tc>`;
+  const trPr = (cant ? "<w:cantSplit/>" : "") + rowHeight(tc);
+  return `<w:tr>${trPr ? `<w:trPr>${trPr}</w:trPr>` : ""}${tc}</w:tr>`;
 }
 
 /** SUMBER sebagai paragraf di bawah tabel, garis rambut di atas (pola K-34). */
-function sourceParagraphXml(env: Env, src: SourceLine): string {
+function sourceParagraphXml(env: Env, src: SourceLine, adjust?: ParaAdjust): string {
   const st = cellStyle(env.tpl, "table.source", "source");
   const runs = sourceRuns(env, src, st.labelRun, st.run, st.glyphRun);
   const fmt: ParaFormat = { ...st.para, borders: { top: ruleBorder(env.tpl, "hair", 1) }, ...(src.format ?? {}) };
-  return paragraphXml(fmt, runsXml(runs, st.run, env.tpl.params));
+  return paragraphXml(adjust ? adjust(fmt) : fmt, runsXml(runs, st.run, env.tpl.params));
 }
 
 // ── Caption ──────────────────────────────────────────────────────────────
 
-function captionXml(env: Env, b: TableFamilyBlock, artifactLabel: string | undefined): string {
+function captionXml(env: Env, b: TableFamilyBlock, artifactLabel: string | undefined, adjust?: ParaAdjust): string {
   const cap = b.caption;
   if (!cap) return "";
   const rf = roleFormat(env.tpl, "caption");
@@ -473,7 +495,7 @@ function captionXml(env: Env, b: TableFamilyBlock, artifactLabel: string | undef
     ...(b.format ?? {}),
     ...(cap.format ?? {}),
   };
-  return paragraphXml(fmt, runsXml(runs, main, env.tpl.params));
+  return paragraphXml(adjust ? adjust(fmt) : fmt, runsXml(runs, main, env.tpl.params));
 }
 
 // ── Tabel ────────────────────────────────────────────────────────────────
@@ -588,6 +610,10 @@ export function tableXmlParts(b: TableFamilyBlock, env: Env, opts: { totalTw?: n
   const bodyCount = rows.filter((r) => rowKindOf(r) === "body").length;
   const zebra = zebraShading(env, tokens, defaults.zebraParam, bodyCount);
 
+  const rhythmBase = rhythmBaseTw(env);
+  /** C19 / GF-21 (b): `w:trHeight atLeast` kelipatan garis dasar dari perkiraan baris teks terbungkus (opt-in). */
+  const rowHeight = (tcs: string): string =>
+    rhythmBase === undefined ? "" : `<w:trHeight w:val="${snapUpTw(rowWrappedTw(tcs, rhythmBase), rhythmBase)}" w:hRule="atLeast"/>`;
   let trs = "";
   let leadingHeader = true;
   let bodyIdx = 0;
@@ -600,7 +626,6 @@ export function tableXmlParts(b: TableFamilyBlock, env: Env, opts: { totalTw?: n
     if (row.repeatHeader && !leadingHeader) warn(env, "repeatHeader diabaikan pada baris yang bukan kepala terdepan");
     let trPr = "";
     if (cant) trPr += "<w:cantSplit/>";
-    if (repeat) trPr += "<w:tblHeader/>";
     const rowZebra = kind === "body" && zebra && bodyIdx++ % 2 === 1 ? zebra : undefined;
     let tcs = "";
     let ci = 0;
@@ -608,28 +633,33 @@ export function tableXmlParts(b: TableFamilyBlock, env: Env, opts: { totalTw?: n
       tcs += tcXml(env, effBlock, cell, cols, grid, ci, { kind, zebra: rowZebra, catalogHeaderVAlign });
       ci += Math.max(1, cell.gridSpan ?? 1);
     }
+    // CT_TrPrBase (urutan Word): cantSplit, trHeight, tblHeader.
+    trPr += rowHeight(tcs);
+    if (repeat) trPr += "<w:tblHeader/>";
     trs += `<w:tr>${trPr ? `<w:trPr>${trPr}</w:trPr>` : ""}${tcs}</w:tr>`;
   }
 
   const placement = b.sourcePlacement ?? (pStr(p, "render.table.sourcePlacement") === "paragraphBelow" ? "paragraphBelow" : "lastRowMerged");
-  if (b.source && placement === "lastRowMerged") trs += sourceRowXml(env, b.source, totalTw, ncols);
+  if (b.source && placement === "lastRowMerged") trs += sourceRowXml(env, b.source, totalTw, ncols, rowHeight);
   if (!b.source && b.caption && env.depth === 0) warn(env, "tabel bercaption tanpa baris SUMBER (lint 10)");
 
   const tblGrid = `<w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${Math.round(w)}"/>`).join("")}</w:tblGrid>`;
   const tbl = `<w:tbl>${tblPrXml(effBlock, env, totalTw)}${tblGrid}${trs}</w:tbl>`;
 
   const out: string[] = [];
-  const cap = captionXml(env, b, opts.artifactLabel);
+  const adjust = apparatusAdjust(env, totalTw);
+  const cap = captionXml(env, b, opts.artifactLabel, adjust);
   if (cap) out.push(cap);
   out.push(tbl);
-  if (b.source && placement === "paragraphBelow") out.push(sourceParagraphXml(env, b.source));
+  if (b.source && placement === "paragraphBelow") out.push(sourceParagraphXml(env, b.source, adjust));
   return out;
 }
 
 /** Penyaji `DocxBlockRenderer` untuk ke-11 jenis keluarga tabel. */
 export function renderTableBlock(block: NormBlock, ctx: RenderContext): DocxFragment {
   const tpl = effectiveTemplate(ctx.tpl);
-  const env: Env = { tpl, ctx, address: block.address, depth: 0 };
+  const unitKind = ctx.snapshot?.units?.find((u) => u.key === block.unitKey)?.kind;
+  const env: Env = { tpl, ctx, address: block.address, depth: 0, ...(unitKind ? { unitKind } : {}) };
   const content = block.content as TableFamilyBlock;
   const label = block.artifactLabel ?? ctx.snapshot?.numbering?.[block.blockId];
   const xml = tableXmlParts(content, env, { artifactLabel: label }).join("");

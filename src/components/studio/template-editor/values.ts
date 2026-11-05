@@ -4,7 +4,7 @@
  */
 import type { RoleFormatMap } from "@/lib/studio/contract/engine";
 import type { ParamValue } from "@/lib/studio/contract/types/common";
-import type { ParamDef, ParamType } from "@/lib/studio/contract/types/params";
+import type { ParamType } from "@/lib/studio/contract/types/params";
 
 export type ParamRecord = Record<string, ParamValue>;
 
@@ -88,30 +88,4 @@ export function diffRecords(a: Readonly<Record<string, unknown>>, b: Readonly<Re
 
 export function diffRoleFormats(a: RoleFormatMap, b: RoleFormatMap): KeyChange[] {
   return diffRecords(a as Record<string, unknown>, b as Record<string, unknown>);
-}
-
-/** Kelompokkan registri per bab manual lalu namespace, urutan bab mengikuti angka. */
-export function groupParams(defs: readonly ParamDef[]): Array<{ chapter: string; namespaces: Array<{ namespace: string; defs: ParamDef[] }> }> {
-  const byChapter = new Map<string, Map<string, ParamDef[]>>();
-  for (const d of defs) {
-    const ch = byChapter.get(d.chapter) ?? new Map<string, ParamDef[]>();
-    const list = ch.get(d.namespace) ?? [];
-    list.push(d);
-    ch.set(d.namespace, list);
-    byChapter.set(d.chapter, ch);
-  }
-  return [...byChapter.entries()]
-    .sort(([a], [b]) => chapterRank(a) - chapterRank(b) || a.localeCompare(b))
-    .map(([chapter, ns]) => ({
-      chapter,
-      namespaces: [...ns.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([namespace, list]) => ({ namespace, defs: list })),
-    }));
-}
-
-function chapterRank(ch: string): number {
-  const m = /(\d+)/.exec(ch);
-  if (m) return Number(m[1]);
-  if (/lampiran/i.test(ch)) return 900;
-  if (/renderer/i.test(ch)) return 950;
-  return 990;
 }

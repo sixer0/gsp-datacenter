@@ -6,7 +6,8 @@
  * peran `table.source`/`figure.source`) + isi + `PROVENANS` glif bertanda.
  */
 import type { Caption, Inline, NormBlock, ProvenanceMark, RenderContext, RoleKey, RunProps, SourceLine } from "../../../contract";
-import { apparatusLabelRunText, artifactLabelText, wrapperLangOf } from "../../front/texts";
+import { snapApparatusPara } from "../../docx/blocks/rhythm";
+import { apparatusLabelRunText, artifactLabelText, provenanceMarkLabelText, wrapperLangOf } from "../../front/texts";
 import { escText } from "./escape";
 import { inlineHtml, inlinePlain, paraHtml } from "./inline";
 import { color, css, fontFamily, hexCss, labels, markColor, markGlyph, pBool, pNum, pStr, role, ruleCss, runCss } from "./style";
@@ -28,8 +29,18 @@ function localizedApparatus<T extends Inline | undefined>(x: T, ctx: RenderConte
   return { ...x, runs: x.runs.map((r) => ("t" in r ? { ...r, t: apparatusLabelRunText(r.t, lang) } : r)) } as T;
 }
 
+/**
+ * C22b / GF-21 (R-74, opt-in): `base` = garis dasar (twip) dari pemanggil (tabel tingkat atas, figur; = DOCX
+ * `apparatusParaAdjust`). Dengan `base`, jarak paragraf apparatus dikunci dan leading-nya tetap (GF-21 (a), `snapApparatusPara`,
+ * sama dengan DOCX: sebelum ke kisi dengan minimum satu garis dasar, sesudah yang ditulis diganjal ke kisi) dan margin mm tetap
+ * HTML (caption 2,2 mm, SUMBER 2,2 mm, KUNCI 1,6 mm) tidak dipasang agar tidak menimpa irama. Tanpa `base` = apa adanya.
+ */
+function snapped<T extends object>(f: T | undefined, base: number | undefined): T | undefined {
+  return base === undefined ? f : (snapApparatusPara(f ?? {}, base) as T);
+}
+
 /** Paragraf caption (di atas objek). Label tampil berbahasa dokumen (D-3); alamat tetap. */
-export function captionHtml(caption: Caption | undefined, rawLabel: string, ctx: RenderContext, extra?: string): string {
+export function captionHtml(caption: Caption | undefined, rawLabel: string, ctx: RenderContext, extra?: string, base?: number): string {
   if (!caption) return "";
   const label = artifactLabelText(rawLabel, wrapperLangOf(ctx.snapshot?.doc?.meta));
   const p = ctx.tpl.params;
@@ -40,7 +51,7 @@ export function captionHtml(caption: Caption | undefined, rawLabel: string, ctx:
   if (label) inner += `<span class="st-caption-label" style="${escText(runCss(labelRun, p))}">${escText(label)}</span>`;
   if (label && sep) inner += sep === "\t" ? `<span style="display:inline-block;min-width:3mm">&#9;</span>` : escText(sep);
   inner += inlineHtml(caption.inline, rf.run ?? {}, p, "caption");
-  return paraHtml(inner, caption.format ?? rf.para, css("break-after:avoid", extra), "st-caption");
+  return paraHtml(inner, snapped(caption.format ?? rf.para, base), css("break-after:avoid", base === undefined ? extra : undefined), "st-caption");
 }
 
 const LABEL_LEAD_RE = /^\s*(sumber|source|kunci|key)\b/i;
@@ -59,7 +70,7 @@ export function provenanceHtml(marks: readonly ProvenanceMark[], ctx: RenderCont
     );
     parts.push(
       `<span class="st-mark" data-mark="${escText(m)}"><span style="${escText(glyphStyle)}">${escText(markGlyph(p, m))}</span>` +
-        `&#160;<span style="${escText(runCss(textRun, p))}">${escText(m)}</span></span>`,
+        `&#160;<span style="${escText(runCss(textRun, p))}">${escText(provenanceMarkLabelText(m, wrapperLangOf(ctx.snapshot?.doc?.meta)))}</span></span>`,
     );
   }
   return parts.join(" · ");
@@ -92,16 +103,16 @@ export function sourceInner(source: SourceLine, ctx: RenderContext, roleKey: Rol
 }
 
 /** Paragraf SUMBER di bawah objek (garis rambut di atas, pola RL `.src`). */
-export function sourceParagraphHtml(src: SourceLine | undefined, ctx: RenderContext, roleKey: RoleKey, ruleAbove: boolean): string {
+export function sourceParagraphHtml(src: SourceLine | undefined, ctx: RenderContext, roleKey: RoleKey, ruleAbove: boolean, base?: number): string {
   if (!src) return "";
   const p = ctx.tpl.params;
   const rf = role(ctx, roleKey);
   const hair = ruleAbove ? `border-top:${ruleCss(pNum(p, "rules.hairMm", 0.2), color(ctx.tpl, "rules.hair.colour", "ink200"))};padding-top:1.6mm` : "";
-  return paraHtml(sourceInner(src, ctx, roleKey), src.format ?? rf.para, css("margin-top:2.2mm", hair, "break-before:avoid"), "st-source");
+  return paraHtml(sourceInner(src, ctx, roleKey), snapped(src.format ?? rf.para, base), css(base === undefined ? "margin-top:2.2mm" : undefined, hair, "break-before:avoid"), "st-source");
 }
 
 /** Baris KUNCI figur (peran `figure.keyRow`). */
-export function keyRowHtml(keyRowIn: Parameters<typeof inlineHtml>[0], ctx: RenderContext): string {
+export function keyRowHtml(keyRowIn: Parameters<typeof inlineHtml>[0], ctx: RenderContext, base?: number): string {
   const keyRow = localizedApparatus(keyRowIn, ctx);
   if (!keyRow) return "";
   const p = ctx.tpl.params;
@@ -113,5 +124,5 @@ export function keyRowHtml(keyRowIn: Parameters<typeof inlineHtml>[0], ctx: Rend
     inner += `<span class="st-key-label" style="${escText(runCss(labelRun, p))}">${escText(labels(ctx).key)}</span>&#160;&#160;`;
   }
   inner += inlineHtml(keyRow, textRun, p, "figure.keyRow");
-  return paraHtml(inner, rf.para, "margin-top:1.6mm", "st-key");
+  return paraHtml(inner, snapped(rf.para, base), base === undefined ? "margin-top:1.6mm" : undefined, "st-key");
 }

@@ -40,18 +40,22 @@ import {
   defaultPartLabelText,
   kickerSuppressed,
   tocKickerText,
+  WRAPPER_TEXT,
   type ControlSheetBlockKind,
 } from "../../front/texts";
 import { railK2ReserveOf } from "../../docx/blocks/rail";
+import { coverTitleIndentTw } from "../../docx/wrapper/formats";
+import { backCoverPlaced } from "../../docx/wrapper/pages";
+import { filledSignature } from "../../docx/wrapper/render";
 import { isTocSectionRole, TOC_ROLE_PARENT, TOC_SECTION_SIZE_STEP_HALFPT, tocEntryRoles, tocOutline, tocSectionIndentTw, tocSectionSize } from "../../docx/wrapper/toc-refs";
 import { htmlTables } from "../tables";
 import { HTML_BLOCK_CLASSES as C } from "./classes";
-import { childBlock, contentOf, el, isObj, language, paramList, paramNum, paramStr, reportBad } from "./common";
+import { childBlock, contentOf, el, isObj, language, paramBool, paramList, paramNum, paramStr, reportBad } from "./common";
 import { assetDataUri, datumRuleHtml, DECORATIVE_IMG_ATTRS, isDevice, renderDevice, sealBandHtml, spineText } from "./device";
 import { attr, escapeHtml, finite, num } from "./escape";
 import { DEFAULT_MD_ROLES, hasInline, inlineHtml, inlinePlain } from "./inline";
 import { baseRun, semanticTransform } from "./semantic";
-import { blockScope, roleFormat, wrapperScope } from "./style";
+import { blockScope, paraDecl, roleFormat, wrapperScope } from "./style";
 import {
   renderAside,
   renderAssumptionInline,
@@ -145,6 +149,18 @@ function colophonHtml(ctx: RenderContext, c: Colophon, address: string | null): 
   return `<div class="${C.colophon}"${attr("data-address", address ?? undefined)}>${left}${right}</div>`;
 }
 
+/**
+ * C22 / CS-06 (R-68, opt-in): selalu tiga kolom tanda tangan, sumber yang sama dengan DOCX `signatureXml`
+ * (`filledSignature` engine A C09: peran dipetakan per label tabel teks, kolom sisa berlabel bawaan dengan
+ * pemegang kosong, `colsTw` kiriman dibuang). Label peran yang bukan Inline diperlakukan label tak dikenal
+ * (pemegangnya tetap). Absen/false = blok apa adanya.
+ */
+function effectiveSignature(ctx: RenderContext, s: SignatureBlock): SignatureBlock {
+  if (!paramBool(ctx, "controlSheet.signatures.fillRoles", false)) return s;
+  const roles = (Array.isArray(s.roles) ? s.roles : []).filter(isObj).map((r) => (hasInline(r.role) ? r : { ...r, role: { runs: [] } }));
+  return filledSignature({ ...s, roles }, language(ctx));
+}
+
 function signatureHtml(ctx: RenderContext, s: SignatureBlock, address: string | null, blockId?: string): string {
   const roles = Array.isArray(s.roles) ? s.roles.filter(isObj) : [];
   const cols = Array.isArray(s.colsTw) ? s.colsTw.map((w) => finite(w, 0, 31680)) : [];
@@ -169,7 +185,7 @@ function frontItemHtml(parent: NormBlock, ctx: RenderContext, item: unknown, ind
   if (type === "device") return isDevice(item) ? renderDevice(childBlock(parent, type, item, index, null), ctx, item) : "";
   if (type === "controlBlock") return controlBlockHtml(ctx, item as unknown as ControlBlock, address);
   if (type === "colophon") return colophonHtml(ctx, item as unknown as Colophon, address);
-  if (type === "signatureBlock") return signatureHtml(ctx, item as unknown as SignatureBlock, address);
+  if (type === "signatureBlock") return signatureHtml(ctx, effectiveSignature(ctx, item as unknown as SignatureBlock), address);
   const own = OWN_TEXT[type];
   // ENG-01: paragraf pembungkus = DOCX `roleParagraphXml` (rantai pembungkus); unsur lain
   // didelegasikan DOCX ke renderer blok (`delegateBlock`; spacer = paragraf tanpa peran),
@@ -307,10 +323,16 @@ function coverAuto(block: NormBlock, ctx: RenderContext, data: Partial<CoverData
           const title = ctx.snapshot?.doc?.meta?.title;
           if (title) lines.push({ text: title });
         }
+        // C22 / CV-20 (R-70, opt-in): jorokan kanan judul (`coverTitleIndentTw`, sumber yang sama dengan DOCX
+        // `roleFormat` C11) dipasang pada blok h1; baris judul = span inline yang margin kanannya tidak membatasi
+        // lebar baris, jadi jorokan peran pada span dibuang. Absen/null = keluaran sekarang.
+        const indentTw = coverTitleIndentTw(ctx.tpl?.params ?? {});
+        const lineFormat: ParaFormat | undefined = indentTw === undefined ? undefined : { indRightTw: undefined };
         const html = lines
-          .map((line, i) => el(ctx, "span", { classes: [`${C.coverTitle}-line`], role: i === lines.length - 1 && i > 0 ? "cover.titleLast" : "cover.titleFirst" }, inlineHtml(line)))
+          .map((line, i) => el(ctx, "span", { classes: [`${C.coverTitle}-line`], role: i === lines.length - 1 && i > 0 ? "cover.titleLast" : "cover.titleFirst", format: lineFormat }, inlineHtml(line)))
           .join("<br>");
-        return html ? `<h1 class="${C.heading} ${C.coverTitle}">${html}</h1>` : "";
+        const h1Style = indentTw === undefined ? "" : attr("style", paraDecl({ indRightTw: indentTw }).join(";"));
+        return html ? `<h1 class="${C.heading} ${C.coverTitle}"${h1Style}>${html}</h1>` : "";
       }
       case "standfirst":
         return hasInline(data.standfirst) ? el(ctx, "p", { classes: [C.paragraph, C.coverStandfirst], role: "cover.standfirst" }, inlineHtml(data.standfirst)) : "";
@@ -362,6 +384,31 @@ export const renderCover: HtmlBlockRenderer = (block, base) => {
   return unit(block, "cover", C.cover, inner);
 };
 
+// ── Sampul belakang (C22 / CV-19) ────────────────────────────────────────
+
+/**
+ * Sampul belakang = DOCX `renderBackCover` (engine A C12): halaman pembungkus yang hanya memuat string punggung
+ * berputar (perangkat yang sama dengan sampul dan pembatas, peran `cover.identityString`); manual tidak meminta
+ * teks lain (DT-13f ID:2718-2723, EN:2766, EN:2778-2783). Predikat penempatan = DOCX `backCoverPlaced`. Unit
+ * `F:backCover` ditambahkan perakit (`assemble/back-cover.ts`) hanya bila ada unit sampul dan lingkup DOCUMENT.
+ */
+export const renderBackCover: HtmlBlockRenderer = (block, base) => {
+  const ctx = wrapperScope(base);
+  let inner = "";
+  if (backCoverPlaced(ctx.tpl?.params ?? {})) {
+    const s = spineText(ctx);
+    if (s) inner = spineStringHtml(ctx, escapeHtml(s), [C.coverIdentity]);
+  } else {
+    ctx.log({
+      level: "warn",
+      message: 'engine/html/blocks: sampul belakang tanpa penempatan "sampul belakang" di device.spine.placements; string punggung dilewati',
+      code: "BY_CONSTRUCTION_FAILED",
+      address: block.address ?? block.blockId,
+    });
+  }
+  return unit(block, "backCover", C.cover, inner);
+};
+
 // ── Lembar kendali ───────────────────────────────────────────────────────
 
 /** Inline bertulisan (padanan DOCX `hasText`): bentuk Inline sah dan teks polos tidak kosong. */
@@ -387,6 +434,11 @@ export const renderControlSheet: HtmlBlockRenderer = (block, base) => {
   const metaTitle = ctx.snapshot?.doc?.meta?.title;
   const title = hasInline(d.title) ? inlineHtml(d.title) : typeof metaTitle === "string" ? escapeHtml(metaTitle) : "";
   if (title) parts.push(el(ctx, "h2", { classes: [C.heading, C.frontTitle], role: "front.pageTitle" }, title));
+  // C22 / CS-12 (R-67, opt-in): subjudul tabel teks sesudah judul, peran `cover.standfirst` (= DOCX
+  // `autoControlSheetItems` C08). Absen/false = tanpa paragraf.
+  if (paramBool(ctx, "controlSheet.subtitle.enabled", false)) {
+    parts.push(el(ctx, "p", { classes: [C.paragraph, C.coverStandfirst], role: "cover.standfirst" }, escapeHtml(WRAPPER_TEXT.controlSubtitle[lang])));
+  }
   let n = 0;
   const next = () => `${prefix}/${++n}`;
   if (isObj(d.revisionHistory)) parts.push(heading("revision"), tableHtml(block, ctx, d.revisionHistory, 0, next()));
@@ -568,8 +620,10 @@ export const renderPartDivider: HtmlBlockRenderer = (block, base) => {
 
 export const renderSignatureBlock: HtmlBlockRenderer = (block, base) => {
   const ctx = wrapperScope(base);
-  const s = contentOf<SignatureBlock>(ctx, block, "signatureBlock");
-  if (!s) return "";
+  const sent = contentOf<SignatureBlock>(ctx, block, "signatureBlock");
+  if (!sent) return "";
+  // CS-06: dengan opt-in, blok tanpa peran menjadi tiga kolom bawaan (= DOCX); tanpa opt-in tetap ditolak.
+  const s = effectiveSignature(ctx, sent);
   if (!Array.isArray(s.roles) || s.roles.length === 0) return reportBad(ctx, block, "roles kosong");
   return signatureHtml(ctx, s, block.address, block.blockId);
 };

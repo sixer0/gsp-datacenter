@@ -113,7 +113,8 @@ const NAMESPACE_LABELS: Readonly<Record<string, string>> = {
 
 /** Nama kelompok tampilan; namespace tak dikenal tampil apa adanya (kunci asli di tooltip). */
 export function namespaceLabel(ns: string): string {
-  return NAMESPACE_LABELS[ns] ?? ns;
+  // Cek own-property: namespace bernama anggota Object.prototype tidak boleh mengembalikan fungsi.
+  return Object.prototype.hasOwnProperty.call(NAMESPACE_LABELS, ns) ? NAMESPACE_LABELS[ns] : ns;
 }
 
 /** Label pilihan untuk kunci non-esensial (nilai registri -> teks). */

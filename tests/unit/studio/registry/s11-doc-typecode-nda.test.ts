@@ -27,7 +27,10 @@ describe('S11 doc.typeCode NDA', () => {
   });
 
   it('paramsSha256 kanonik tidak berubah', () => {
-    // Nilai sebelum S11 (diukur 2026-11-04 di working tree v2.1, juga `registryParamsSha256` log seed dry-run DEV).
-    expect(canonicalVersionPayload().paramsSha256).toBe('a18d36eafa6bdabe9035d1a68b410c439177c33c342937a281205ed5ac517a9f');
+    // Nilai sebelum S11 (diukur 2026-11-04 di working tree v2.1, juga `registryParamsSha256` log seed dry-run DEV):
+    // a18d36eafa6bdabe9035d1a68b410c439177c33c342937a281205ed5ac517a9f. Pin ini bergerak dengan setiap parameter
+    // registri baru berbawaan (verification/30 R2): C06 (R-67..R-80, 2026-11-05) dihitung ulang, bukan ditebak,
+    // dan sama dengan `registryParamsSha256` dry-run seed DEV C06. Tambahan enum saja tidak menggerakkannya.
+    expect(canonicalVersionPayload().paramsSha256).toBe('dcb7166bc12ab7d6c34906b376a7da6d7562f0d8c1d70ea81a3fd4b396a5dfd9');
   });
 });

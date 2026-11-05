@@ -29,6 +29,7 @@ import { loadResolvedProfileFile, type ParamRecord } from '@/lib/studio/services
 import { buildClient, labelLangOf, type ClientSection } from '../../../../scripts/studio/mcp/write-client';
 import { frontSlotsForTier, type TemplateShape } from '../../../../scripts/studio/mcp/write-client-run';
 import { DATUM_SKELETON_SLOTS, derivedTemplatePlan, type DerivedTemplateSpec } from '../../../../prisma/seed-studio-templates';
+import { DERIVED_PRESET_SPECS } from '../../../../prisma/seed-derived-presets';
 import { DOC_TYPE_TEMPLATE_SPECS } from '../../../../prisma/seed-doc-type-templates';
 import { makeCtx, parseXml, partText, unzip } from '../renderers/_kit';
 
@@ -103,10 +104,21 @@ interface Outcome {
   tier: StudioTier;
 }
 
+/**
+ * Nilai efektif preset basis spec: profil GSP DATUM (datum-gsp-preset), ditambah sematan preset turunan C21 bila
+ * `presetSlug` adalah baris `DERIVED_PRESET_SPECS` di atas datum-gsp-preset (C23: 10 templat di atas preset Rev A,
+ * Tabel 8.2). Pencarian data, bukan cabang slug.
+ */
+function presetParamsOf(spec: DerivedTemplateSpec): ParamMap {
+  const derived = DERIVED_PRESET_SPECS.find((p) => p.slug === spec.presetSlug && p.baseSlug === DATUM_GSP.presetSlug);
+  return (derived ? { ...PRESET.params, ...derived.pins } : PRESET.params) as ParamMap;
+}
+
 /** Satu templat: jalur klien + jalur server murni dengan muatan yang sama. */
 function run(spec: DerivedTemplateSpec, payload: Payload, presetOverride?: ParamMap): Outcome {
-  const plan = derivedTemplatePlan(spec, (presetOverride ?? PRESET.params) as ParamRecord);
-  const resolved = resolveParams({ base: presetOverride ?? PRESET.params, overrides: plan.overrides, registry: ALL_PARAMS });
+  const base = presetOverride ?? presetParamsOf(spec);
+  const plan = derivedTemplatePlan(spec, base as ParamRecord);
+  const resolved = resolveParams({ base, overrides: plan.overrides, registry: ALL_PARAMS });
   const P = resolved.params;
   const tpl: ResolvedTemplate = { ...PRESET, templateId: `tpl-${spec.slug}`, versionId: `tv-${spec.slug}`, versionNo: 1, params: P };
   const slots: TemplateSlotDef[] = plan.slots;
@@ -203,6 +215,9 @@ const TEMPLATE_OWNED: readonly RegExp[] = [
   /^\/skeleton\/slots\/\d+(\/.*)?$/,
   /^\/compose\/tier$/,
   /^\/compose\/slotParams\/(ruleIndex|cover\/cover\.kicker\.text)$/,
+  // C23: parameter templat yang dibaca compose (C-5, `COMPOSE_PARAM_KEYS`, D-639 (2)) tersimpan di snapshot compose
+  // bila berbeda dari bawaan: bentuk kolom lembar kendali manual (R-69) dan unit penyusun sampul (R-79).
+  /^\/compose\/(params|slotParams\/[A-Za-z]+)\/(controlSheet\.columns\.form|cover\.controlBlock\.preparerUnit)$/,
   /^\/doc\/front\/(cover|controlSheet|signature)\//,
   /^\/source\/sections\/(cover|controlSheet|signature)\//,
 ];
@@ -317,7 +332,16 @@ describe('S29 paritas pemakaian (U3): satu JSON kajian ke datum-gsp dan 10 templ
         expect(o.coverKicker, s.slug).toBe(s.slotOverrides!.cover['cover.kicker.text']);
         expect(o.labels, s.slug).toEqual(s.slots.map((x) => x.label));
         expect(o.entity, s.slug).toBe('PT GEMILANG SATRIA PERKASA');
+        // C23 (GF-08): basis preset Rev A, Tabel 8.2 (ID:2633-2635) sampai ke templat terresolusi.
+        expect(o.tpl.params['type.scale.tableNumerals.size'], s.slug).toBe(7.8);
+        // C23 (research/38 §4.1, §4.3): opt-in compose milik templat tersimpan di snapshot compose.
+        const composeParams = at(o.snapshot, '/compose/params') as Record<string, unknown>;
+        expect(composeParams['controlSheet.columns.form'], s.slug).toBe('manual');
+        expect(composeParams['cover.controlBlock.preparerUnit'], s.slug).toBe(s.layer['doc.language'] === 'ID' ? 'Divisi Engineering PT GSP' : 'Engineering Division, PT GSP');
       }
+      // Pembanding datum-gsp tetap di atas datum-gsp-preset (7 pt) tanpa kunci compose opt-in (C-5: bawaan tidak disimpan).
+      expect(BASE.TERBIT.tpl.params['type.scale.tableNumerals.size']).toBe(7);
+      expect(Object.keys(at(BASE.TERBIT.snapshot, '/compose/params') as object)).not.toContain('controlSheet.columns.form');
       // Pembanding membawa nilai preset (huruf campur): override D-602 memang berbeda dari preset, dan tetap tanpa isu baru.
       expect(BASE.TERBIT.entity).toBe('PT Gemilang Satria Perkasa');
     });

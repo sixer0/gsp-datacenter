@@ -19,11 +19,13 @@ import {
   corePropsXml as corePropsXmlImpl,
   CT,
   fontTableXml,
+  pageBackgroundColour,
   REL,
   relsXml,
   settingsXml as settingsXmlImpl,
   stylesXml as stylesXmlImpl,
   type Relationship,
+  withPageBackground,
 } from "./parts";
 import { sectPrXml as sectPrXmlImpl } from "./section";
 import { zipDeterministic, type ZipEntry } from "./zip";
@@ -205,7 +207,7 @@ export function buildDocxPackage(i: DocxPackageInput): Uint8Array {
     { path: "_rels/.rels", data: enc.encode(relsXml(rootRels)) },
     { path: "docProps/core.xml", data: enc.encode(corePropsXmlImpl(i.meta)) },
     { path: "docProps/app.xml", data: enc.encode(appPropsXml(i.tpl)) },
-    { path: "word/document.xml", data: enc.encode(i.documentXml) },
+    { path: "word/document.xml", data: enc.encode(withPageBackground(i.documentXml, pageBackgroundColour(i.tpl))) },
     { path: "word/_rels/document.xml.rels", data: enc.encode(relsXml(docRels)) },
     { path: "word/styles.xml", data: enc.encode(stylesXmlImpl(i.tpl)) },
     { path: "word/settings.xml", data: enc.encode(settingsXmlImpl(i.tpl)) },
