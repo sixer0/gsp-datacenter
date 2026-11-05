@@ -14,6 +14,7 @@ import type { AnyNormSnapshot, BlockV2, NormBlock, ResolvedTemplate, StudioChart
 import { StudioEngineError } from "@/lib/studio/contract/errors";
 import { applyChartIntent, orientationTarget } from "@/lib/studio/engine/chart/core";
 import { figureGrid } from "@/lib/studio/engine/chart/core/guards";
+import type { ChartLang } from "@/lib/studio/engine/chart/core/lang";
 import { buildDiagramSvg } from "@/lib/studio/engine/diagram/build";
 import { glyphSet, mapBlock, storedComposeContext } from "@/lib/studio/services/compose";
 import { templateForDoc } from "@/lib/studio/services/render/common";
@@ -247,14 +248,14 @@ function renderedSummary(spec: StudioChartV1, tpl: ResolvedTemplate, svg: string
 }
 
 /** Render figur terselesaikan (sinkron, CPU); galat mesin (StudioEngineError) diteruskan ke pemanggil. */
-export function renderResolved(f: ResolvedFigure, tpl: ResolvedTemplate, o: { inline: boolean; withSvg: boolean }): FigurePreview {
+export function renderResolved(f: ResolvedFigure, tpl: ResolvedTemplate, o: { inline: boolean; withSvg: boolean; lang?: ChartLang }): FigurePreview {
   const { block } = f;
   let r: SvgResult;
   let code: string | null;
   let data: FigurePreview["data"] = null;
   let rendered: FigurePreview["rendered"] = null;
   if (f.type === "chart") {
-    r = chartSvg(f.spec, tpl);
+    r = chartSvg(f.spec, tpl, o.lang);
     code = typeof f.spec.kind === "string" ? f.spec.kind : null;
     data = dataSummary(f.spec);
     rendered = renderedSummary(f.spec, tpl, r.svg);
@@ -288,7 +289,7 @@ export function renderResolved(f: ResolvedFigure, tpl: ResolvedTemplate, o: { in
 export async function renderFigure(
   block: NormBlock & { pid?: string },
   tpl: ResolvedTemplate,
-  o: { inline: boolean; withSvg: boolean; reader?: ArtifactSpecReader },
+  o: { inline: boolean; withSvg: boolean; reader?: ArtifactSpecReader; lang?: ChartLang },
 ): Promise<FigurePreview> {
   const f = await resolveFigure(block, o.reader);
   const over = figureCapacityIssues(f);

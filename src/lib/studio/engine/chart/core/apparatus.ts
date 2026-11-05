@@ -13,6 +13,7 @@
 import type { StudioChartV1 } from "../../../contract";
 import type { ChartPalette } from "./palette";
 import { fitActive, fitNote, fitState } from "./fit";
+import { keyLabelText } from "./lang";
 import { SvgDoc, escText, midBaseline, ptToMm, textWidthMm } from "./svg";
 import { legendRows } from "./labelfit";
 import { lineHeightMm, measure, wrapEllipsize } from "./textfit";
@@ -118,7 +119,7 @@ function keyLayout(x: number, labels: readonly string[], sizePt: number): Return
   const st = fitState();
   if (!st) return null;
   const sw = ptToMm(sizePt) * 0.9;
-  const lead = measure("KUNCI", sizePt, "struct", { bold: true, caps: true, trackMm: KEY_TRACK_MM }) + 2.4;
+  const lead = measure(keyLabelText(), sizePt, "struct", { bold: true, caps: true, trackMm: KEY_TRACK_MM }) + 2.4;
   return legendRows(labels, st.widthMm - 0.5 - x, { pt: sizePt }, { lead, swatch: sw, gap: 1.0, after: 3.0 });
 }
 
@@ -143,7 +144,7 @@ export function keyRow(doc: SvgDoc, x: number, y: number, items: readonly KeyIte
   const L = keyLayout(x, items.map((it) => it.label), sizePt);
   if (L) {
     doc.open('data-key="row"');
-    doc.text(x, y, "KUNCI", { sizePt, fill: pal.ink400, bold: true, caps: true, trackMm: track });
+    doc.text(x, y, keyLabelText(), { sizePt, fill: pal.ink400, bold: true, caps: true, trackMm: track });
     let used = 0;
     for (const p of L.items) {
       const yy = y + p.row * KEY_ROW_HEIGHT_MM;
@@ -156,8 +157,8 @@ export function keyRow(doc: SvgDoc, x: number, y: number, items: readonly KeyIte
     return used;
   }
   doc.open('data-key="row"');
-  doc.text(x, y, "KUNCI", { sizePt, fill: pal.ink400, bold: true, caps: true, trackMm: track });
-  let cx = x + textWidthMm("KUNCI", sizePt, "struct", track) + 2.4;
+  doc.text(x, y, keyLabelText(), { sizePt, fill: pal.ink400, bold: true, caps: true, trackMm: track });
+  let cx = x + textWidthMm(keyLabelText(), sizePt, "struct", track) + 2.4;
   for (const it of items) {
     doc.rect(cx, y - sw, sw, sw, it.color);
     cx += sw + 1.0;

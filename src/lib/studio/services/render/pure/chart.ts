@@ -13,7 +13,7 @@
  * aman diimpor oleh `figures.ts` tanpa ketergantungan melingkar.
  */
 import type { ResolvedTemplate, StudioChartV1, SvgResult } from "../../../contract";
-import { EMPTY_CHART_TEMPLATE, FIGURE_MAX_HEIGHT_PARAM, FIGURE_WIDTHS_PARAM, renderChart, renderComposite } from "../../../engine/chart/core";
+import { EMPTY_CHART_TEMPLATE, FIGURE_MAX_HEIGHT_PARAM, FIGURE_WIDTHS_PARAM, renderChart, renderComposite, withChartLang, type ChartLang } from "../../../engine/chart/core";
 
 /** Templat bawaan eksplisit untuk chart komposit (palet dan lantai fon dari spec, bukan dokumen). */
 export const COMPOSITE_CHART_TEMPLATE: ResolvedTemplate = EMPTY_CHART_TEMPLATE;
@@ -46,7 +46,10 @@ export function chartTemplateFor(spec: StudioChartV1, docTpl: ResolvedTemplate):
   return isCompositeChart(spec) ? compositeTemplateFor(docTpl) : docTpl;
 }
 
-/** Chart tunggal (templat dokumen) atau komposit (templat bawaan eksplisit). */
-export function pureChartSvg(spec: StudioChartV1, docTpl: ResolvedTemplate): SvgResult {
-  return isCompositeChart(spec) ? renderComposite(spec, compositeTemplateFor(docTpl)) : renderChart(spec, docTpl);
+/**
+ * Chart tunggal (templat dokumen) atau komposit (templat bawaan eksplisit). `lang` = bahasa dokumen untuk label
+ * struktural di dalam gambar (baris KUNCI -> "KEY" untuk EN); tanpa nilai = ID, byte-identik dengan perilaku lama.
+ */
+export function pureChartSvg(spec: StudioChartV1, docTpl: ResolvedTemplate, lang?: ChartLang): SvgResult {
+  return withChartLang(lang, () => (isCompositeChart(spec) ? renderComposite(spec, compositeTemplateFor(docTpl)) : renderChart(spec, docTpl)));
 }

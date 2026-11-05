@@ -42,6 +42,7 @@ import { chartFloors } from "../core/prepare";
 import { type NiceDomain, type Scale, axisDomain, decimalsFor, linearScale, niceDomain } from "../core/scale";
 import { SvgDoc, ptToMm, textWidthMm, midBaseline } from "../core/svg";
 import { measure } from "../core/textfit";
+import { keyLabelText } from "../core/lang";
 import { LABEL_EDGE_MM } from "../core/labelfit";
 import { accentOf } from "../core/params";
 import { kindAxis, kindBool as coreKindBool, kindEnum as coreKindEnum, kindInt as coreKindInt, kindValue } from "../core/read";
@@ -405,7 +406,7 @@ export function spreadLabels(ys: readonly number[], gap: number, lo: number, hi:
 /** Lebar baris KUNCI (keyRow chart/core) untuk penempatan rata kanan. */
 export function keyRowWidth(labels: readonly string[], sizePt: number): number {
   const sw = ptToMm(sizePt) * 0.9;
-  let w = textWidthMm("KUNCI", sizePt, "struct", 0.15) + 2.4;
+  let w = textWidthMm(keyLabelText(), sizePt, "struct", 0.15) + 2.4;
   for (const l of labels) w += sw + 1.0 + textWidthMm(l, sizePt) + 3.0;
   return w;
 }

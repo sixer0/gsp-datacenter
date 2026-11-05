@@ -21,6 +21,8 @@ import type {
 } from "../../contract";
 import { StudioEngineError } from "../../contract/errors";
 import { figureGrid } from "../../engine/chart/core/guards";
+import type { ChartLang } from "../../engine/chart/core/lang";
+import { wrapperLangOf } from "../../engine/front/texts";
 import { buildDiagramSvg } from "../../engine/diagram/build";
 import { prepareFigureStore, type FigureSvgSheet, type PreparedFigureStore } from "../../engine/docx/figures";
 import { symbolSheetSvg, type SymbolSheetOptions } from "../../engine/symbols";
@@ -94,10 +96,10 @@ export function diagramSpecForBlock(spec: StudioDiagramV1, content: Readonly<Rec
 
 /**
  * Chart tunggal (templat dokumen) atau komposit (templat bawaan eksplisit
- * `COMPOSITE_CHART_TEMPLATE`). Satu sumber dengan orkestrator murni (D-155).
+ * `COMPOSITE_CHART_TEMPLATE`). Satu sumber dengan orkestrator murni (D-155). `lang` = bahasa dokumen (label KUNCI/KEY).
  */
-export function chartSvg(spec: StudioChartV1, tpl: ResolvedTemplate): SvgResult {
-  return pureChartSvg(spec, tpl);
+export function chartSvg(spec: StudioChartV1, tpl: ResolvedTemplate, lang?: ChartLang): SvgResult {
+  return pureChartSvg(spec, tpl, lang);
 }
 
 function num(v: string | undefined): number | undefined {
@@ -195,7 +197,7 @@ export async function buildFigures(i: {
         // SEC-FIX / SEC-FIX2 (D-505, D-506): batas yang sama dengan rute pratinjau (spec + byte blok) SEBELUM render, agar
         // figur tersimpan sebelum batas ada (atau rujukan artefak) tidak membekukan proses HQ. Gagal -> galat figur di job.
         assertFigureCapacity("chart", spec, figureBytesIssues(block.content, "/content"));
-        const r = chartSvg(spec, i.tpl);
+        const r = chartSvg(spec, i.tpl, wrapperLangOf(i.snapshot.doc.meta));
         svgs.push(r);
         return { svg: r.svg, widthMm: r.widthMm, heightMm: r.heightMm };
       }

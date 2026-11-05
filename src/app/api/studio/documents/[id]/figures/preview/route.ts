@@ -24,6 +24,7 @@ import { schemaInvalidMessage } from "@/lib/studio/contract";
 import { isStudioEngineError } from "@/lib/studio/contract/errors";
 import { apiLog, checkRenderRate, failure, isPlausibleId, json, readJsonObject, reject, reqCtx, withQuotaHeaders, type ReqCtx } from "@/lib/studio/http";
 import { renderGate } from "@/lib/studio/services/render";
+import { wrapperLangOf } from "@/lib/studio/engine/front/texts";
 import { composeInlineBlock, effectiveTemplate, figureCapacityIssues, findFigureBlock, renderResolved, resolveFigure } from "./_lib/figure";
 import { capacityMessage } from "./_lib/limits";
 import { loadFigureContext } from "./_lib/load";
@@ -77,7 +78,7 @@ async function preview(req: NextRequest, params: Params["params"], ctx: ReqCtx):
       if (over.length > 0) return reject(ctx, "BY_CONSTRUCTION_FAILED", capacityMessage(resolved.type, over), { checkId: "FIGURE_CAPACITY", issues: over }, { ...logCtx, revisionNo: fc.revisionNo });
       const tpl = effectiveTemplate(fc.template, fc.snapshot);
       // Render lewat antrean render berbatas proses (sama dengan R08 ?preview=html): penuh -> 503 RENDER_QUEUE_FULL.
-      const figure = await renderGate().run(async () => renderResolved(resolved, tpl, { inline: r.block !== undefined, withSvg: r.svg }));
+      const figure = await renderGate().run(async () => renderResolved(resolved, tpl, { inline: r.block !== undefined, withSvg: r.svg, lang: wrapperLangOf(fc.snapshot.doc.meta) }));
       apiLog({
         ...ctx,
         level: "info",

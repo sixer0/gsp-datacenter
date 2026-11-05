@@ -75,6 +75,7 @@ export {
   noteLine,
   type KeyItem,
 } from "./apparatus";
+export { keyLabelText, withChartLang, type ChartLang } from "./lang";
 export {
   FIGURE_LATTICE_X_PARAM,
   FIGURE_MAX_HEIGHT_PARAM,

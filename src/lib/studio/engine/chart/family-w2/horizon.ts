@@ -18,6 +18,7 @@ import { fmt, withUnit } from "../../bind";
 import { tintHex } from "../../tokens/color";
 import { type KeyItem, keyRow } from "../core/apparatus";
 import { figureLabel } from "../core/guards";
+import { keyLabelText } from "../core/lang";
 import { chartParam, kindKey, paramBool } from "../core/palette";
 import { num, textWidthMm } from "../core/svg";
 import { accentHint, assertAccentCount, closeFrame, finiteOrNull, mid, openFrame, requireShape } from "./common";
@@ -115,7 +116,7 @@ export function renderHorizon(spec: StudioChartV1, canvas: ChartCanvas, tpl: Res
   };
   const posItems: KeyItem[] = posRamp.map((c, k) => ({ label: span(k, "+"), color: c }));
   const negItems: KeyItem[] = negRamp.map((c, k) => ({ label: span(k, "-"), color: c }));
-  const itemW = (items: KeyItem[]): number => textWidthMm("KUNCI", 6.2, "struct", 0.15) + 2.4 + items.reduce((a, it) => a + 2.0 + 1.0 + textWidthMm(it.label, 6.2) + 3.0, 0);
+  const itemW = (items: KeyItem[]): number => textWidthMm(keyLabelText(), 6.2, "struct", 0.15) + 2.4 + items.reduce((a, it) => a + 2.0 + 1.0 + textWidthMm(it.label, 6.2) + 3.0, 0);
   const legendRows = !legend ? 0 : itemW([...posItems, ...negItems]) <= W ? 1 : 2;
 
   const showX = !gallery;
